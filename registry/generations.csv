@@ -1,0 +1,5 @@
+generation_key,sequence,shot,date,provider,model,element,file_name,sha256,duration_seconds,resolution,fps,verdict,notes
+FACE_BASELINE,SEQ01,SH010,2026-08-16,Higgsfield,Cinema Studio V2 Pro,@char_martino-completo,hf_20260816_162204_212a1577-f004-48d3-8e87-8a0ef13ecf96.mp4,e2f21f65fcef94f754b8f275abc06dfbf3344fcfac250eafd41f0d87e81aa9ea,3.041667,1920x1080,24,face reference,Strong facial likeness
+V2A,SEQ01,SH010,2026-08-16,Higgsfield,Cinema Studio 4.0,@char_martino-sudato,1a(1).mp4,605d6e2c38e8fd1e0a54003a7dbd1210ca3668b4f6c781bc654eb47fd7aa113a,5.041667,1920x1080,24,preferred body baseline,Preferred over V2B
+V2B,SEQ01,SH010,2026-08-16,Higgsfield,Cinema Studio 4.0,@char_martino-sudato,1b(1).mp4,10c08ed4dc3d6719eeb118baed2c571f1031defb963693db5790854ad095cb30,5.041667,854x480,24,not selected,Alternate generation
+V3,SEQ01,SH010,2026-08-17,Higgsfield,Cinema Studio 4.0,@char_martino-completo-corpo_V2,1c(1).mp4,2a77fff4e6e0eb50120db0f99088b41739460fe679ae395827f44170c2a88a01,5.041667,1920x1080,24,partial approval,Face framing and eye-led turn approved; tattoo body hair and head-body ratio rejected

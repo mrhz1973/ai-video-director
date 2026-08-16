@@ -1,0 +1,42 @@
+project: rambo-ai-film
+updated: 2026-08-17
+elements:
+  - key: martino_completo_original
+    handle: "@char_martino-completo"
+    provider_id: "fcc2ebd6-203f-4be6-88d9-f8d61fe4569d"
+    status: preserved
+    role: facial identity baseline
+    notes: Produced the earlier three-second generation with very strong facial likeness.
+
+  - key: martino_sudato
+    handle: "@char_martino-sudato"
+    provider_id: "3742af1e-672f-41b7-b124-6cf257bdf970"
+    status: retained
+    role: earlier radio-hut body and scene baseline
+    notes: Used for V2A and V2B; body anatomy was preferred to V3.
+
+  - key: martino_completo_corpo_v2
+    handle: "@char_martino-completo-corpo_V2"
+    provider_id: null
+    status: experimental_rejected_for_body
+    approved:
+      - facial_identity_in_v3
+      - framing_in_v3
+      - eye_led_turn_in_v3
+    rejected:
+      - tattoo
+      - body_hair
+      - head_to_body_scale
+    notes: Both body views were cropped at the neck, eliminating a proportional scale bridge.
+
+  - key: martino_corrected_next
+    handle: null
+    provider_id: null
+    status: planned_not_created
+    role: corrected face/body/tattoo continuity
+    requirements:
+      - front body view without a competing small face
+      - rear full-body view including back of head and hair
+      - naturally hairless torso and arms
+      - exact tattoo copied only from real tattoo photographs
+      - body proportions matching V2A

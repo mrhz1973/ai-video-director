@@ -1,0 +1,31 @@
+# Original and generated media are stored externally
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.aif
+*.aiff
+*.flac
+*.psd
+*.psb
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+
+# Editing and cache files
+*.prproj
+*.drp
+*.fcpxml
+.cache/
+render_cache/
+proxies/
+media/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
