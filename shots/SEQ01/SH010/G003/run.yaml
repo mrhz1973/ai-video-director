@@ -1,0 +1,23 @@
+schema_version: 1
+generation_key: G003
+display_version: V3
+date: 2026-08-17
+status: executed_partial_approval
+provider: Higgsfield
+model: Cinema Studio 4.0
+element_handle: "@char_martino-completo-corpo_V2"
+provider_generation_id: null
+prompt_path: prompts/SEQ01/SH010/v03-prompt.md
+settings:
+  duration_seconds: 5
+  aspect_ratio: "16:9"
+  audio: off
+  format: single_continuous_take
+output:
+  file_name: "1c(1).mp4"
+  sha256: "2a77fff4e6e0eb50120db0f99088b41739460fe679ae395827f44170c2a88a01"
+  duration_seconds: 5.041667
+  resolution: "1920x1080"
+  fps: 24
+verdict: partial_approval
+

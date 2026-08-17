@@ -1,0 +1,30 @@
+schema_version: 1
+generation_key: G004
+display_version: V4
+date_planned: 2026-08-17
+status: authorized_not_launched
+provider: Higgsfield
+model: Cinema Studio 4.0
+element_handle: "@char_char_martino-completo-corpo_v3_V3"
+provider_generation_id: null
+prompt_path: prompts/SEQ01/SH010/v04-prompt.md
+settings:
+  duration_seconds: 5
+  aspect_ratio: "16:9"
+  resolution: "480p_preview"
+  audio: off
+  format: single_continuous_take
+  output_count: 1
+authorization:
+  phrase: "AUTORIZZO LA GENERAZIONE"
+  recorded_date: 2026-08-17
+  scope: this_run_only
+  consumed: false
+output:
+  file_name: null
+  sha256: null
+  duration_seconds: null
+  resolution: null
+  fps: null
+verdict: pending
+

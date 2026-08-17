@@ -1,0 +1,30 @@
+schema_version: 1
+generation_key: G000
+display_version: V0
+date_planned: YYYY-MM-DD
+status: planned
+provider: null
+model: null
+element_handle: null
+provider_generation_id: null
+prompt_path: null
+settings:
+  duration_seconds: null
+  aspect_ratio: null
+  resolution: null
+  audio: off
+  format: null
+  output_count: 1
+authorization:
+  phrase: null
+  recorded_date: null
+  scope: this_run_only
+  consumed: false
+output:
+  file_name: null
+  sha256: null
+  duration_seconds: null
+  resolution: null
+  fps: null
+verdict: pending
+

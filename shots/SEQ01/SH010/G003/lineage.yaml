@@ -1,0 +1,24 @@
+generation_key: G003
+derived_from:
+  - generation_key: V2A
+    role: body_anatomy_and_skin_comparison
+  - generation_key: FACE_BASELINE
+    role: facial_identity_comparison
+element:
+  handle: "@char_martino-completo-corpo_V2"
+  status_after_review: rejected_for_body_continuity
+prompt:
+  path: prompts/SEQ01/SH010/v03-prompt.md
+  status_after_review: archived_do_not_rerun_unchanged
+carried_forward_to_g004:
+  - facial_identity
+  - framing
+  - radio_hut_composition
+  - restrained_performance
+  - eye_led_final_turn
+not_carried_forward:
+  - tattoo
+  - body_hair
+  - head_to_body_scale
+  - shoulder_and_body_scale
+

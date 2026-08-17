@@ -8,23 +8,43 @@ Rambo AI Film
 
 ## Purpose
 
-Develop a consistent cinematic AI film workflow in Higgsfield using reusable Character Elements, controlled prompts, shot-level reviews and provider-independent production records.
+Rebuild a roughly 30-second cinematic jungle-action sequence with consistent AI-generated visuals, replacing the protagonist's identity with Martino while preserving shot intent, timing, physical continuity and the original source audio during final local assembly.
 
-## Current production platform
+## Production approach
 
-- Higgsfield Cinema Studio 4.0
-- Working frame: 16:9
-- Current shot duration: 5 seconds
-- Project duration limit currently established: 30 seconds per generation
-- Current audio state: off
-- Current format: single continuous take
+- Generate silent visual shots in Higgsfield.
+- Work shot by shot, currently in five-second blocks.
+- Preserve approved details through explicit Character Elements, reference hierarchy, prompts, reviews and SHA-256 fingerprints.
+- Reinsert the exact source audio locally after picture assembly; do not ask the video model to recreate it.
+- Keep provider state and media external. Keep reproducible text records in GitHub.
+
+## Current platform and settings
+
+- Platform: Higgsfield
+- Model lane: Cinema Studio 4.0
+- Working aspect ratio: 16:9
+- Active shot duration: 5 seconds
+- Active audio state: off
+- Active format: one continuous real-time take
 
 ## Source-of-truth hierarchy
 
-1. Higgsfield contains active Elements, live project settings, Canvas workflows and generations.
-2. This private repository contains versioned prompts, decisions, identifiers, evaluations and SHA-256 hashes.
-3. External media storage contains original photographs, rendered videos, audio and editing projects.
+1. Immutable prompt, run, lineage and review records for executed generations.
+2. HANDOFF.md and PROJECT_STATUS.md for current state.
+3. CONTINUITY_BIBLE.md for character and shot invariants.
+4. Registry files for exact handles, generated outputs and active prompt.
+5. External media verified by filename and SHA-256.
+6. Higgsfield for live Elements, settings and generations not yet exported.
 
-## Safety and cost gate
+## Public repository boundary
 
-Prompt preparation, review and repository work are allowed. A new Higgsfield generation requires Martino's exact written authorization: **AUTORIZZO LA GENERAZIONE**.
+The repository is public and contains no image, video or audio bytes. It may contain Element handles, non-secret provider IDs, filenames, hashes, prompt text and evaluations. It must never contain credentials, local paths, Library IDs or personal source media.
+
+## Cost and external-action gate
+
+Preparation, analysis and repository work are allowed. Each paid Higgsfield generation requires the user's exact written phrase:
+
+AUTORIZZO LA GENERAZIONE
+
+Authorization is scoped to one documented run unless the user clearly states otherwise. G004 is currently authorized but not launched.
+

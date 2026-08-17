@@ -1,27 +1,30 @@
 # SH010 V4 correction plan
 
-Status: preparation only — generation not authorized.
+Status: completed and encoded in v04-prompt.md
+Element: @char_char_martino-completo-corpo_v3_V3
+Planned run: G004
 
 ## Preserve from V3
 
-- exact facial identity;
-- successful framing;
-- radio-hut composition;
-- eye-led final turn;
-- restrained five-second single-take performance;
+- facial identity and realism;
+- successful frame-right composition;
+- radio-hut environment and practical light;
+- restrained single-take performance;
+- eyes moving before the final head turn;
 - silent output.
 
-## Correct before writing the final prompt
+## Correct in V4
 
-1. Create a new corrected Character Element; do not silently overwrite V2.
-2. Front body plate: no small competing face.
-3. Rear body plate: complete rear head and hair visible to establish cranial, neck and shoulder scale.
-4. Body: accepted V2A proportions, normal head-to-body ratio, naturally hairless torso and arms.
-5. Tattoo: use the exact real tattoo photographs as the exclusive source. Do not name or verbally reinterpret the design.
-6. Remove the phrases "body hair" and "winged-rose tattoo."
-7. Facial portraits control facial features; corrected body plate controls scale and anatomy; tattoo close-up controls only tattoo artwork and placement.
-8. Keep camera and blocking unchanged unless a later review explicitly changes them.
+1. Use the new versioned Character Element.
+2. Let facial portraits control the complete head.
+3. Let the lateral headless hairless body reference control only neck-down anatomy and scale.
+4. Restore broad shoulders and a normal adult head-to-body ratio.
+5. Keep chest, abdomen, shoulders and arms naturally hairless while preserving real skin texture and perspiration.
+6. Let the exact two-angle tattoo reference exclusively control tattoo artwork, fade, color, scale, rotation and placement.
+7. Do not name or verbally reinterpret the tattoo design.
+8. Keep the approved camera and blocking unchanged.
 
 ## Gate
 
-Do not write an active @tag until the corrected Element exists. Do not launch a generation without Martino's exact authorization: **AUTORIZZO LA GENERAZIONE**.
+The user supplied the exact one-run authorization for G004 on 2026-08-17. G004 remains not launched. Any later run needs a new authorization.
+

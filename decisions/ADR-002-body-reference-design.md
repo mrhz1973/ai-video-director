@@ -1,23 +1,31 @@
 # ADR-002 — Martino body reference design
 
 Date: 2026-08-17
-Status: revised after V3
+Status: accepted after V3 correction cycle
 
-## Initial decision
+## Initial attempt
 
-Duplicate the successful Martino Element and add one front/back body plate with both heads cropped at the neck.
+The V2 Element used a body sheet that allowed artificial hair and tattoo reinterpretation. Cropping both full-body views at the neck also removed the anatomical bridge between head, neck and shoulders.
 
-## Evidence from V3
+## Evidence
 
-The face became highly accurate, but the model enlarged the head relative to the torso, reduced shoulder scale, invented body hair and redesigned the tattoo.
+V3 produced excellent facial identity and framing but enlarged the head, narrowed the body, invented torso hair and redesigned the tattoo. A later generated headless body plate still retained hair and altered the tattoo.
 
-## Revised decision
+## Final decision for V4
 
-The next body plate will retain:
-- a front body view without a visible small face;
-- a rear full-body view including the complete back of the head and hair, providing cranial, neck and shoulder scale;
-- naturally hairless chest, abdomen, shoulders and arms;
-- the accepted V2A body proportions;
-- tattoo artwork copied only from the exact two-angle real tattoo photographs.
+Use role-separated references inside a new versioned Element:
 
-The corrected reference must be introduced as a new version rather than silently overwriting V2.
+- facial portraits control the complete head and identity;
+- a lateral three-quarter neck-down body reference controls shoulder breadth, torso scale, moderate muscularity and naturally hairless skin;
+- the exact two-angle tattoo reference alone controls tattoo artwork, fade, color, scale, rotation and position;
+- BODY_PROPORTIONS_MASTER and V2A remain comparison evidence, not competing identity sources.
+
+The lateral body crop deliberately removes the head so it cannot compete with the approved facial portraits. The prompt explicitly restores a normal adult head-to-body ratio.
+
+## Active implementation
+
+Element: @char_char_martino-completo-corpo_v3_V3
+Body reference: BODY_SIDE_HEADLESS_HAIRLESS_V3
+Tattoo reference: TATTOO_EXACT
+Prompt: prompts/SEQ01/SH010/v04-prompt.md
+

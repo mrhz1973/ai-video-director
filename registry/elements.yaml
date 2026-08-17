@@ -5,38 +5,47 @@ elements:
     handle: "@char_martino-completo"
     provider_id: "fcc2ebd6-203f-4be6-88d9-f8d61fe4569d"
     status: preserved
-    role: facial identity baseline
-    notes: Produced the earlier three-second generation with very strong facial likeness.
+    role: facial_identity_baseline
+    notes: Earlier three-second generation produced very strong facial likeness.
 
   - key: martino_sudato
     handle: "@char_martino-sudato"
     provider_id: "3742af1e-672f-41b7-b124-6cf257bdf970"
     status: retained
-    role: earlier radio-hut body and scene baseline
-    notes: Used for V2A and V2B; body anatomy was preferred to V3.
+    role: v2_radio_hut_baseline
+    notes: Used for V2A and V2B; V2A body anatomy and skin remain preferred comparison evidence.
 
   - key: martino_completo_corpo_v2
     handle: "@char_martino-completo-corpo_V2"
     provider_id: null
-    status: experimental_rejected_for_body
+    status: rejected_for_body_continuity
     approved:
       - facial_identity_in_v3
       - framing_in_v3
+      - radio_hut_composition_in_v3
       - eye_led_turn_in_v3
     rejected:
-      - tattoo
-      - body_hair
+      - tattoo_design_scale_position
+      - artificial_body_hair
       - head_to_body_scale
-    notes: Both body views were cropped at the neck, eliminating a proportional scale bridge.
+      - shoulder_and_body_scale
+    notes: V3 is a face, framing and performance reference only.
 
-  - key: martino_corrected_next
-    handle: null
+  - key: martino_completo_corpo_v3
+    handle: "@char_char_martino-completo-corpo_v3_V3"
     provider_id: null
-    status: planned_not_created
-    role: corrected face/body/tattoo continuity
+    status: ready_for_v4
+    role: active_face_body_tattoo_continuity
+    references:
+      face: portraits_inside_element
+      body: BODY_SIDE_HEADLESS_HAIRLESS_V3
+      tattoo: TATTOO_EXACT
+      body_comparison: BODY_PROPORTIONS_MASTER
     requirements:
-      - front body view without a competing small face
-      - rear full-body view including back of head and hair
-      - naturally hairless torso and arms
-      - exact tattoo copied only from real tattoo photographs
-      - body proportions matching V2A
+      - normal_adult_head_to_body_ratio
+      - broad_shoulders_and_mature_solid_build
+      - naturally_hairless_torso_shoulders_and_arms
+      - exact_tattoo_without_textual_reinterpretation
+      - preserve_v3_face_framing_hut_and_performance
+    notes: Exact handle includes the repeated char prefix and mixed-case V3 suffix. Never normalize it.
+

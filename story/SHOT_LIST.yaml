@@ -1,0 +1,38 @@
+project: rambo-ai-film
+sequence: SEQ01
+source_duration_seconds: 30.058
+segmentation_strategy: six_target_blocks_of_about_five_seconds
+status: partial_analysis
+shots:
+  - id: SH010
+    target_duration_seconds: 5
+    title: Clandestine radio hut
+    source_timecode: pending_frame_accurate_confirmation
+    status: active_v4_authorized_not_launched
+    prompt: prompts/SEQ01/SH010/v04-prompt.md
+  - id: SH020
+    target_duration_seconds: 5
+    title: pending_source_analysis
+    source_timecode: pending
+    status: not_yet_analyzed
+  - id: SH030
+    target_duration_seconds: 5
+    title: pending_source_analysis
+    source_timecode: pending
+    status: not_yet_analyzed
+  - id: SH040
+    target_duration_seconds: 5
+    title: pending_source_analysis
+    source_timecode: pending
+    status: not_yet_analyzed
+  - id: SH050
+    target_duration_seconds: 5
+    title: pending_source_analysis
+    source_timecode: pending
+    status: not_yet_analyzed
+  - id: SH060
+    target_duration_seconds: 5
+    title: pending_source_analysis
+    source_timecode: pending
+    status: not_yet_analyzed
+

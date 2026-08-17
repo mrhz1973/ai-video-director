@@ -67,3 +67,4 @@ Completely silent video. No audible dialogue, voices, radio transmission, music 
 CONTINUITY LOCK
 
 Exactly one complete character. The portrait photographs control the face; the cropped body photographs control only the anatomy below the neck. Maintain the same face, age, hair, beard, body proportions, moderate muscularity, skin, perspiration, tattoo and trousers in every frame. Natural hands and anatomy, stable radio equipment, stable picture, no identity drift, morphing, duplication, flickering or ghosting.
+

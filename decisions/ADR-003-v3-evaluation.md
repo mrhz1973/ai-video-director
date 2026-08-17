@@ -26,3 +26,4 @@ The V3 prompt used "body hair" as a preservation target and named the tattoo as 
 ## Final assessment
 
 V3 is a face, framing and performance reference only. It must not become the body or tattoo continuity master.
+

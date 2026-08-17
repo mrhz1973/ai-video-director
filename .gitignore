@@ -1,4 +1,4 @@
-# Original and generated media are stored externally
+# Media and binary source files stay outside this public repository
 *.mp4
 *.mov
 *.mkv
@@ -7,22 +7,36 @@
 *.aif
 *.aiff
 *.flac
-*.psd
-*.psb
 *.png
 *.jpg
 *.jpeg
+*.webp
+*.gif
+*.heic
 *.tif
 *.tiff
+*.psd
+*.psb
+*.zip
 
-# Editing and cache files
+# Editing, cache and model files
 *.prproj
 *.drp
 *.fcpxml
+*.ckpt
+*.safetensors
 .cache/
+__pycache__/
 render_cache/
 proxies/
 media/
+
+# Secrets and private exports
+.env
+.env.*
+*credentials*
+*secrets*
+*.jsonl
 
 # OS and editor files
 .DS_Store

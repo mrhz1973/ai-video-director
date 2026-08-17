@@ -1,0 +1,27 @@
+generation_key: G004
+parent_generation: G003
+preserve_from_parent:
+  - facial_identity
+  - facial_realism
+  - framing
+  - radio_hut_composition
+  - restrained_performance
+  - eye_led_final_turn
+correct_from_parent:
+  - tattoo_design_scale_position
+  - artificial_body_hair
+  - oversized_head
+  - reduced_shoulder_and_body_scale
+element:
+  handle: "@char_char_martino-completo-corpo_v3_V3"
+  provider_id: null
+reference_keys:
+  face: portraits_inside_element
+  body_active: BODY_SIDE_HEADLESS_HAIRLESS_V3
+  tattoo_exclusive: TATTOO_EXACT
+  body_comparison:
+    - BODY_PROPORTIONS_MASTER
+    - V2A_VIDEO
+prompt:
+  path: prompts/SEQ01/SH010/v04-prompt.md
+
