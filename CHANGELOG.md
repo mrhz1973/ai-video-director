@@ -25,3 +25,4 @@
 - Added MiniMax H3 Reference Images to Video with seven images, one motion-reference video, and one audio reference.
 - Added private local projects that remember prompts, settings, and ComfyUI input filenames without publishing media or personal paths.
 - Added dynamic, human-readable attachment controls and versioned the local harness as v0.4.0.
+- Hardened H3 reference prompting with explicit per-asset authority, exclusion boundaries, and conflict precedence while retaining MiniMax's official labels and section order.

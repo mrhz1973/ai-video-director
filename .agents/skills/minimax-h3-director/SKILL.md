@@ -34,7 +34,9 @@ H3 mode, field order, labels, dialogue markup, audio categories, cut timestamps,
 4. Give only actual vocal sources stable `(S1)`, `(S2)` IDs. Put exact spoken content in `<d>[Language] ...</d>`.
 5. Use `overall_soundscape: N/A` only for explicitly complete silence. Use `non_diegetic_music: N/A` when there is no audience-only score.
 6. Check duration, strictly increasing cut timestamps, label consistency, endpoint convergence, speaker continuity, and that dialogue appears only once.
-7. Return the production prompt first. Add settings or notes only when requested or needed to prevent a configuration mismatch.
+7. For every reference, verify both its positive authority and its exclusion boundary: what it controls and what must not be inherited from it.
+8. When references conflict, state an explicit precedence by attribute (for example, pictures control identity and environment while a video controls motion and cut rhythm). Never leave the model to resolve the conflict implicitly.
+9. Return the production prompt first. Add settings or notes only when requested or needed to prevent a configuration mismatch.
 
 ## Authority and provenance
 

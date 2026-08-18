@@ -33,6 +33,15 @@ non_diegetic_music:
 
 Never introduce a new label after `subject_definitions`.
 
+## Reference authority boundaries
+
+- Map each upload-order slot to its H3 label from the active workflow or interface. Do not infer numbering from a filename, library name, UUID, or prose order.
+- Give every reference one bounded authority and state what it must not contribute when confusion is plausible. Example: a video may define body mechanics, camera movement, and cut rhythm while explicitly not contributing identity, wardrobe, props, or location.
+- Split authority by attribute instead of saying only “use the references.” Name which asset controls face, body, wardrobe, prop appearance, environment, motion, performance, camera, edit rhythm, voice, music, or sound.
+- When references disagree, declare the precedence inside `subject_definitions` and reinforce it in `retention_analysis`. The model must not choose between conflicting identity, wardrobe, environment, or timeline evidence implicitly.
+- If a source video is the sole editing master, use the `video editing` relationship and state exactly what the edit changes and what remains preserved. If it supplies only motion or camera behavior, use `attribute_transfer` and exclude its visible subjects and setting.
+- Keep official H3 labels and the six-section Ref2VA order. Do not substitute generic tokens such as `Image1` or unofficial bracketed section headings.
+
 ## Summary task prefixes
 
 Use only relationships that actually apply, joined with ` + `: `keyframe completion`, `reference generation`, `video editing`, `video continuation`, `audio reuse`, `audio reference`.
