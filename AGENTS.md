@@ -18,10 +18,14 @@ Then give a short checkpoint: objective, approved facts, rejected facts, active 
 
 ## Project skills
 
+- Cross-provider or ambiguous image/video task: read .agents/skills/video-director-router/SKILL.md first.
 - Image reference creation or repair: read .agents/skills/lira-image-prompts/SKILL.md.
 - Character performance, acting beats or eye behavior: read .agents/skills/acting-performance/SKILL.md.
 - Higgsfield or Seedance video prompts, camera, blocking, physics, continuity or review: read .agents/skills/cinedance-higgsfield/SKILL.md.
-- For a final video prompt or review, use both cinedance-higgsfield and acting-performance.
+- MiniMax H3 T2VA/I2VA/FL2VA/L2VA/Ref2VA prompts or H3 prompt review: read .agents/skills/minimax-h3-director/SKILL.md.
+- For a final Higgsfield/Seedance character prompt or review, use both cinedance-higgsfield and acting-performance.
+- For a final H3 character prompt or review, minimax-h3-director owns the output schema; also use acting-performance for character behavior. CineDance may contribute compatible blocking/camera/physics diagnostics but must not replace the H3 schema.
+- For ComfyUI launcher/setup work, read apps/comfyui-harness/README.md and workflows/README.md. ComfyUI is an execution layer; choose the provider prompt skill before mapping the final prompt into a workflow.
 - Read each selected SKILL.md completely and follow any referenced project manual it requires.
 
 ## Sources of truth
@@ -65,6 +69,8 @@ Preparing prompts, reviews and repository files is allowed. A paid Higgsfield ge
 AUTORIZZO LA GENERAZIONE
 
 Record that authorization in the planned run manifest before launching. Authorization covers only the documented run. Do not operate a cloud browser, Higgsfield account or other external service unless the user explicitly asks for that action.
+
+Local ComfyUI execution is a separate execution lane. Do not start a local generation merely because a workflow or prompt was prepared; launch it only when the user asks to run it.
 
 ## Quality rules
 
