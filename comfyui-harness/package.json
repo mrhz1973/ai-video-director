@@ -1,6 +1,6 @@
 {
-  "name": "rambo-comfyui-harness",
-  "version": "0.1.0",
+  "name": "ai-video-director-harness",
+  "version": "0.2.0",
   "private": true,
   "description": "Minimal local control surface for MiniMax H3 workflows in ComfyUI",
   "scripts": {

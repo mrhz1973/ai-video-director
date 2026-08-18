@@ -8,6 +8,7 @@ import { cloneAndBind, dimensions, resolutionSettings, collectOutputs } from "./
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(root, "config.json");
 const config = JSON.parse(await readFile(existsSync(configPath) ? configPath : path.join(root, "config.example.json"), "utf8"));
+const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
 
@@ -39,7 +40,7 @@ async function proxy(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets() });
+    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { version: packageInfo.version, comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets() });
     if (req.method === "GET" && url.pathname === "/api/active") {
       const upstream = await fetch(`${comfy}/queue`); const queue = await upstream.json();
       const running = queue.queue_running?.[0];
