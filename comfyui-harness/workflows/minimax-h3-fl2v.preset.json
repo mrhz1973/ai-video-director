@@ -1,6 +1,6 @@
 {
   "id": "minimax-h3-fl2v",
-  "label": "MiniMax H3 · FL2V",
+  "label": "MiniMax H3 · First & Last Frame to Video",
   "mode": "FL2VA",
   "workflow": "minimax-h3-fl2v.api.json",
   "bindings": {

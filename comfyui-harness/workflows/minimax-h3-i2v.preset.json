@@ -1,6 +1,6 @@
 {
   "id": "minimax-h3-i2v",
-  "label": "MiniMax H3 · I2V",
+  "label": "MiniMax H3 · Image to Video",
   "mode": "I2VA",
   "workflow": "minimax-h3-i2v.api.json",
   "bindings": {

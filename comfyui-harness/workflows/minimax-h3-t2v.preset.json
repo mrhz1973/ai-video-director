@@ -1,6 +1,6 @@
 {
   "id": "minimax-h3-t2v",
-  "label": "MiniMax H3 · T2V",
+  "label": "MiniMax H3 · Text to Video",
   "mode": "T2VA",
   "workflow": "minimax-h3-t2v.api.json",
   "bindings": {
