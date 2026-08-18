@@ -40,6 +40,26 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets() });
+    if (req.method === "GET" && url.pathname === "/api/active") {
+      const upstream = await fetch(`${comfy}/queue`); const queue = await upstream.json();
+      const running = queue.queue_running?.[0];
+      return json(res, upstream.status, running ? { active: true, promptId: running[1], clientId: running[3]?.client_id, createdAt: running[3]?.create_time } : { active: false });
+    }
+    if (req.method === "GET" && url.pathname === "/api/events") {
+      const clientId = url.searchParams.get("clientId");
+      if (!clientId) return json(res, 400, { error: "Missing clientId" });
+      res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
+      res.write(": connected\n\n");
+      const upstream = new WebSocket(`${comfy.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`);
+      const sendEvent = (event, data) => { if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+      upstream.addEventListener("open", () => sendEvent("connection", { state: "open" }));
+      upstream.addEventListener("message", event => { if (typeof event.data === "string" && !res.destroyed) res.write(`data: ${event.data}\n\n`); });
+      upstream.addEventListener("close", () => sendEvent("connection", { state: "closed" }));
+      upstream.addEventListener("error", () => sendEvent("connection", { state: "error" }));
+      const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": heartbeat\n\n"); }, 15000);
+      req.on("close", () => { clearInterval(heartbeat); if (upstream.readyState < 2) upstream.close(); });
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/api/upload") return proxy(req, res, "/upload/image");
     if (req.method === "GET" && url.pathname === "/api/history") {
       const id = encodeURIComponent(url.searchParams.get("promptId") || "");
