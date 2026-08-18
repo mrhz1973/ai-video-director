@@ -29,12 +29,20 @@ REQUIRED = [
     "shots/SEQ01/SH010/G004/run.yaml",
     "shots/SEQ01/SH010/G004/review.md",
     "shots/SEQ01/SH010/G004/lineage.yaml",
+    ".agents/skills/minimax-h3-director/references/H3_OFFICIAL_NOTES.md",
+    "apps/comfyui-harness/README.md",
+    "apps/comfyui-harness/config.example.json",
+    "apps/comfyui-harness/server.py",
+    "apps/comfyui-harness/static/index.html",
+    "apps/comfyui-harness/workflows/README.md",
 ]
 
 SKILLS = {
     "acting-performance": ".agents/skills/acting-performance/SKILL.md",
     "lira-image-prompts": ".agents/skills/lira-image-prompts/SKILL.md",
     "cinedance-higgsfield": ".agents/skills/cinedance-higgsfield/SKILL.md",
+    "minimax-h3-director": ".agents/skills/minimax-h3-director/SKILL.md",
+    "video-director-router": ".agents/skills/video-director-router/SKILL.md",
 }
 
 FORBIDDEN_SUFFIXES = {
