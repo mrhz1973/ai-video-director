@@ -4,9 +4,10 @@
   <section class="workspace">
     <header><div><span class="eyebrow">AI VIDEO DIRECTOR</span><h1>MiniMax H3 Director <small id="version" style="font-size:12px;color:#9eabb8;font-weight:500"></small></h1></div><span id="connection" class="status">Connessione…</span></header>
     <div id="log" class="log"><div class="message system">Carica un workflow API di ComfyUI e scrivi il prompt H3.</div></div>
-    <div class="composer"><textarea id="prompt" placeholder="Scrivi o incolla il prompt strutturato H3…"></textarea><div class="attachments"><label>Primo frame<input id="firstImage" type="file" accept="image/*"></label><label>Ultimo frame<input id="lastImage" type="file" accept="image/*"></label><button id="send">Genera</button></div></div>
+    <div class="composer"><textarea id="prompt" placeholder="Scrivi o incolla il prompt strutturato H3…"></textarea><div class="attachments"><div id="attachmentFields" class="attachment-fields"></div><button id="send">Genera</button></div></div>
   </section>
   <aside><h2>Generazione</h2>
+    <label>Progetto<select id="project"><option value="">Nessun progetto</option></select></label>
     <label>Workflow<select id="workflow"></select></label><label>Qualità<select id="quality"><option>Preview</option><option>Final</option></select></label>
     <label>Modello<select id="model"></select></label><label>Steps<input id="steps" type="number" min="1" value="20"></label>
     <label>Durata<input id="duration" type="number" min="4" max="15" step="0.1" value="5"></label>

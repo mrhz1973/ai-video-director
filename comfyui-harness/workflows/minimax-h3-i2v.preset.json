@@ -3,6 +3,9 @@
   "label": "MiniMax H3 · Image to Video",
   "mode": "I2VA",
   "workflow": "minimax-h3-i2v.api.json",
+  "attachments": [
+    { "key": "firstImage", "label": "Immagine iniziale", "accept": "image/*" }
+  ],
   "bindings": {
     "prompt": { "node": "133", "input": "prompt" },
     "model": { "node": "136", "input": "unet_name" },

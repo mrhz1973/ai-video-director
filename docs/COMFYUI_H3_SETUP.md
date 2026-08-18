@@ -1,6 +1,6 @@
 # MiniMax H3 local harness
 
-The harness in `comfyui-harness/` is a small local UI and API bridge. It exposes a prompt/chat area, first/last-frame attachments, workflow selection, quality, model, steps, duration, aspect ratio, seed, WebSocket progress, and output links.
+The harness in `comfyui-harness/` is a small local UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, quality, model, steps, duration, aspect ratio, seed, live progress, and output links.
 
 ## 1. Prepare ComfyUI
 
@@ -16,6 +16,12 @@ For every working mode, use ComfyUI's **Save (API Format)** and place the saniti
 - `i2va.api.json`
 - `fl2va.api.json`
 
+The included sanitized Ref2VA graph supports seven reference images, one motion-reference video, and one audio reference. Rebuild it from a compatible private API export with:
+
+```text
+node scripts/build-ref-workflow.mjs workflows/private-ref2v.api.json workflows/minimax-h3-reference.workflow.json
+```
+
 Create matching `.preset.json` files using `workflows/README.md`. Node IDs and input names must match the exported graph exactly. Keep models in the preset's `options.models` list. Do not commit local absolute paths, credentials, or private filenames.
 
 ## 3. Configure and run
@@ -29,9 +35,11 @@ npm start
 
 Open `http://127.0.0.1:8787`.
 
+Private reusable project definitions live in `comfyui-harness/projects/*.local.json`. They may remember the prompt, settings, and ComfyUI input filenames, but are ignored by Git and are available only through the local loopback service.
+
 ## 4. Request lifecycle
 
-Attachments are uploaded through `/upload/image`; their returned ComfyUI names are inserted into declared LoadImage bindings. The selected API workflow is cloned, sidebar values are applied only to validated bindings, and the graph is sent to `/prompt`. The browser listens on `/ws?clientId=...`, filters events by `prompt_id`, and retrieves the completed history and output files through `/history/{prompt_id}` and `/view`.
+Attachments are uploaded through `/upload/image`; ComfyUI stores arbitrary supported image, video, or audio input bytes and returns a local filename. The filename is inserted only into the loader binding declared by the preset. The selected API workflow is cloned, sidebar values are applied only to validated bindings, and the graph is sent to `/prompt`. The backend bridges ComfyUI WebSocket events to the page, filters progress by `prompt_id`, and retrieves completed history and output files through `/history/{prompt_id}` and `/view`.
 
 If a graph is rejected, inspect `node_errors`: usually a preset points to a stale node/input or the workflow needs a custom node/model not installed locally. If WebSocket events stop while ComfyUI still works, query the job history; restarting a long-running ComfyUI instance may restore event delivery.
 

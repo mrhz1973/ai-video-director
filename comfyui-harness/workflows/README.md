@@ -26,6 +26,10 @@ Example `t2va.preset.json`:
 }
 ```
 
-For I2VA add `"firstImage"`; for FL2VA add both `"firstImage"` and `"lastImage"`. Each image binding points to the LoadImage input that expects the uploaded filename. Bindings are validated before a job is queued; unknown nodes or inputs produce an error instead of silently changing the wrong node.
+For Image to Video add `"firstImage"`; for First & Last Frame to Video add both `"firstImage"` and `"lastImage"`. Declare their user-facing file controls in an `attachments` array.
+
+Reference Images to Video may declare multiple image, video, and audio attachments. Each attachment key must have a matching binding to a loader input in the sanitized workflow. Bindings are validated before a job is queued; unknown nodes or inputs produce an error instead of silently changing the wrong node.
+
+The tracked `scripts/build-ref-workflow.mjs` helper converts a private Ref2VA API export into a sanitized seven-image, one-video, one-audio workflow. The source `.api.json` remains ignored; only its placeholder-based output may be committed.
 
 Do not commit real workflow exports until local paths and private metadata have been removed.

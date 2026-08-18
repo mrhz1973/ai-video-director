@@ -45,3 +45,4 @@ Thumbs.db
 .idea/
 comfyui-harness/config.json
 comfyui-harness/workflows/*.api.json
+comfyui-harness/projects/*.local.json

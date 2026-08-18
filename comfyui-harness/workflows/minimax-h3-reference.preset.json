@@ -1,0 +1,39 @@
+{
+  "id": "minimax-h3-reference",
+  "label": "MiniMax H3 · Immagini di riferimento a Video",
+  "mode": "Ref2VA",
+  "workflow": "minimax-h3-reference.workflow.json",
+  "attachments": [
+    { "key": "characterBody", "label": "Personaggio · Corpo e abiti", "accept": "image/*" },
+    { "key": "characterExpressions1", "label": "Personaggio · Espressioni 1", "accept": "image/*" },
+    { "key": "characterExpressions2", "label": "Personaggio · Espressioni 2", "accept": "image/*" },
+    { "key": "characterExpressions3", "label": "Personaggio · Espressioni 3", "accept": "image/*" },
+    { "key": "prop", "label": "Oggetto · Lattina", "accept": "image/*" },
+    { "key": "transformationTarget", "label": "Trasformazione · Armatura finale", "accept": "image/*" },
+    { "key": "environment", "label": "Scenario", "accept": "image/*" },
+    { "key": "motionVideo", "label": "Video · Movimento e montaggio", "accept": "video/*" },
+    { "key": "audioReference", "label": "Audio · Ritmo e musica", "accept": "audio/*" }
+  ],
+  "bindings": {
+    "prompt": { "node": "145", "input": "prompt" },
+    "model": { "node": "136", "input": "unet_name" },
+    "steps": { "node": "128", "input": "steps" },
+    "seed": { "node": "131", "input": "noise_seed" },
+    "duration": { "node": "135", "input": "value" },
+    "aspectRatio": { "node": "115", "input": "aspect_ratio" },
+    "megapixels": { "node": "115", "input": "megapixels" },
+    "characterBody": { "node": "149", "input": "image" },
+    "characterExpressions1": { "node": "157", "input": "image" },
+    "characterExpressions2": { "node": "158", "input": "image" },
+    "characterExpressions3": { "node": "159", "input": "image" },
+    "prop": { "node": "160", "input": "image" },
+    "transformationTarget": { "node": "161", "input": "image" },
+    "environment": { "node": "162", "input": "image" },
+    "motionVideo": { "node": "163", "input": "file" },
+    "audioReference": { "node": "165", "input": "audio" }
+  },
+  "options": {
+    "models": ["minimax-h3-ref2va-Q4_0.gguf"],
+    "qualities": ["Preview", "Final"]
+  }
+}

@@ -1,5 +1,5 @@
 import http from "node:http";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ const config = JSON.parse(await readFile(existsSync(configPath) ? configPath : p
 const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
+const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 
 const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); };
 const body = async req => { const chunks=[]; for await (const c of req) chunks.push(c); return Buffer.concat(chunks); };
@@ -21,6 +22,13 @@ async function presets() {
     const preset = JSON.parse(await readFile(path.join(workflowDir, file), "utf8"));
     return { ...preset, presetFile: file };
   }));
+}
+
+async function projects() {
+  await mkdir(projectDir, { recursive: true });
+  const files = (await readdir(projectDir)).filter(x => x.endsWith(".local.json"));
+  const result = await Promise.all(files.map(file => readFile(path.join(projectDir, file), "utf8").then(JSON.parse)));
+  return result.sort((a, b) => String(a.label).localeCompare(String(b.label), "it"));
 }
 
 async function loadPreset(id) {
@@ -40,7 +48,7 @@ async function proxy(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { version: packageInfo.version, comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets() });
+    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { version: packageInfo.version, comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets(), projects: await projects() });
     if (req.method === "GET" && url.pathname === "/api/active") {
       const upstream = await fetch(`${comfy}/queue`); const queue = await upstream.json();
       const running = queue.queue_running?.[0];
@@ -75,7 +83,7 @@ const server = http.createServer(async (req, res) => {
       const { preset, workflow } = await loadPreset(input.workflowId);
       const [width, height] = dimensions(input.aspect, input.quality);
       const { aspectRatio, megapixels } = resolutionSettings(input.aspect, input.quality);
-      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage };
+      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
       const bound = cloneAndBind(workflow, preset.bindings || {}, values);
       const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
       return json(res, upstream.status, await upstream.json());

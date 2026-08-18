@@ -3,6 +3,7 @@
   "label": "MiniMax H3 · Text to Video",
   "mode": "T2VA",
   "workflow": "minimax-h3-t2v.api.json",
+  "attachments": [],
   "bindings": {
     "prompt": { "node": "129", "input": "prompt" },
     "model": { "node": "130", "input": "unet_name" },
