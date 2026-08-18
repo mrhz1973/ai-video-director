@@ -27,6 +27,7 @@
 *.safetensors
 .cache/
 __pycache__/
+.venv/
 render_cache/
 proxies/
 media/
@@ -37,6 +38,7 @@ media/
 *credentials*
 *secrets*
 *.jsonl
+apps/comfyui-harness/config.json
 
 # OS and editor files
 .DS_Store
