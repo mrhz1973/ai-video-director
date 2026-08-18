@@ -30,6 +30,7 @@ See HANDOFF.md for the live state.
 - docs/REFERENCE_ASSETS.md — external media names and SHA-256 fingerprints.
 - docs/playbooks/INDEX.md — task-to-skill routing and source fingerprints.
 - .agents/skills/ — project-shared acting, image and video-prompt workflows.
+- comfyui-harness/ — local MiniMax H3 workflow launcher over ComfyUI HTTP/WebSocket APIs.
 - decisions/ — architecture and production decision records.
 - logs/ — dated chronological work log.
 - templates/ — reusable production records.
@@ -45,4 +46,6 @@ Only text, hashes and non-secret technical metadata belong here. Never commit ph
 Run:
 
     python3 scripts/validate_project.py
+
+MiniMax H3 local setup is documented in `docs/COMFYUI_H3_SETUP.md`.
 

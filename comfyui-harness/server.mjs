@@ -1,0 +1,74 @@
+import http from "node:http";
+import { readFile, readdir } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { cloneAndBind, dimensions, collectOutputs } from "./lib/workflow.mjs";
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const configPath = path.join(root, "config.json");
+const config = JSON.parse(await readFile(existsSync(configPath) ? configPath : path.join(root, "config.example.json"), "utf8"));
+const comfy = config.comfyUrl.replace(/\/$/, "");
+const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
+
+const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); };
+const body = async req => { const chunks=[]; for await (const c of req) chunks.push(c); return Buffer.concat(chunks); };
+
+async function presets() {
+  const files = (await readdir(workflowDir)).filter(x => x.endsWith(".preset.json"));
+  return Promise.all(files.map(async file => {
+    const preset = JSON.parse(await readFile(path.join(workflowDir, file), "utf8"));
+    return { ...preset, presetFile: file };
+  }));
+}
+
+async function loadPreset(id) {
+  const preset = (await presets()).find(x => x.id === id);
+  if (!preset) throw new Error(`Unknown workflow preset: ${id}`);
+  const workflow = JSON.parse(await readFile(path.join(workflowDir, preset.workflow), "utf8"));
+  return { preset, workflow };
+}
+
+async function proxy(req, res, pathname) {
+  const raw = await body(req);
+  const upstream = await fetch(comfy + pathname, { method: req.method, headers: { "content-type": req.headers["content-type"] || "application/octet-stream" }, body: raw.length ? raw : undefined });
+  res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") || "application/octet-stream" });
+  res.end(Buffer.from(await upstream.arrayBuffer()));
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets() });
+    if (req.method === "POST" && url.pathname === "/api/upload") return proxy(req, res, "/upload/image");
+    if (req.method === "GET" && url.pathname === "/api/history") {
+      const id = encodeURIComponent(url.searchParams.get("promptId") || "");
+      const upstream = await fetch(`${comfy}/history/${id}`); return json(res, upstream.status, await upstream.json());
+    }
+    if (req.method === "GET" && url.pathname === "/api/view") {
+      const upstream = await fetch(`${comfy}/view?${url.searchParams}`);
+      res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") || "application/octet-stream" }); return res.end(Buffer.from(await upstream.arrayBuffer()));
+    }
+    if (req.method === "POST" && url.pathname === "/api/queue") {
+      const input = JSON.parse((await body(req)).toString("utf8"));
+      const { preset, workflow } = await loadPreset(input.workflowId);
+      const [width, height] = dimensions(input.aspect, input.quality);
+      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, firstImage: input.firstImage, lastImage: input.lastImage };
+      const bound = cloneAndBind(workflow, preset.bindings || {}, values);
+      const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
+      return json(res, upstream.status, await upstream.json());
+    }
+    if (req.method === "GET" && url.pathname === "/api/outputs") {
+      const id = encodeURIComponent(url.searchParams.get("promptId") || "");
+      const upstream = await fetch(`${comfy}/history/${id}`); const data = await upstream.json();
+      return json(res, upstream.status, collectOutputs(data[id], `http://${req.headers.host}`));
+    }
+    const relative = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+    const target = path.resolve(root, "public", relative);
+    if (!target.startsWith(path.resolve(root, "public")) || !existsSync(target)) return json(res, 404, { error: "Not found" });
+    const type = target.endsWith(".js") ? "text/javascript" : target.endsWith(".css") ? "text/css" : "text/html";
+    res.writeHead(200, { "content-type": `${type}; charset=utf-8` }); createReadStream(target).pipe(res);
+  } catch (error) { json(res, 500, { error: error.message }); }
+});
+
+server.listen(config.listenPort, config.listenHost, () => console.log(`H3 harness: http://${config.listenHost}:${config.listenPort}`));

@@ -21,6 +21,8 @@ Then give a short checkpoint: objective, approved facts, rejected facts, active 
 - Image reference creation or repair: read .agents/skills/lira-image-prompts/SKILL.md.
 - Character performance, acting beats or eye behavior: read .agents/skills/acting-performance/SKILL.md.
 - Higgsfield or Seedance video prompts, camera, blocking, physics, continuity or review: read .agents/skills/cinedance-higgsfield/SKILL.md.
+- MiniMax H3 prompts or local H3 ComfyUI preparation: read .agents/skills/minimax-h3-director/SKILL.md.
+- Mixed provider/reference/performance tasks: read .agents/skills/video-ai-director/SKILL.md and follow its routing table.
 - For a final video prompt or review, use both cinedance-higgsfield and acting-performance.
 - Read each selected SKILL.md completely and follow any referenced project manual it requires.
 

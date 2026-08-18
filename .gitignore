@@ -43,3 +43,5 @@ media/
 Thumbs.db
 .vscode/
 .idea/
+comfyui-harness/config.json
+comfyui-harness/workflows/*.api.json

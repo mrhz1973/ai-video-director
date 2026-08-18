@@ -1,0 +1,11 @@
+{
+  "name": "rambo-comfyui-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal local control surface for MiniMax H3 workflows in ComfyUI",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

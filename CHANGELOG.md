@@ -13,3 +13,8 @@
 - Documented the public text-only repository policy.
 - Added local and GitHub Actions validation.
 
+# 2026-08-18
+
+- Added MiniMax H3 Director and provider-aware Video AI Director router skills.
+- Added a minimal local ComfyUI HTTP/WebSocket harness with configurable API-workflow bindings.
+- Documented local H3 setup, security boundaries, and workflow export requirements.
