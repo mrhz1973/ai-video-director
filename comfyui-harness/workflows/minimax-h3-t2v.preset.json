@@ -1,0 +1,19 @@
+{
+  "id": "minimax-h3-t2v",
+  "label": "MiniMax H3 · T2V",
+  "mode": "T2VA",
+  "workflow": "minimax-h3-t2v.api.json",
+  "bindings": {
+    "prompt": { "node": "129", "input": "prompt" },
+    "model": { "node": "130", "input": "unet_name" },
+    "steps": { "node": "124", "input": "steps" },
+    "seed": { "node": "127", "input": "noise_seed" },
+    "duration": { "node": "134", "input": "value" },
+    "aspectRatio": { "node": "115", "input": "aspect_ratio" },
+    "megapixels": { "node": "115", "input": "megapixels" }
+  },
+  "options": {
+    "models": ["minimax_h3_fl2va_pruned_fp8_Q4_0.gguf"],
+    "qualities": ["Preview", "Final"]
+  }
+}

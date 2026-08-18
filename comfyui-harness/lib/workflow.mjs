@@ -21,6 +21,21 @@ export function dimensions(aspect, quality) {
   return (table[quality] || table.Preview)[aspect] || table.Preview["16:9"];
 }
 
+export function resolutionSettings(aspect, quality) {
+  const aspectRatios = {
+    "1:1": "1:1 (Square)",
+    "3:4": "3:4 (Portrait Standard)",
+    "4:3": "4:3 (Standard)",
+    "9:16": "9:16 (Portrait Widescreen)",
+    "16:9": "16:9 (Widescreen)",
+    "21:9": "21:9 (Ultrawide)"
+  };
+  return {
+    aspectRatio: aspectRatios[aspect] || aspectRatios["16:9"],
+    megapixels: quality === "Final" ? 0.4 : 0.3
+  };
+}
+
 export function collectOutputs(history, baseUrl) {
   const outputs = [];
   for (const node of Object.values(history?.outputs || {})) {

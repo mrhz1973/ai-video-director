@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cloneAndBind, dimensions, collectOutputs } from "./lib/workflow.mjs";
+import { cloneAndBind, dimensions, resolutionSettings, collectOutputs } from "./lib/workflow.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(root, "config.json");
@@ -53,7 +53,8 @@ const server = http.createServer(async (req, res) => {
       const input = JSON.parse((await body(req)).toString("utf8"));
       const { preset, workflow } = await loadPreset(input.workflowId);
       const [width, height] = dimensions(input.aspect, input.quality);
-      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, firstImage: input.firstImage, lastImage: input.lastImage };
+      const { aspectRatio, megapixels } = resolutionSettings(input.aspect, input.quality);
+      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage };
       const bound = cloneAndBind(workflow, preset.bindings || {}, values);
       const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
       return json(res, upstream.status, await upstream.json());
