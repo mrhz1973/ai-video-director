@@ -15,4 +15,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Validate structure and public-data policy
         run: python3 scripts/validate_project.py
+      - name: Validate ComfyUI harness Python syntax
+        run: python3 -m py_compile apps/comfyui-harness/server.py
+      - name: Validate ComfyUI example config JSON
+        run: python3 -m json.tool apps/comfyui-harness/config.example.json > /dev/null
 
