@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Video Director · ComfyUI</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0d0f12; color: #eef1f5; }
+    .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 100vh; }
+    main { padding: 28px; display: flex; flex-direction: column; gap: 18px; }
+    aside { border-left: 1px solid #262a31; padding: 24px; background: #13161b; }
+    h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+    .sub { color: #9ea6b2; font-size: 13px; }
+    .card { border: 1px solid #282d35; border-radius: 14px; background: #15181d; padding: 16px; }
+    textarea { width: 100%; min-height: 260px; resize: vertical; border: 1px solid #343a45; border-radius: 12px; background: #0f1216; color: #f6f7f8; padding: 16px; line-height: 1.5; font: inherit; }
+    textarea:focus, input:focus, select:focus { outline: 2px solid #5865f2; outline-offset: 1px; }
+    label { display: grid; gap: 7px; margin-bottom: 15px; font-size: 12px; color: #aab1bc; }
+    input, select { width: 100%; border: 1px solid #343a45; border-radius: 9px; background: #0f1216; color: #eef1f5; padding: 9px 10px; }
+    input[type=file] { padding: 10px; }
+    button { border: 0; border-radius: 10px; padding: 11px 14px; font-weight: 700; cursor: pointer; }
+    button.primary { width: 100%; background: #eef1f5; color: #111318; }
+    button.secondary { background: #252a32; color: #eef1f5; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .row > * { flex: 1; }
+    .health { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #9ea6b2; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; }
+    .dot.ok { background: #37c978; }
+    .dot.bad { background: #f05d68; }
+    #status { margin: 0; white-space: pre-wrap; min-height: 50px; color: #b9c0ca; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .outputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .asset { border: 1px solid #2c313a; border-radius: 12px; overflow: hidden; background: #0b0e12; }
+    .asset img, .asset video { display: block; width: 100%; height: auto; }
+    .asset audio { width: 100%; margin: 16px 0; }
+    .asset footer { padding: 9px 11px; color: #9ea6b2; font-size: 11px; overflow-wrap: anywhere; }
+    .hint { margin-top: 8px; color: #7f8792; font-size: 11px; line-height: 1.4; }
+    .section-title { margin: 0 0 16px; font-size: 14px; }
+    @media (max-width: 850px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-left: 0; border-top: 1px solid #262a31; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <main>
+    <div class="row">
+      <div>
+        <h1>AI Video Director · ComfyUI</h1>
+        <div class="sub">Minimal local H3 workflow launcher</div>
+      </div>
+      <div class="health"><span id="healthDot" class="dot"></span><span id="healthText">checking ComfyUI…</span></div>
+    </div>
+
+    <section class="card">
+      <label>
+        Prompt / chat input
+        <textarea id="prompt" placeholder="Paste the final MiniMax H3 prompt here…"></textarea>
+      </label>
+      <label>
+        Reference images
+        <input id="files" type="file" accept="image/*" multiple />
+      </label>
+      <div id="fileHint" class="hint">Workflow attachment requirements will appear here.</div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <strong>Execution</strong>
+        <button id="clearButton" class="secondary" type="button">Clear log</button>
+      </div>
+      <pre id="status">Ready.</pre>
+    </section>
+
+    <section id="outputs" class="outputs"></section>
+  </main>
+
+  <aside>
+    <h2 class="section-title">Workflow settings</h2>
+    <label>Mode<select id="mode"></select></label>
+    <label>Model<input id="model" list="modelList" placeholder="workflow default / local model" /><datalist id="modelList"></datalist></label>
+    <label>Quality<select id="quality"></select></label>
+    <label>Steps<input id="steps" type="number" min="1" max="500" /></label>
+    <label>Duration<select id="duration"></select></label>
+    <label>Aspect<select id="aspect"></select></label>
+    <label>
+      Seed
+      <div class="row">
+        <input id="seed" type="number" min="0" step="1" />
+        <button id="seedButton" class="secondary" type="button">Random</button>
+      </div>
+    </label>
+    <button id="runButton" class="primary" type="button">Queue in ComfyUI</button>
+    <div class="hint">The UI patches your exported API workflow. Node IDs and input names come from <code>config.json</code>, not from assumptions in this page.</div>
+  </aside>
+</div>
+
+<script>
+  let runtimeConfig = null;
+  let pollTimer = null;
+
+  const $ = (id) => document.getElementById(id);
+  const log = (line) => {
+    const status = $('status');
+    status.textContent += (status.textContent ? '\n' : '') + line;
+    status.scrollTop = status.scrollHeight;
+  };
+
+  function fillSelect(element, values) {
+    element.innerHTML = '';
+    for (const value of values || []) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      element.appendChild(option);
+    }
+  }
+
+  function updateFileHint() {
+    if (!runtimeConfig) return;
+    const mode = $('mode').value;
+    const status = runtimeConfig.workflow_status?.[mode];
+    if (!status) return;
+    const count = status.image_slots ?? 0;
+    const state = status.exists ? 'workflow found' : 'workflow file missing';
+    $('fileHint').textContent = `${mode}: ${count} image attachment(s) required · ${state}.`;
+  }
+
+  async function boot() {
+    const configResponse = await fetch('/api/config');
+    runtimeConfig = await configResponse.json();
+    fillSelect($('mode'), runtimeConfig.modes);
+    fillSelect($('quality'), runtimeConfig.ui?.qualities || []);
+    fillSelect($('duration'), runtimeConfig.ui?.durations || []);
+    fillSelect($('aspect'), runtimeConfig.ui?.aspects || []);
+    $('steps').value = runtimeConfig.ui?.default_steps ?? 30;
+    $('seed').value = runtimeConfig.ui?.default_seed ?? 123456789;
+
+    const modelList = $('modelList');
+    for (const model of runtimeConfig.ui?.models || []) {
+      const option = document.createElement('option');
+      option.value = model;
+      modelList.appendChild(option);
+    }
+    updateFileHint();
+
+    try {
+      const health = await (await fetch('/api/health')).json();
+      $('healthDot').classList.add(health.ok ? 'ok' : 'bad');
+      $('healthText').textContent = health.ok ? 'ComfyUI connected' : 'ComfyUI unavailable';
+      if (!health.ok) log(`Health: ${health.error}`);
+    } catch (error) {
+      $('healthDot').classList.add('bad');
+      $('healthText').textContent = 'health check failed';
+      log(`Health check failed: ${error}`);
+    }
+  }
+
+  function randomSeed() {
+    const max = Number.MAX_SAFE_INTEGER;
+    $('seed').value = Math.floor(Math.random() * max);
+  }
+
+  function renderAssets(assets) {
+    const root = $('outputs');
+    root.innerHTML = '';
+    for (const asset of assets || []) {
+      const card = document.createElement('article');
+      card.className = 'asset';
+      const lower = asset.filename.toLowerCase();
+      let media;
+      if (/\.(mp4|webm|mov|m4v)$/.test(lower)) {
+        media = document.createElement('video');
+        media.controls = true;
+      } else if (/\.(wav|mp3|m4a|ogg|flac)$/.test(lower)) {
+        media = document.createElement('audio');
+        media.controls = true;
+      } else {
+        media = document.createElement('img');
+        media.alt = asset.filename;
+      }
+      media.src = asset.url;
+      card.appendChild(media);
+      const footer = document.createElement('footer');
+      footer.textContent = `${asset.filename} · node ${asset.node_id} · ${asset.output_key}`;
+      card.appendChild(footer);
+      root.appendChild(card);
+    }
+  }
+
+  async function pollHistory(promptId) {
+    try {
+      const response = await fetch(`/api/history/${encodeURIComponent(promptId)}`);
+      const history = await response.json();
+      if (!response.ok) throw new Error(JSON.stringify(history));
+      if (history.done) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        log(`Completed: ${promptId}`);
+        renderAssets(history.assets);
+        $('runButton').disabled = false;
+      }
+    } catch (error) {
+      log(`History polling error: ${error}`);
+    }
+  }
+
+  function watchWebSocket(clientId, promptId) {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}/api/ws/${encodeURIComponent(clientId)}?prompt_id=${encodeURIComponent(promptId)}`);
+    ws.onopen = () => log('WebSocket connected.');
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const data = msg.data || {};
+        if (msg.type === 'executing' && data.node) log(`Executing node ${data.node}`);
+        if (msg.type === 'progress' && data.max) log(`Progress ${data.value}/${data.max}`);
+        if (msg.type === 'execution_error') log(`Execution error: ${JSON.stringify(data)}`);
+        if (msg.type === 'proxy_error') log(`WebSocket proxy error: ${data.message}`);
+      } catch (_) {
+        log('WebSocket event received.');
+      }
+    };
+    ws.onclose = () => log('WebSocket closed; history polling remains active.');
+  }
+
+  async function run() {
+    if (pollTimer) clearInterval(pollTimer);
+    $('outputs').innerHTML = '';
+    $('status').textContent = '';
+    $('runButton').disabled = true;
+
+    const form = new FormData();
+    form.append('mode', $('mode').value);
+    form.append('prompt', $('prompt').value);
+    form.append('model', $('model').value);
+    form.append('quality', $('quality').value);
+    form.append('steps', $('steps').value);
+    form.append('duration', $('duration').value);
+    form.append('aspect', $('aspect').value);
+    form.append('seed', $('seed').value);
+    for (const file of $('files').files) form.append('files', file);
+
+    log(`Queueing ${$('mode').value}…`);
+    try {
+      const response = await fetch('/api/run', { method: 'POST', body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(JSON.stringify(result.detail || result));
+      log(`Prompt ID: ${result.prompt_id}`);
+      if (result.queue_number !== null && result.queue_number !== undefined) log(`Queue number: ${result.queue_number}`);
+      watchWebSocket(result.client_id, result.prompt_id);
+      pollTimer = setInterval(() => pollHistory(result.prompt_id), 2000);
+      await pollHistory(result.prompt_id);
+    } catch (error) {
+      log(`Queue failed: ${error}`);
+      $('runButton').disabled = false;
+    }
+  }
+
+  $('mode').addEventListener('change', updateFileHint);
+  $('seedButton').addEventListener('click', randomSeed);
+  $('runButton').addEventListener('click', run);
+  $('clearButton').addEventListener('click', () => { $('status').textContent = ''; });
+
+  boot().catch((error) => {
+    log(`Startup failed: ${error}`);
+    $('healthDot').classList.add('bad');
+    $('healthText').textContent = 'startup failed';
+  });
+</script>
+</body>
+</html>
