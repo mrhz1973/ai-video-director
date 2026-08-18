@@ -1,0 +1,55 @@
+{
+  "comfyui": {
+    "http_url": "http://127.0.0.1:8188",
+    "ws_url": "ws://127.0.0.1:8188/ws"
+  },
+  "ui": {
+    "models": [],
+    "qualities": ["preview", "high"],
+    "durations": [5, 10, 15],
+    "aspects": ["16:9", "21:9", "4:3", "1:1", "3:4", "9:16"],
+    "default_steps": 30,
+    "default_seed": 123456789
+  },
+  "workflows": {
+    "T2V": {
+      "file": "workflows/t2v_api.json",
+      "bindings": {
+        "prompt": "6.inputs.text",
+        "model": "4.inputs.ckpt_name",
+        "steps": "3.inputs.steps",
+        "duration": "9.inputs.duration",
+        "aspect": "9.inputs.aspect_ratio",
+        "seed": "3.inputs.seed",
+        "quality": "9.inputs.quality",
+        "images": []
+      }
+    },
+    "I2V": {
+      "file": "workflows/i2v_api.json",
+      "bindings": {
+        "prompt": "6.inputs.text",
+        "model": "4.inputs.ckpt_name",
+        "steps": "3.inputs.steps",
+        "duration": "9.inputs.duration",
+        "aspect": "9.inputs.aspect_ratio",
+        "seed": "3.inputs.seed",
+        "quality": "9.inputs.quality",
+        "images": ["12.inputs.image"]
+      }
+    },
+    "FL2V": {
+      "file": "workflows/fl2v_api.json",
+      "bindings": {
+        "prompt": "6.inputs.text",
+        "model": "4.inputs.ckpt_name",
+        "steps": "3.inputs.steps",
+        "duration": "9.inputs.duration",
+        "aspect": "9.inputs.aspect_ratio",
+        "seed": "3.inputs.seed",
+        "quality": "9.inputs.quality",
+        "images": ["12.inputs.image", "13.inputs.image"]
+      }
+    }
+  }
+}
