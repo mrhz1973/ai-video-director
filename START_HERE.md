@@ -4,9 +4,11 @@ This is the entry point for every new chat or collaborator.
 
 ## What this project is
 
-A reproducible workflow for rebuilding a roughly 30-second cinematic sequence as six controlled AI-video shots while preserving Martino's identity, physical continuity, timing and the original source audio in the final local edit.
+AI Video Director is the public, text-only control plane for reproducible AI-video work. It currently contains both the Rambo cinematic production state and the operational MiniMax H3 / ComfyUI harness documentation.
 
-The active work is SEQ01 / SH010: a five-second, silent, single-take radio-hut shot.
+For the Rambo sequence, the active production work remains SEQ01 / SH010: a five-second, silent, single-take radio-hut shot.
+
+For local MiniMax H3 work, the existing operational Node.js harness is documented in `docs/HARNESS_STATE.md`. Do not create a parallel harness.
 
 ## Read in this order
 
@@ -14,20 +16,26 @@ The active work is SEQ01 / SH010: a five-second, silent, single-take radio-hut s
 2. PROJECT_BRIEF.md
 3. PROJECT_STATUS.md
 4. HANDOFF.md
-5. CONTINUITY_BIBLE.md
-6. shots/SEQ01/SH010/README.md
-7. shots/SEQ01/SH010/G003/review.md
-8. shots/SEQ01/SH010/G004/run.yaml
-9. prompts/SEQ01/SH010/v04-prompt.md
-10. registry/elements.yaml
-11. docs/REFERENCE_ASSETS.md
-12. docs/playbooks/INDEX.md
+5. docs/HARNESS_STATE.md
+6. docs/COMFYUI_H3_SETUP.md
+7. CONTINUITY_BIBLE.md
+8. shots/SEQ01/SH010/README.md
+9. shots/SEQ01/SH010/G003/review.md
+10. shots/SEQ01/SH010/G004/run.yaml
+11. prompts/SEQ01/SH010/v04-prompt.md
+12. registry/elements.yaml
+13. docs/REFERENCE_ASSETS.md
+14. docs/playbooks/INDEX.md
 
-Read story/SOURCE_MASTER.md, story/SHOT_LIST.yaml and story/AUDIO_PLAN.md before planning later shots or final assembly.
+Read `story/SOURCE_MASTER.md`, `story/SHOT_LIST.yaml` and `story/AUDIO_PLAN.md` before planning later shots or final assembly.
+
+If the task is specifically about the MiniMax H3 local harness, `docs/HARNESS_STATE.md` is the current architecture/status source of truth and `docs/COMFYUI_H3_SETUP.md` is the setup/operations guide. The harness is an existing Node.js application; it expects ComfyUI to be started separately.
 
 ## Required opening checkpoint
 
-Before doing new work, state:
+Before doing new work, state the relevant checkpoint instead of asking the user to repeat documented context.
+
+For Rambo/Higgsfield production work, state:
 
 - Project objective
 - Current shot and status
@@ -37,9 +45,16 @@ Before doing new work, state:
 - Next action and whether authorization is still valid
 - Any real unknowns
 
-Do not ask the user to re-explain information already present in these files.
+For MiniMax H3 harness work, state:
+
+- Current harness branch and version
+- What the harness already does
+- What it deliberately does not do
+- Workflow/source-of-truth files involved
+- Whether the requested change touches runtime code, private local workflow exports or documentation only
+- Whether a restart would be required
+- Any real unknowns
 
 ## Copyable bootstrap request
 
-Read AGENTS.md and follow its startup order. Resume the project from HANDOFF.md. Confirm the current checkpoint before proposing changes. Treat all prompts and run folders as immutable history, use the exact Element handle from registry/elements.yaml, and never commit media or private identifiers because this repository is public.
-
+Read `AGENTS.md` and follow its startup order. Resume the project from `HANDOFF.md`. For MiniMax H3 local work, also read `docs/HARNESS_STATE.md` and `docs/COMFYUI_H3_SETUP.md` before proposing changes. Confirm the current checkpoint first. Treat historical prompts and run folders as immutable evidence, use exact registered handles where required, do not recreate a parallel harness, and never commit media, private workflow exports, local paths or private identifiers because this repository is public.
