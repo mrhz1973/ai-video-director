@@ -10,6 +10,12 @@ For the Rambo sequence, the active production work remains SEQ01 / SH010: a five
 
 For local MiniMax H3 work, the existing operational Node.js harness is documented in `docs/HARNESS_STATE.md`. Do not create a parallel harness.
 
+## Canonical repository state
+
+As of 2026-08-19, PR #1 (`agent/minimax-h3-comfyui-harness`) has been merged successfully into `main` after repository validation, 14/14 Node tests, GitHub Actions validation, controlled local activation and a real browser smoke test. `main` is now the canonical source for the MiniMax H3 Director, operational Node.js harness and its project-memory documentation.
+
+The old development branch name may still appear in historical notes or immutable PR records; treat those as lineage, not as the current canonical branch. New work should start from `main` unless a fresh task-specific branch is intentionally created.
+
 ## Read in this order
 
 1. AGENTS.md
@@ -47,7 +53,7 @@ For Rambo/Higgsfield production work, state:
 
 For MiniMax H3 harness work, state:
 
-- Current harness branch and version
+- Current canonical branch and harness version
 - What the harness already does
 - What it deliberately does not do
 - Workflow/source-of-truth files involved
@@ -57,4 +63,4 @@ For MiniMax H3 harness work, state:
 
 ## Copyable bootstrap request
 
-Read `AGENTS.md` and follow its startup order. Resume the project from `HANDOFF.md`. For MiniMax H3 local work, also read `docs/HARNESS_STATE.md` and `docs/COMFYUI_H3_SETUP.md` before proposing changes. Confirm the current checkpoint first. Treat historical prompts and run folders as immutable evidence, use exact registered handles where required, do not recreate a parallel harness, and never commit media, private workflow exports, local paths or private identifiers because this repository is public.
+Read `AGENTS.md` and follow its startup order. Resume the project from `HANDOFF.md`. For MiniMax H3 local work, also read `docs/HARNESS_STATE.md` and `docs/COMFYUI_H3_SETUP.md` before proposing changes. Confirm the current checkpoint first. Treat `main` as the canonical repository state after the 2026-08-19 PR #1 merge. Treat historical prompts and run folders as immutable evidence, use exact registered handles where required, do not recreate a parallel harness, and never commit media, private workflow exports, local paths or private identifiers because this repository is public.
