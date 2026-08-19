@@ -1,6 +1,6 @@
 # Live handoff
 
-Updated: 2026-08-19
+Updated: 2026-08-20
 Repository visibility: public
 
 This repository currently has two active context tracks:
@@ -8,7 +8,7 @@ This repository currently has two active context tracks:
 1. Rambo / Higgsfield production state.
 2. MiniMax H3 / local ComfyUI harness state.
 
-A new chat must read both the production handoff below and `docs/HARNESS_STATE.md` before proposing changes to the local H3 harness.
+A new chat must read both the production handoff below and `docs/HARNESS_STATE.md` before proposing changes to the local H3 harness. For future H3 development, also read `docs/HARNESS_ROADMAP.md`.
 
 ---
 
@@ -70,9 +70,10 @@ After output arrives, compute its SHA-256, fill G004 run and review files, appen
 # Track B — MiniMax H3 / local ComfyUI harness
 
 Detailed source of truth: `docs/HARNESS_STATE.md`
+Future-development roadmap: `docs/HARNESS_ROADMAP.md`
 Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
-Operational branch: `agent/minimax-h3-comfyui-harness`
-Pull request: #1
+Canonical branch: `main`
+Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
 Known package version: 0.4.0
 
@@ -126,33 +127,44 @@ For Ref2VA:
 - No automatic ComfyUI startup by the harness.
 - No multi-job management.
 - Recovery is primarily single-running-job plus WebSocket/SSE, with read-only 4-second history polling as fallback.
-- Persistent harness logging is implemented at `comfyui-harness/logs/harness.log` (Git-ignored).
+- Persistent harness logging is implemented and activated at `comfyui-harness/logs/harness.log` (Git-ignored).
 - Previously uploaded reference filenames remain valid only while their files remain in the active ComfyUI input directory.
 
-Activation after the 2026-08-19 logging/recovery update:
+The 2026-08-19 activation and browser smoke test passed, including correct `.mjs` JavaScript MIME serving and successful `recovery.mjs` import.
 
-- Node harness restart required for backend logging code.
-- Browser hard refresh required for frontend recovery code.
+## Approved future direction
 
-## Recommended next harness changes
+The user explicitly wants the harness and output quality to evolve without losing simplicity. The durable plan is in `docs/HARNESS_ROADMAP.md`.
 
-After the logging/recovery implementation, the safest next runtime improvements are:
+Key goals:
 
-1. Save Project UI/API for private local projects.
-2. optional local service manager for ComfyUI health/start/stop/logs, disabled by default.
+1. keep a simple Basic UI for routine work;
+2. add an expandable Advanced UI exposing more real ComfyUI controls only when they are valid workflow bindings;
+3. improve H3 prompt quality systematically and preserve successful prompt strategies/experiment results in GitHub;
+4. evaluate stronger or higher-quality compatible H3 models/checkpoints while preserving the current known-good baseline;
+5. compare models/settings/prompts with controlled A/B experiments instead of changing many variables at once;
+6. add Save/Update Project behavior for private local projects;
+7. improve workflow/model registry metadata and validation;
+8. consider an optional Director prompt-create/validate action later while keeping manual prompt passthrough.
 
-Do not change workflow topology, models, samplers, Preview/Final behavior, Base/Ref checkpoint separation or automatic ComfyUI lifecycle unless explicitly approved.
+Candidate Advanced controls include sampler, scheduler, guidance/CFG-equivalent controls, megapixels/resolution, denoise/strength, model-specific sampling parameters and conditioning controls — but only after inspecting the real active graph. Do not invent controls that are not connected to workflow inputs.
 
-Before any runtime edit, determine whether a Node harness restart is required and do not restart an active local generation without explicit user approval.
+## Mandatory memory rule
+
+Do not leave material implementation decisions or meaningful experiment conclusions only in chat/Cursor output.
+
+After an approved harness change, prompt-strategy change, model-selection experiment, workflow change or important quality comparison, update the appropriate public text-only repository memory and `CHANGELOG.md` when material. Preserve privacy rules: do not commit media, model binaries, secrets, private absolute paths, private API workflow exports, private `.local.json` project data or personal reference filenames.
+
+A change is not considered fully integrated if it exists only on the local machine or in a chat transcript.
 
 ## Repository/branch clarification
 
-The correct operational branch is `agent/minimax-h3-comfyui-harness` and its PR is #1.
+PR #1 and `agent/minimax-h3-comfyui-harness` are historical development lineage. PR #1 was merged successfully on 2026-08-19. `main` is now canonical for new work unless a new task-specific branch is intentionally created.
 
 An accidental parallel implementation branch, `agent/minimax-h3-director-comfyui-harness`, was intentionally abandoned on 2026-08-19. PR #2 was closed without merge and that branch was deleted. Do not recreate or resume it.
 
-## Last audit result
+## Last audit / validation result
 
-On 2026-08-19 the harness branch received persistent logging and read-only history polling recovery. Pure Node tests passed 14/14 after implementation. The audit also verified that active preset bindings referenced valid workflow node/input pairs and that the currently referenced H3 model names were available to ComfyUI at runtime.
+On 2026-08-19 the harness received persistent logging and read-only history polling recovery. Pure Node tests passed 14/14 after implementation. The audit also verified that active preset bindings referenced valid workflow node/input pairs and that the currently referenced H3 model names were available to ComfyUI at runtime. The updated harness was then activated and passed a real browser smoke test before PR #1 was merged to `main`.
 
-Treat this as a dated observation, not a permanent guarantee. Re-check live services, Git status and private workflow exports before future runtime changes.
+Treat this as a dated observation, not a permanent guarantee. Re-check live services, Git status, installed models and private workflow exports before future runtime/model changes.
