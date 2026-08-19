@@ -136,27 +136,39 @@ Stored reference filenames remain valid across harness, ComfyUI and Windows rest
 
 ## Recovery behavior
 
-The current UI stores `clientId` and current `promptId` in `sessionStorage`, calls `/api/active` at startup, and reconnects to ComfyUI WebSocket events through the harness.
+The UI stores `clientId` and current `promptId` in `sessionStorage`, calls `/api/active` at startup, reconnects to ComfyUI WebSocket events through the harness SSE bridge, and uses a read-only history polling fallback every 4 seconds while a prompt is tracked.
 
-The current recovery design assumes one visible running job. `/api/active` uses the first running queue item. Pending jobs are not recovered, and there is no history polling fallback yet.
+Recovery flow:
 
-Known recovery edge cases include:
+1. WebSocket/SSE remains the primary progress mechanism.
+2. If `/api/active` succeeds, the first running queue item is recovered as today.
+3. If `/api/active` temporarily fails, page initialization continues; a stored `h3CurrentPrompt` is kept and history polling starts without clearing the prompt.
+4. While `currentPrompt` exists, polling queries `/api/history?promptId=...` read-only.
+5. Successful completion is detected from history outputs and uses the existing `/api/outputs` path.
+6. Terminal failure/interruption is detected from ComfyUI history `status.status_str === "error"` or `execution_error` / `execution_interrupted` messages.
+7. Transient history fetch/network/HTTP/JSON errors do not stop polling or clear recovery state.
+
+The current recovery design still assumes one visible running job. Pending jobs are not recovered, and there is no multi-job UI.
+
+Known remaining edge cases include:
 
 - job pending but not yet running;
 - missing client id;
-- job completes between `/api/active` and WebSocket reconnection;
-- reload after completion, after the final event has already passed;
-- cleared `sessionStorage`;
+- a job started by another client being mistaken for the harness job;
 - ComfyUI restart or queue response-layout change;
-- a job started by another client being mistaken for the harness job.
+- stale `sessionStorage` prompt with no terminal history state yet.
 
-A future read-only `/history` polling fallback is considered a safe improvement. Multi-job management is a separate feature and is not required by the current MVP.
+Multi-job management is a separate feature and is not required by the current MVP.
 
 ## Logging
 
-The current harness has no persistent application log. Node prints only minimal startup information; backend errors become JSON responses; browser execution messages disappear on reload; ComfyUI history is not a harness audit log.
+The harness writes a lightweight persistent log to `comfyui-harness/logs/harness.log`. The logs directory and `*.log` files are ignored by Git.
 
-A small privacy-safe persistent log is a reasonable future improvement, provided logging failures can never break generation and full prompts/private filenames/secrets are not written.
+Logged events include startup/version, ComfyUI reachability, queue submit/accept/reject, upload success/failure, history/output fetch failures, SSE bridge open/close/error, and active-job recovery. Full prompts, project JSON, uploaded personal filenames, secrets and private absolute paths are not written.
+
+Logging failures must never break generation.
+
+Activation note: backend logging code requires a Node harness restart; frontend recovery code requires a browser hard refresh.
 
 ## Current completeness
 
@@ -170,12 +182,12 @@ At v0.4.0:
 - Director skill: AI-side only, not integrated into runtime;
 - automatic prompt generation: not implemented;
 - Save Project UI/API: not implemented;
-- persistent harness logging: not implemented;
+- persistent harness logging: implemented (`comfyui-harness/logs/harness.log`, Git-ignored);
 - automatic ComfyUI launch: intentionally not implemented;
 - multi-job management: not implemented;
 - workflow migration/schema versioning: not implemented;
 - proactive validation of previously uploaded asset existence: not implemented;
-- polling recovery fallback: not implemented.
+- polling recovery fallback: implemented (4-second read-only history polling; WebSocket/SSE remains primary).
 
 ## Future architecture, if approved
 
@@ -184,7 +196,7 @@ The original builder suggested keeping four explicit layers if the system is exp
 1. optional local service manager for ComfyUI health/start/stop/logs, disabled by default;
 2. versioned workflow registry with source hashes, node versions and binding validation;
 3. optional Director runtime with separate prompt creation/validation action and manual passthrough preserved;
-4. application persistence: Save Project, asset validation, job registry, persistent logs, polling recovery, output gallery and multi-job handling.
+4. application persistence: Save Project, asset validation, job registry, output gallery and multi-job handling.
 
 These are design ideas, not implemented requirements.
 

@@ -30,5 +30,10 @@
 - Added `docs/HARNESS_STATE.md` as the authoritative harness architecture/state document and wired it into START_HERE, AGENTS and HANDOFF for new-chat continuity.
 - Documented intentional runtime decisions: `config.example.json` fallback, Base FL2VA checkpoint sharing across T2VA/I2VA/FL2VA, separate Ref2VA checkpoint, Preview/Final megapixel behavior, dormant generic width/height support and manual prompt passthrough.
 - Documented workflow sources of truth: private Base-mode API exports plus tracked presets, and the tracked sanitized Ref2VA runtime graph built from a private local source export.
-- Recorded current limitations as explicit design state rather than bugs: no runtime Director/LLM, no Save Project API, no persistent harness logging, no automatic ComfyUI launch, no multi-job UI and no history-polling recovery fallback yet.
+- Recorded current limitations as explicit design state rather than bugs: no runtime Director/LLM, no Save Project API, no automatic ComfyUI launch, no multi-job UI.
 - Closed PR #2 without merge and deleted the accidental parallel `agent/minimax-h3-director-comfyui-harness` branch; the operational harness remains on `agent/minimax-h3-comfyui-harness` / PR #1.
+- Implemented privacy-safe persistent harness logging to `comfyui-harness/logs/harness.log` (Git-ignored) with logging failures unable to break generation.
+- Implemented read-only 4-second history polling as a recovery fallback while keeping WebSocket/SSE as the primary progress mechanism; active-job recovery now survives reload more robustly, including guarded `/api/active` startup failure handling and history-based terminal failure detection.
+- Added harness unit tests for logging and recovery helpers; validation result: 14/14 Node tests passing after implementation.
+- No workflow, preset, model, sampler, scheduler, binding, or automatic ComfyUI startup behavior was changed.
+- Activation notes: Node harness restart required for backend logging; browser hard refresh required for frontend recovery code.

@@ -124,19 +124,24 @@ For Ref2VA:
 - No runtime LLM / automatic Director prompt generation.
 - No Save Project API/UI; private project files are read/reused only.
 - No automatic ComfyUI startup by the harness.
-- No persistent harness log yet.
 - No multi-job management.
-- Recovery is primarily single-running-job plus WebSocket/SSE; no history polling fallback yet.
+- Recovery is primarily single-running-job plus WebSocket/SSE, with read-only 4-second history polling as fallback.
+- Persistent harness logging is implemented at `comfyui-harness/logs/harness.log` (Git-ignored).
 - Previously uploaded reference filenames remain valid only while their files remain in the active ComfyUI input directory.
+
+Activation after the 2026-08-19 logging/recovery update:
+
+- Node harness restart required for backend logging code.
+- Browser hard refresh required for frontend recovery code.
 
 ## Recommended next harness changes
 
-After the 2026-08-19 audit and architecture clarification, the safest first runtime improvements are:
+After the logging/recovery implementation, the safest next runtime improvements are:
 
-1. privacy-safe persistent harness logging;
-2. read-only history polling as a recovery fallback.
+1. Save Project UI/API for private local projects.
+2. optional local service manager for ComfyUI health/start/stop/logs, disabled by default.
 
-Do not change workflow topology, models, samplers, Preview/Final behavior, Base/Ref checkpoint separation or automatic ComfyUI lifecycle as part of those changes.
+Do not change workflow topology, models, samplers, Preview/Final behavior, Base/Ref checkpoint separation or automatic ComfyUI lifecycle unless explicitly approved.
 
 Before any runtime edit, determine whether a Node harness restart is required and do not restart an active local generation without explicit user approval.
 
@@ -148,6 +153,6 @@ An accidental parallel implementation branch, `agent/minimax-h3-director-comfyui
 
 ## Last audit result
 
-On 2026-08-19 the harness branch was reported clean and aligned with its remote; existing pure Node tests passed 7/7. The audit also verified that the active preset bindings referenced valid workflow node/input pairs and that the currently referenced H3 model names were available to ComfyUI at runtime.
+On 2026-08-19 the harness branch received persistent logging and read-only history polling recovery. Pure Node tests passed 14/14 after implementation. The audit also verified that active preset bindings referenced valid workflow node/input pairs and that the currently referenced H3 model names were available to ComfyUI at runtime.
 
 Treat this as a dated observation, not a permanent guarantee. Re-check live services, Git status and private workflow exports before future runtime changes.
