@@ -31,10 +31,13 @@
 - Documented intentional runtime decisions: `config.example.json` fallback, Base FL2VA checkpoint sharing across T2VA/I2VA/FL2VA, separate Ref2VA checkpoint, Preview/Final megapixel behavior, dormant generic width/height support and manual prompt passthrough.
 - Documented workflow sources of truth: private Base-mode API exports plus tracked presets, and the tracked sanitized Ref2VA runtime graph built from a private local source export.
 - Recorded current limitations as explicit design state rather than bugs: no runtime Director/LLM, no Save Project API, no automatic ComfyUI launch, no multi-job UI.
-- Closed PR #2 without merge and deleted the accidental parallel `agent/minimax-h3-director-comfyui-harness` branch; the operational harness remains on `agent/minimax-h3-comfyui-harness` / PR #1.
+- Closed PR #2 without merge and deleted the accidental parallel `agent/minimax-h3-director-comfyui-harness` branch.
 - Implemented privacy-safe persistent harness logging to `comfyui-harness/logs/harness.log` (Git-ignored) with logging failures unable to break generation.
 - Implemented read-only 4-second history polling as a recovery fallback while keeping WebSocket/SSE as the primary progress mechanism; active-job recovery now survives reload more robustly, including guarded `/api/active` startup failure handling and history-based terminal failure detection.
 - Added harness unit tests for logging and recovery helpers; validation result: 14/14 Node tests passing after implementation.
 - No workflow, preset, model, sampler, scheduler, binding, or automatic ComfyUI startup behavior was changed.
-- Activation notes: Node harness restart required for backend logging; browser hard refresh required for frontend recovery code.
 - Fixed static serving so `.mjs` modules are returned with `text/javascript` instead of falling back to `text/html`.
+- Performed a controlled harness-only restart with an empty ComfyUI queue; ComfyUI remained running unchanged.
+- Browser smoke test passed after cache-bypass reload: `app.js` and `recovery.mjs` loaded with correct JavaScript MIME types, UI initialized correctly, ComfyUI showed connected, queue remained empty, and no blocking console errors were present.
+- GitHub Actions `Validate project memory` passed on the final PR head.
+- PR #1 was marked ready and merged successfully into `main` on 2026-08-19. `main` is now the canonical source for the MiniMax H3 Director, operational Node.js harness, and harness project memory.
