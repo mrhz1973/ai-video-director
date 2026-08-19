@@ -1,7 +1,11 @@
+import { classifyHistoryState, historyFailureLabel, promptIdPrefix, POLL_INTERVAL_MS } from "./recovery.mjs";
+
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
 let config, events, selectedProject;
 let currentPrompt = sessionStorage.getItem("h3CurrentPrompt") || undefined;
+let pollTimer;
+let completing = false;
 
 const add = (text, kind = "system") => {
   const el = document.createElement("div");
@@ -22,6 +26,19 @@ const rememberJob = promptId => {
   currentPrompt = promptId;
   if (promptId) sessionStorage.setItem("h3CurrentPrompt", promptId);
   else sessionStorage.removeItem("h3CurrentPrompt");
+  if (!promptId) stopPolling();
+};
+
+const stopPolling = () => {
+  if (!pollTimer) return;
+  clearInterval(pollTimer);
+  pollTimer = undefined;
+};
+
+const startPolling = () => {
+  stopPolling();
+  if (!currentPrompt) return;
+  pollTimer = setInterval(() => { pollHistory(); }, POLL_INTERVAL_MS);
 };
 
 async function upload(file) {
@@ -35,21 +52,56 @@ async function upload(file) {
 }
 
 async function outputs() {
-  const response = await fetch(`/api/outputs?promptId=${encodeURIComponent(currentPrompt)}`);
-  const items = await response.json();
-  if (!response.ok) throw new Error(items.error || "Output non disponibile");
-  $("progress").textContent = "Completato";
+  if (completing || !currentPrompt) return;
+  completing = true;
+  stopPolling();
+  try {
+    const response = await fetch(`/api/outputs?promptId=${encodeURIComponent(currentPrompt)}`);
+    const items = await response.json();
+    if (!response.ok) throw new Error(items.error || "Output non disponibile");
+    $("progress").textContent = "Completato";
+    setBusy(false);
+    rememberJob();
+    for (const item of items) {
+      const link = document.createElement("a");
+      link.href = item.url;
+      link.target = "_blank";
+      link.textContent = `Apri output: ${item.filename}`;
+      const box = document.createElement("div");
+      box.className = "message system";
+      box.append(link);
+      $("log").append(box);
+    }
+  } catch (error) {
+    setBusy(false);
+    $("progress").textContent = "Errore";
+    add(error.message);
+    startPolling();
+  } finally {
+    completing = false;
+  }
+}
+
+function handleHistoryFailure(history) {
+  stopPolling();
   setBusy(false);
   rememberJob();
-  for (const item of items) {
-    const link = document.createElement("a");
-    link.href = item.url;
-    link.target = "_blank";
-    link.textContent = `Apri output: ${item.filename}`;
-    const box = document.createElement("div");
-    box.className = "message system";
-    box.append(link);
-    $("log").append(box);
+  const label = historyFailureLabel(history, currentPrompt);
+  $("progress").textContent = label === "interrupted" ? "Interrotta" : "Errore";
+  add(label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).");
+}
+
+async function pollHistory() {
+  if (!currentPrompt || completing) return;
+  try {
+    const response = await fetch(`/api/history?promptId=${encodeURIComponent(currentPrompt)}`);
+    const data = await response.json();
+    if (!response.ok) return;
+    const state = classifyHistoryState(data, currentPrompt);
+    if (state === "completed") await outputs();
+    else if (state === "failed") handleHistoryFailure(data);
+  } catch {
+    // Read-only fallback; ignore transient polling errors.
   }
 }
 
@@ -70,6 +122,7 @@ async function handleMessage(event) {
   if (message.type === "executing" && message.data.node !== null && currentPrompt && !String($("progress").textContent).includes("%")) $("progress").textContent = `In esecuzione · nodo ${message.data.display_node || message.data.node}`;
   if (message.type === "executing" && message.data.node === null && currentPrompt) await outputs();
   if (["execution_error", "execution_interrupted"].includes(message.type)) {
+    stopPolling();
     $("progress").textContent = "Errore";
     setBusy(false);
     rememberJob();
@@ -88,13 +141,33 @@ function connect() {
 }
 
 async function recoverActive() {
-  const active = await (await fetch("/api/active")).json();
-  if (!active.active) return;
-  if (active.clientId) clientId = active.clientId;
-  sessionStorage.setItem("h3ClientId", clientId);
-  rememberJob(active.promptId);
-  setBusy(true);
-  $("progress").textContent = `In esecuzione · ${active.promptId.slice(0, 8)}`;
+  let active;
+  try {
+    const response = await fetch("/api/active");
+    if (!response.ok) throw new Error(`active status ${response.status}`);
+    active = await response.json();
+    if (active.active) {
+      if (active.clientId) clientId = active.clientId;
+      sessionStorage.setItem("h3ClientId", clientId);
+      rememberJob(active.promptId);
+      setBusy(true);
+      $("progress").textContent = `In esecuzione · ${promptIdPrefix(active.promptId)}`;
+      startPolling();
+      return;
+    }
+  } catch {
+    $("connection").textContent = "Recupero connessione…";
+    if (!currentPrompt) {
+      $("progress").textContent = "Connessione temporaneamente non disponibile";
+      return;
+    }
+  }
+  if (currentPrompt) {
+    setBusy(true);
+    $("progress").textContent = `Recupero · ${promptIdPrefix(currentPrompt)}`;
+    startPolling();
+    await pollHistory();
+  }
 }
 
 function currentPreset() {
@@ -180,8 +253,10 @@ $("send").onclick = async () => {
     const data = await response.json();
     if (!response.ok || !data.prompt_id) throw new Error(data.error || JSON.stringify(data.node_errors) || "Invio fallito");
     rememberJob(data.prompt_id);
-    $("progress").textContent = `In esecuzione · ${currentPrompt.slice(0, 8)}`;
+    startPolling();
+    $("progress").textContent = `In esecuzione · ${promptIdPrefix(currentPrompt)}`;
   } catch (error) {
+    stopPolling();
     setBusy(false);
     $("progress").textContent = "Errore";
     add(error.message);

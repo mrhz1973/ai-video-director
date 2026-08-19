@@ -46,3 +46,5 @@ Thumbs.db
 comfyui-harness/config.json
 comfyui-harness/workflows/*.api.json
 comfyui-harness/projects/*.local.json
+comfyui-harness/logs/
+comfyui-harness/logs/*.log
