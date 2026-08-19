@@ -1,9 +1,9 @@
 # MiniMax H3 harness — verified state
 
 Last verified: 2026-08-19
-Status: operational local Node.js harness; architecture clarified by code audit and by the agent that originally built it
-Repository branch: `agent/minimax-h3-comfyui-harness`
-Pull request: #1
+Status: operational local Node.js harness; activated, browser-smoke-tested, and merged to `main`
+Canonical repository branch: `main`
+Merged pull request: #1 (merged 2026-08-19)
 
 This file is the source of truth for the current MiniMax H3 / ComfyUI harness architecture. Read it before proposing harness changes. Do not recreate a parallel harness.
 
@@ -168,7 +168,7 @@ Logged events include startup/version, ComfyUI reachability, queue submit/accept
 
 Logging failures must never break generation.
 
-Activation note: backend logging code requires a Node harness restart; frontend recovery code requires a browser hard refresh.
+Activation verified on 2026-08-19: the Node harness was restarted with an empty ComfyUI queue, persistent logging became active, the frontend was cache-bypass reloaded, and a real browser smoke test confirmed correct JavaScript MIME serving, successful `recovery.mjs` import, normal UI initialization, ComfyUI connection, and no blocking console errors. Future backend code changes still require a Node restart; frontend asset changes may require a hard refresh.
 
 ## Current completeness
 
@@ -182,12 +182,12 @@ At v0.4.0:
 - Director skill: AI-side only, not integrated into runtime;
 - automatic prompt generation: not implemented;
 - Save Project UI/API: not implemented;
-- persistent harness logging: implemented (`comfyui-harness/logs/harness.log`, Git-ignored);
+- persistent harness logging: implemented and activated (`comfyui-harness/logs/harness.log`, Git-ignored);
 - automatic ComfyUI launch: intentionally not implemented;
 - multi-job management: not implemented;
 - workflow migration/schema versioning: not implemented;
 - proactive validation of previously uploaded asset existence: not implemented;
-- polling recovery fallback: implemented (4-second read-only history polling; WebSocket/SSE remains primary).
+- polling recovery fallback: implemented and browser-smoke-tested (4-second read-only history polling; WebSocket/SSE remains primary).
 
 ## Future architecture, if approved
 
@@ -216,6 +216,6 @@ Never create a second parallel harness when extending the current one. Modify th
 
 ## Branch/PR clarification
 
-The operational harness is on `agent/minimax-h3-comfyui-harness` / PR #1.
+PR #1 (`agent/minimax-h3-comfyui-harness`) was the development branch for the operational harness and was merged successfully into `main` on 2026-08-19 after 14/14 Node tests, repository validation, successful GitHub Actions, controlled local activation and a browser smoke test. `main` is now canonical. Treat the old branch name and PR as lineage/history, not as the current source branch.
 
 An accidental parallel branch named `agent/minimax-h3-director-comfyui-harness` and its PR #2 were intentionally abandoned on 2026-08-19. PR #2 was closed without merge and the parallel branch was deleted. Do not recreate or resume that implementation.
