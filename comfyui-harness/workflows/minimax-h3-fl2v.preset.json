@@ -1,0 +1,25 @@
+{
+  "id": "minimax-h3-fl2v",
+  "label": "MiniMax H3 · First & Last Frame to Video",
+  "mode": "FL2VA",
+  "workflow": "minimax-h3-fl2v.api.json",
+  "attachments": [
+    { "key": "firstImage", "label": "Primo frame", "accept": "image/*" },
+    { "key": "lastImage", "label": "Ultimo frame", "accept": "image/*" }
+  ],
+  "bindings": {
+    "prompt": { "node": "133", "input": "prompt" },
+    "model": { "node": "136", "input": "unet_name" },
+    "steps": { "node": "128", "input": "steps" },
+    "seed": { "node": "131", "input": "noise_seed" },
+    "duration": { "node": "135", "input": "value" },
+    "aspectRatio": { "node": "115", "input": "aspect_ratio" },
+    "megapixels": { "node": "115", "input": "megapixels" },
+    "firstImage": { "node": "114", "input": "image" },
+    "lastImage": { "node": "141", "input": "image" }
+  },
+  "options": {
+    "models": ["minimax_h3_fl2va_pruned_fp8_Q4_0.gguf"],
+    "qualities": ["Preview", "Final"]
+  }
+}

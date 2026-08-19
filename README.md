@@ -1,10 +1,10 @@
-# Rambo AI Film
+# AI Video Director
 
-Public, text-only production memory for a cinematic AI-video project built with Higgsfield. The repository records intent, continuity, prompts, Character Element metadata, reference hashes, generation lineage, evaluations and handoffs. Personal images, video, audio and edit files are never stored here.
+Public, text-only control plane for multiple AI-video projects. It combines a local MiniMax H3/ComfyUI director harness with provider-aware prompt skills and preserves production memory for Higgsfield projects. Personal images, video, audio and edit files are never stored here.
 
 Start with START_HERE.md. Agent-specific operating rules live in AGENTS.md.
 
-## Current checkpoint
+## Current legacy production checkpoint
 
 SEQ01 / SH010 — clandestine radio hut
 
@@ -30,6 +30,7 @@ See HANDOFF.md for the live state.
 - docs/REFERENCE_ASSETS.md — external media names and SHA-256 fingerprints.
 - docs/playbooks/INDEX.md — task-to-skill routing and source fingerprints.
 - .agents/skills/ — project-shared acting, image and video-prompt workflows.
+- comfyui-harness/ — local MiniMax H3 workflow launcher over ComfyUI HTTP/WebSocket APIs, including Text to Video, Image to Video, First & Last Frame to Video, and Reference Images to Video.
 - decisions/ — architecture and production decision records.
 - logs/ — dated chronological work log.
 - templates/ — reusable production records.
@@ -45,4 +46,6 @@ Only text, hashes and non-secret technical metadata belong here. Never commit ph
 Run:
 
     python3 scripts/validate_project.py
+
+MiniMax H3 local setup is documented in `docs/COMFYUI_H3_SETUP.md`.
 

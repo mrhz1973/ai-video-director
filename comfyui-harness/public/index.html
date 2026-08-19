@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MiniMax H3 Director</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <section class="workspace">
+    <header><div><span class="eyebrow">AI VIDEO DIRECTOR</span><h1>MiniMax H3 Director <small id="version" style="font-size:12px;color:#9eabb8;font-weight:500"></small></h1></div><span id="connection" class="status">Connessione…</span></header>
+    <div id="log" class="log"><div class="message system">Carica un workflow API di ComfyUI e scrivi il prompt H3.</div></div>
+    <div class="composer"><textarea id="prompt" placeholder="Scrivi o incolla il prompt strutturato H3…"></textarea><div class="attachments"><div id="attachmentFields" class="attachment-fields"></div><button id="send">Genera</button></div></div>
+  </section>
+  <aside><h2>Generazione</h2>
+    <label>Progetto<select id="project"><option value="">Nessun progetto</option></select></label>
+    <label>Workflow<select id="workflow"></select></label><label>Qualità<select id="quality"><option>Preview</option><option>Final</option></select></label>
+    <label>Modello<select id="model"></select></label><label>Steps<input id="steps" type="number" min="1" value="20"></label>
+    <label>Durata<input id="duration" type="number" min="4" max="15" step="0.1" value="5"></label>
+    <label>Aspect<select id="aspect"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>21:9</option></select></label>
+    <label>Seed<input id="seed" type="number" value="1"></label><div id="progress" class="progress">In attesa</div>
+  </aside>
+</main><script type="module" src="app.js"></script></body></html>
