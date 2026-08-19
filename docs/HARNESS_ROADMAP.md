@@ -65,7 +65,37 @@ The harness must discover or explicitly bind real node inputs. Do not invent gen
 
 Basic and Advanced views must use the same underlying validated workflow contract so switching UI mode cannot silently change generation behavior.
 
-## 3. Improve prompt quality systematically
+## 3. Show the effective submitted/running ComfyUI workflow
+
+The harness should make it possible to inspect what was actually submitted to ComfyUI and what job is currently running, rather than relying on browser form fields that may be stale or belong to another tab.
+
+For every submitted/running job, expose a read-only view containing at minimum:
+
+- prompt/job ID;
+- workflow/mode;
+- model;
+- sampler and scheduler when present;
+- steps;
+- seed;
+- duration;
+- aspect/resolution conditioning;
+- effective reference-loader bindings;
+- output node(s);
+- queue state and progress;
+- the exact API-format prompt graph actually sent to ComfyUI.
+
+When ComfyUI provides `/api/jobs/{job_id}` or equivalent queue/history data, use that live job data as the source of truth for execution inspection.
+
+The harness should also support a clear distinction between:
+
+1. **Effective runtime graph** — the exact API-format graph submitted to ComfyUI and used by the job. This is authoritative for execution.
+2. **Visual authoring workflow** — the corresponding UI-format ComfyUI workflow with node positions/widgets, when a compatible visual workflow file is available.
+
+Do not imply that API-format prompt JSON can always be reconstructed losslessly into the visual ComfyUI canvas; UI layout/authoring metadata may not be present in the runtime graph. Where a matching visual workflow is maintained, provide an explicit `Open/View in ComfyUI` path rather than guessing the canvas layout.
+
+This workflow-inspection feature should be read-only by default. Viewing the running graph must never mutate, cancel, reorder or resubmit the job.
+
+## 4. Improve prompt quality systematically
 
 Prompt improvement is a first-class project goal, not an incidental chat task.
 
@@ -92,7 +122,7 @@ Important prompt experiments should be versioned or summarized in the repository
 
 Do not overwrite successful historical prompt evidence merely because a newer prompt exists.
 
-## 4. Test stronger / higher-quality models without losing the stable baseline
+## 5. Test stronger / higher-quality models without losing the stable baseline
 
 The user wants to evaluate more capable or less aggressively quantized models/checkpoints when hardware and installed ComfyUI support make that practical.
 
@@ -116,7 +146,7 @@ Where useful, maintain model states such as:
 
 Do not commit model binaries to GitHub.
 
-## 5. Build an experiment / comparison workflow
+## 6. Build an experiment / comparison workflow
 
 A future improvement should make A/B testing easier without requiring raw ComfyUI operation.
 
@@ -132,7 +162,7 @@ Useful experiment dimensions may include:
 
 Each comparison should change as few variables as possible. Record the variables changed and the verdict so later chats do not repeat failed experiments.
 
-## 6. Improve project persistence
+## 7. Improve project persistence
 
 The current private project layer is read/reuse only. A future harness version should add a safe Save Project / Update Project flow for local `.local.json` files.
 
@@ -146,7 +176,7 @@ It should preserve:
 
 Because project files can contain private local reference filenames, they remain Git-ignored. The public repository should record only the schema/behavior and sanitized examples.
 
-## 7. Better workflow and model registry
+## 8. Better workflow and model registry
 
 A future registry layer should make the harness aware of what each preset actually supports.
 
@@ -163,7 +193,7 @@ Desired metadata includes:
 
 This should reduce accidental stale node IDs and make future workflow upgrades auditable.
 
-## 8. Preserve current architecture unless intentionally changed
+## 9. Preserve current architecture unless intentionally changed
 
 The following remain current design decisions until a later approved change says otherwise:
 
@@ -175,11 +205,11 @@ The following remain current design decisions until a later approved change says
 - private workflow exports and private project files stay outside Git;
 - the harness should remain easier to operate than raw ComfyUI.
 
-## 9. Change-management rule for future chats and Cursor work
+## 10. Change-management rule for future chats and Cursor work
 
 Before implementation:
 
-1. read `START_HERE.md`, `HANDOFF.md`, `docs/HARNESS_STATE.md`, this roadmap and `docs/COMFYUI_H3_SETUP.md`;
+1. read `START_HERE.md`, `HANDOFF.md`, `docs/HARNESS_STATE.md`, `docs/HARNESS_OPERATING_RULES.md`, this roadmap and `docs/COMFYUI_H3_SETUP.md`;
 2. inspect the actual active workflow/preset and live ComfyUI capabilities rather than guessing;
 3. state whether the task is PLAN or AGENT work;
 4. preserve a known-good baseline and avoid changing multiple generation variables at once when testing quality.
@@ -201,8 +231,9 @@ A change is not considered fully integrated if the implementation exists only on
 Recommended order after the current video experiment:
 
 1. design the Basic + Advanced harness UI from the real existing ComfyUI inputs;
-2. implement Save/Update Project locally;
-3. improve prompt versioning and experiment records;
-4. expose validated advanced generation controls;
-5. evaluate stronger compatible H3 model variants against the stable baseline;
-6. consider an optional Director prompt-create/validate action only after manual prompt workflows remain fully preserved.
+2. add effective submitted/running workflow inspection and, where possible, a matching visual `Open/View in ComfyUI` path;
+3. implement Save/Update Project locally;
+4. improve prompt versioning and experiment records;
+5. expose validated advanced generation controls;
+6. evaluate stronger compatible H3 model variants against the stable baseline;
+7. consider an optional Director prompt-create/validate action only after manual prompt workflows remain fully preserved.
