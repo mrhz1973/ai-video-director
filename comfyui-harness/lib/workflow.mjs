@@ -1,3 +1,7 @@
+import { comfyAspectRatio, selectMegapixels, validateMegapixels } from "../public/resolution.mjs";
+
+export { selectMegapixels, validateMegapixels };
+
 export function cloneAndBind(workflow, bindings, values) {
   const result = structuredClone(workflow);
   for (const [key, value] of Object.entries(values)) {
@@ -13,6 +17,8 @@ export function cloneAndBind(workflow, bindings, values) {
   return result;
 }
 
+// Dormant generic helper: the active H3 presets bind neither width nor height,
+// because node 115 feeds those inputs directly. Not used by the generation path.
 export function dimensions(aspect, quality) {
   const table = {
     Preview: { "16:9": [1024, 576], "9:16": [576, 1024], "1:1": [768, 768], "4:3": [896, 672], "3:4": [672, 896], "21:9": [1152, 480] },
@@ -21,18 +27,10 @@ export function dimensions(aspect, quality) {
   return (table[quality] || table.Preview)[aspect] || table.Preview["16:9"];
 }
 
-export function resolutionSettings(aspect, quality) {
-  const aspectRatios = {
-    "1:1": "1:1 (Square)",
-    "3:4": "3:4 (Portrait Standard)",
-    "4:3": "4:3 (Standard)",
-    "9:16": "9:16 (Portrait Widescreen)",
-    "16:9": "16:9 (Widescreen)",
-    "21:9": "21:9 (Ultrawide)"
-  };
+export function resolutionSettings(aspect, megapixels) {
   return {
-    aspectRatio: aspectRatios[aspect] || aspectRatios["16:9"],
-    megapixels: quality === "Final" ? 0.4 : 0.3
+    aspectRatio: comfyAspectRatio(aspect),
+    megapixels: validateMegapixels(megapixels)
   };
 }
 

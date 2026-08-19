@@ -1,6 +1,8 @@
-import test from "node:test";import assert from "node:assert/strict";import {cloneAndBind,dimensions,resolutionSettings,collectOutputs} from "../lib/workflow.mjs";
+import test from "node:test";import assert from "node:assert/strict";import {cloneAndBind,dimensions,resolutionSettings,selectMegapixels,collectOutputs} from "../lib/workflow.mjs";
 test("binds without mutating source",()=>{const w={"1":{inputs:{text:"old"},class_type:"X"}};const x=cloneAndBind(w,{prompt:{node:"1",input:"text"}},{prompt:"new"});assert.equal(x["1"].inputs.text,"new");assert.equal(w["1"].inputs.text,"old")});
 test("rejects stale binding",()=>assert.throws(()=>cloneAndBind({}, {prompt:{node:"9",input:"text"}}, {prompt:"x"}),/missing/));
-test("dimensions are multiples of 32",()=>{for(const n of dimensions("16:9","Final"))assert.equal(n%32,0)});
-test("maps UI resolution to ComfyUI ResolutionSelector",()=>{assert.deepEqual(resolutionSettings("9:16","Preview"),{aspectRatio:"9:16 (Portrait Widescreen)",megapixels:0.3});assert.equal(resolutionSettings("16:9","Final").megapixels,0.4)});
+test("dormant dimensions helper still yields multiples of 32",()=>{for(const n of dimensions("16:9","Final"))assert.equal(n%32,0)});
+test("maps aspect and explicit megapixels to ComfyUI ResolutionSelector",()=>{assert.deepEqual(resolutionSettings("9:16",0.3),{aspectRatio:"9:16 (Portrait Widescreen)",megapixels:0.3});assert.equal(resolutionSettings("16:9",0.4).megapixels,0.4);assert.equal(resolutionSettings("16:9","2.1").megapixels,2.1);assert.equal(resolutionSettings("unknown",0.4).aspectRatio,"16:9 (Widescreen)")});
+test("resolutionSettings rejects unusable megapixels",()=>{for(const value of ["",null,0,-1,NaN,Infinity,20])assert.throws(()=>resolutionSettings("16:9",value),/megapixels must be a finite number/)});
+test("queue input resolves explicit megapixels before legacy quality",()=>{assert.equal(selectMegapixels({megapixels:0.9,quality:"Preview"}),0.9);assert.equal(selectMegapixels({quality:"Final"}),0.4);assert.equal(selectMegapixels({}),0.3)});
 test("collects view urls",()=>{const x=collectOutputs({outputs:{"1":{images:[{filename:"x.png",subfolder:"",type:"output"}]}}},"http://h");assert.match(x[0].url,/api\/view/)});

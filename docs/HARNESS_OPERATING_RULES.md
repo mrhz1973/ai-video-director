@@ -13,7 +13,7 @@ Before any generation is submitted, the user must be able to review the effectiv
 
 For routine use:
 
-1. prepare the prompt, workflow, model, quality, duration, aspect ratio, steps, seed and references;
+1. prepare the prompt, workflow, model, megapixels, duration, aspect ratio, steps, seed and references;
 2. verify that the ComfyUI queue is empty or that any existing job is understood;
 3. show the prepared state to the user;
 4. stop before submission unless the user has explicitly asked to generate;
@@ -53,9 +53,11 @@ When diagnosing a running generation, identify at minimum:
 - duration;
 - steps;
 - seed;
-- aspect/resolution conditioning;
+- aspect ratio and the exact megapixels value bound to node `115`;
 - effective uploaded reference(s), where safely identifiable;
 - running and pending queue counts.
+
+The `Megapixel` field is the authoritative resolution control. The `≈ WxH · class` text beside it is a read-only hint and must never be reported as a submitted setting; report the megapixels value and aspect ratio instead.
 
 Do not cancel or resubmit merely because another browser tab displays different form defaults.
 

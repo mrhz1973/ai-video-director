@@ -1,4 +1,5 @@
 import { classifyHistoryState, historyFailureLabel, promptIdPrefix, POLL_INTERVAL_MS } from "./recovery.mjs";
+import { DISPLAY_MULTIPLE, MEGAPIXELS_LIMITS, formatResolutionHint, isValidMegapixels, megapixelsFromSettings } from "./resolution.mjs";
 
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
@@ -174,8 +175,24 @@ function currentPreset() {
   return config.presets.find(item => item.id === $("workflow").value);
 }
 
+// Read-only hint. It never rewrites the megapixel value or the aspect ratio.
+function updateResolutionHint() {
+  const contract = currentPreset()?.options?.megapixels || {};
+  $("resolutionHint").textContent = formatResolutionHint($("megapixels").value, $("aspect").value, contract.multiple || DISPLAY_MULTIPLE);
+}
+
+function applyMegapixelsContract() {
+  const contract = currentPreset()?.options?.megapixels || {};
+  const field = $("megapixels");
+  field.min = contract.min ?? MEGAPIXELS_LIMITS.min;
+  field.max = contract.max ?? MEGAPIXELS_LIMITS.max;
+  field.step = contract.step ?? MEGAPIXELS_LIMITS.step;
+  updateResolutionHint();
+}
+
 function selectPreset() {
   const preset = currentPreset();
+  applyMegapixelsContract();
   $("model").replaceChildren(...(preset?.options?.models || [""]).map(name => new Option(name, name)));
   const saved = selectedProject?.workflowId === preset?.id ? selectedProject.files || {} : {};
   $("attachmentFields").replaceChildren(...(preset?.attachments || []).map(field => {
@@ -204,6 +221,8 @@ function selectProject() {
   $("workflow").value = selectedProject.workflowId;
   $("prompt").value = selectedProject.prompt || "";
   for (const [key, value] of Object.entries(selectedProject.settings || {})) if ($(key)) $(key).value = value;
+  const restored = megapixelsFromSettings(selectedProject.settings || {});
+  if (restored !== undefined) $("megapixels").value = restored;
   selectPreset();
   add(`Progetto caricato: ${selectedProject.label}`);
 }
@@ -214,6 +233,8 @@ $("workflow").replaceChildren(...(config.presets.length ? config.presets.map(ite
 $("project").replaceChildren(new Option("Nessun progetto", ""), ...(config.projects || []).map(item => new Option(item.label, item.id)));
 $("workflow").onchange = () => { selectedProject = undefined; $("project").value = ""; selectPreset(); };
 $("project").onchange = selectProject;
+$("megapixels").oninput = updateResolutionHint;
+$("aspect").onchange = updateResolutionHint;
 selectPreset();
 await recoverActive();
 sessionStorage.setItem("h3ClientId", clientId);
@@ -224,6 +245,8 @@ $("send").onclick = async () => {
     setBusy(true);
     const prompt = $("prompt").value.trim();
     if (!prompt) throw new Error("Inserisci un prompt");
+    const megapixels = $("megapixels").value;
+    if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
     add(prompt, "user");
     $("progress").textContent = "Controllo allegati…";
     const preset = currentPreset();
@@ -241,7 +264,7 @@ $("send").onclick = async () => {
       clientId,
       workflowId: $("workflow").value,
       prompt,
-      quality: $("quality").value,
+      megapixels: Number(megapixels),
       model: $("model").value,
       steps: $("steps").value,
       duration: $("duration").value,

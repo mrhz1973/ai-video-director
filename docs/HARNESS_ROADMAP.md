@@ -47,7 +47,9 @@ Do not turn the basic view into a node editor.
 
 ### Direct megapixel control and standard-resolution hint
 
-The old user-facing `Preview / Final` abstraction is being replaced by the exact numeric megapixel value that is bound to the ComfyUI workflow.
+Status: implemented in harness v0.4.1. `docs/HARNESS_STATE.md` records the verified runtime behavior, the real ComfyUI constraints and the exact rounding method. The rest of this section is the original design intent.
+
+The old user-facing `Preview / Final` abstraction has been replaced by the exact numeric megapixel value that is bound to the ComfyUI workflow.
 
 Next to the megapixel input, show a read-only dynamic resolution hint derived from both:
 
@@ -61,7 +63,9 @@ The hint should show:
 
 Example presentation:
 
-`Megapixel  [ 0.4 ]   ≈ 848×480 · ~480p`
+`Megapixel  [ 0.4 ]   ≈ 864×480 · ~480p`
+
+The shipped hint uses the real `ResolutionSelector` arithmetic (1024² pixels per megapixel, rounded to the workflow's `multiple` of 32), so at 0.4 MP / 16:9 the exact dimensions are 864×480 rather than the 848×480 approximation originally sketched here.
 
 For common 16:9 values, useful human-readable labels include approximately:
 
@@ -86,7 +90,7 @@ Candidate controls include, only when they exist as real validated workflow inpu
 - sampler;
 - scheduler;
 - guidance / CFG or equivalent guidance controls;
-- megapixels and/or explicit resolution controls;
+- the `ResolutionSelector` `multiple` widget, which is currently fixed at 32 in the workflows and only read by the display hint;
 - denoise/strength where applicable;
 - model-specific shift or sampling parameters;
 - audio/video conditioning controls;
