@@ -41,3 +41,13 @@
 - Browser smoke test passed after cache-bypass reload: `app.js` and `recovery.mjs` loaded with correct JavaScript MIME types, UI initialized correctly, ComfyUI showed connected, queue remained empty, and no blocking console errors were present.
 - GitHub Actions `Validate project memory` passed on the final PR head.
 - PR #1 was marked ready and merged successfully into `main` on 2026-08-19. `main` is now the canonical source for the MiniMax H3 Director, operational Node.js harness, and harness project memory.
+
+# 2026-08-20
+
+- Added `docs/HARNESS_ROADMAP.md` to preserve the approved future direction for the H3 harness and prompt workflow.
+- Recorded GitHub as the durable memory for material harness behavior, prompt-strategy, model/checkpoint, workflow and experiment decisions; chat history alone is not considered sufficient project state.
+- Set the future UI direction to a simple Basic view plus an expandable Advanced view that exposes only real validated ComfyUI workflow inputs.
+- Added systematic H3 prompt improvement and controlled A/B prompt/reference experiments as first-class roadmap goals.
+- Added controlled evaluation of stronger or higher-quality compatible H3 model/checkpoint variants while preserving the current known-good baseline and documenting quality, speed, memory/stability and regression results.
+- Added future Save/Update Project, workflow/model registry and optional Director prompt-create/validate work to the roadmap while preserving manual prompt passthrough.
+- Updated START_HERE and HANDOFF so future chats must read the roadmap before proposing H3 runtime/model/prompt changes.
