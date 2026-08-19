@@ -8,7 +8,7 @@ AI Video Director is the public, text-only control plane for reproducible AI-vid
 
 For the Rambo sequence, the active production work remains SEQ01 / SH010: a five-second, silent, single-take radio-hut shot.
 
-For local MiniMax H3 work, the existing operational Node.js harness is documented in `docs/HARNESS_STATE.md`. The approved future direction is documented in `docs/HARNESS_ROADMAP.md`. Do not create a parallel harness.
+For local MiniMax H3 work, the existing operational Node.js harness is documented in `docs/HARNESS_STATE.md`. The day-to-day operating/safety rules are in `docs/HARNESS_OPERATING_RULES.md`. The approved future direction is documented in `docs/HARNESS_ROADMAP.md`. Do not create a parallel harness.
 
 ## Canonical repository state
 
@@ -25,20 +25,21 @@ GitHub is also the durable memory for future H3 development. Material prompt str
 3. PROJECT_STATUS.md
 4. HANDOFF.md
 5. docs/HARNESS_STATE.md
-6. docs/HARNESS_ROADMAP.md
-7. docs/COMFYUI_H3_SETUP.md
-8. CONTINUITY_BIBLE.md
-9. shots/SEQ01/SH010/README.md
-10. shots/SEQ01/SH010/G003/review.md
-11. shots/SEQ01/SH010/G004/run.yaml
-12. prompts/SEQ01/SH010/v04-prompt.md
-13. registry/elements.yaml
-14. docs/REFERENCE_ASSETS.md
-15. docs/playbooks/INDEX.md
+6. docs/HARNESS_OPERATING_RULES.md
+7. docs/HARNESS_ROADMAP.md
+8. docs/COMFYUI_H3_SETUP.md
+9. CONTINUITY_BIBLE.md
+10. shots/SEQ01/SH010/README.md
+11. shots/SEQ01/SH010/G003/review.md
+12. shots/SEQ01/SH010/G004/run.yaml
+13. prompts/SEQ01/SH010/v04-prompt.md
+14. registry/elements.yaml
+15. docs/REFERENCE_ASSETS.md
+16. docs/playbooks/INDEX.md
 
 Read `story/SOURCE_MASTER.md`, `story/SHOT_LIST.yaml` and `story/AUDIO_PLAN.md` before planning later shots or final assembly.
 
-If the task is specifically about the MiniMax H3 local harness, `docs/HARNESS_STATE.md` is the current architecture/status source of truth, `docs/HARNESS_ROADMAP.md` records approved future direction, and `docs/COMFYUI_H3_SETUP.md` is the setup/operations guide. The harness is an existing Node.js application; it expects ComfyUI to be started separately.
+If the task is specifically about the MiniMax H3 local harness, `docs/HARNESS_STATE.md` is the current architecture/status source of truth, `docs/HARNESS_OPERATING_RULES.md` contains the generation/browser safety rules, `docs/HARNESS_ROADMAP.md` records approved future direction, and `docs/COMFYUI_H3_SETUP.md` is the setup/operations guide. The harness is an existing Node.js application; it expects ComfyUI to be started separately.
 
 ## Required opening checkpoint
 
@@ -59,7 +60,7 @@ For MiniMax H3 harness work, state:
 - Current canonical branch and harness version
 - What the harness already does
 - What it deliberately does not do
-- Relevant roadmap item
+- Relevant operating rule and roadmap item
 - Workflow/source-of-truth files involved
 - Whether the requested change touches runtime code, private local workflow exports or documentation only
 - Whether a restart would be required
@@ -67,4 +68,4 @@ For MiniMax H3 harness work, state:
 
 ## Copyable bootstrap request
 
-Read `AGENTS.md` and follow its startup order. Resume the project from `HANDOFF.md`. For MiniMax H3 local work, also read `docs/HARNESS_STATE.md`, `docs/HARNESS_ROADMAP.md` and `docs/COMFYUI_H3_SETUP.md` before proposing changes. Confirm the current checkpoint first. Treat `main` as the canonical repository state after the 2026-08-19 PR #1 merge. Preserve the known-good harness/model baseline while testing prompt/model/advanced-control improvements, and record material approved changes and experiment conclusions back into GitHub. Treat historical prompts and run folders as immutable evidence, use exact registered handles where required, do not recreate a parallel harness, and never commit media, model binaries, private workflow exports, local paths or private identifiers because this repository is public.
+Read `AGENTS.md` and follow its startup order. Resume the project from `HANDOFF.md`. For MiniMax H3 local work, also read `docs/HARNESS_STATE.md`, `docs/HARNESS_OPERATING_RULES.md`, `docs/HARNESS_ROADMAP.md` and `docs/COMFYUI_H3_SETUP.md` before proposing changes. Confirm the current checkpoint first. Treat `main` as the canonical repository state after the 2026-08-19 PR #1 merge. Preserve the known-good harness/model baseline while testing prompt/model/advanced-control improvements, respect the explicit generation-submission gate, and record material approved changes and experiment conclusions back into GitHub. Treat historical prompts and run folders as immutable evidence, use exact registered handles where required, do not recreate a parallel harness, and never commit media, model binaries, private workflow exports, local paths or private identifiers because this repository is public.
