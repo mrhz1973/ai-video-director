@@ -36,7 +36,7 @@ Default/basic view should continue to expose the high-value controls needed for 
 - prompt;
 - project/reference roles;
 - model;
-- quality/resolution preset;
+- direct megapixel control;
 - duration;
 - aspect ratio;
 - steps;
@@ -44,6 +44,38 @@ Default/basic view should continue to expose the high-value controls needed for 
 - Generate and progress/output state.
 
 Do not turn the basic view into a node editor.
+
+### Direct megapixel control and standard-resolution hint
+
+The old user-facing `Preview / Final` abstraction is being replaced by the exact numeric megapixel value that is bound to the ComfyUI workflow.
+
+Next to the megapixel input, show a read-only dynamic resolution hint derived from both:
+
+- the explicit megapixel value;
+- the currently selected aspect ratio.
+
+The hint should show:
+
+1. the approximate effective pixel dimensions, rounded only for display to sensible model/grid-friendly values;
+2. the nearest familiar resolution class where one is meaningful.
+
+Example presentation:
+
+`Megapixel  [ 0.4 ]   ≈ 848×480 · ~480p`
+
+For common 16:9 values, useful human-readable labels include approximately:
+
+- 480p;
+- 720p HD;
+- 1080p Full HD;
+- 1440p QHD;
+- 2160p / 4K UHD.
+
+Do not mislabel standards. In particular, do not call 2560×1440 exact `2K`; if a 2K label is ever used, distinguish true DCI 2K (2048×1080) from QHD/1440p. Prefer unambiguous labels such as `1440p QHD` and `4K UHD`.
+
+For non-16:9 aspect ratios, the exact WxH estimate is primary. A secondary familiar label may be shown only when it remains meaningful, for example `~1080p ultrawide`, but the UI must not imply that a standard broadcast/video raster exactly matches an arbitrary aspect ratio.
+
+This resolution hint is informational only. It must never silently alter the megapixel value, aspect ratio, or workflow. The exact numeric megapixel field remains the generation source of truth.
 
 ## 2. Add an expandable Advanced mode
 
@@ -155,7 +187,7 @@ Useful experiment dimensions may include:
 - prompt A vs prompt B;
 - same prompt with different seed;
 - Stable vs Candidate model;
-- Preview vs Final;
+- megapixel/resolution variations;
 - sampler/scheduler variations;
 - reference-card strategy vs single first-frame strategy;
 - I2VA vs Ref2VA for the same creative target.
