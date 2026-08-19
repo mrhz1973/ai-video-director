@@ -37,3 +37,4 @@
 - Added harness unit tests for logging and recovery helpers; validation result: 14/14 Node tests passing after implementation.
 - No workflow, preset, model, sampler, scheduler, binding, or automatic ComfyUI startup behavior was changed.
 - Activation notes: Node harness restart required for backend logging; browser hard refresh required for frontend recovery code.
+- Fixed static serving so `.mjs` modules are returned with `text/javascript` instead of falling back to `text/html`.

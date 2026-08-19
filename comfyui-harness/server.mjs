@@ -172,7 +172,12 @@ const server = http.createServer(async (req, res) => {
     const relative = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     const target = path.resolve(root, "public", relative);
     if (!target.startsWith(path.resolve(root, "public")) || !existsSync(target)) return json(res, 404, { error: "Not found" });
-    const type = target.endsWith(".js") ? "text/javascript" : target.endsWith(".css") ? "text/css" : "text/html";
+    const staticContentType = filePath => {
+      if (filePath.endsWith(".css")) return "text/css";
+      if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "text/javascript";
+      return "text/html";
+    };
+    const type = staticContentType(target);
     res.writeHead(200, { "content-type": `${type}; charset=utf-8` }); createReadStream(target).pipe(res);
   } catch (error) {
     logger.error("request_failed", { path: req.url, reason: error.message });
