@@ -26,3 +26,9 @@
 - Added private local projects that remember prompts, settings, and ComfyUI input filenames without publishing media or personal paths.
 - Added dynamic, human-readable attachment controls and versioned the local harness as v0.4.0.
 - Hardened H3 reference prompting with explicit per-asset authority, exclusion boundaries, and conflict precedence while retaining MiniMax's official labels and section order.
+- Audited the operational H3 harness and confirmed that it is a Node.js client/bridge for a separately running ComfyUI instance; it does not launch or manage the ComfyUI process.
+- Added `docs/HARNESS_STATE.md` as the authoritative harness architecture/state document and wired it into START_HERE, AGENTS and HANDOFF for new-chat continuity.
+- Documented intentional runtime decisions: `config.example.json` fallback, Base FL2VA checkpoint sharing across T2VA/I2VA/FL2VA, separate Ref2VA checkpoint, Preview/Final megapixel behavior, dormant generic width/height support and manual prompt passthrough.
+- Documented workflow sources of truth: private Base-mode API exports plus tracked presets, and the tracked sanitized Ref2VA runtime graph built from a private local source export.
+- Recorded current limitations as explicit design state rather than bugs: no runtime Director/LLM, no Save Project API, no persistent harness logging, no automatic ComfyUI launch, no multi-job UI and no history-polling recovery fallback yet.
+- Closed PR #2 without merge and deleted the accidental parallel `agent/minimax-h3-director-comfyui-harness` branch; the operational harness remains on `agent/minimax-h3-comfyui-harness` / PR #1.
