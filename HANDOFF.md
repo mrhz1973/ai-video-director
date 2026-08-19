@@ -1,7 +1,19 @@
 # Live handoff
 
-Updated: 2026-08-17
+Updated: 2026-08-19
 Repository visibility: public
+
+This repository currently has two active context tracks:
+
+1. Rambo / Higgsfield production state.
+2. MiniMax H3 / local ComfyUI harness state.
+
+A new chat must read both the production handoff below and `docs/HARNESS_STATE.md` before proposing changes to the local H3 harness.
+
+---
+
+# Track A — Rambo / Higgsfield production
+
 Active sequence / shot: SEQ01 / SH010
 State: one V4 generation authorized, not launched
 
@@ -47,9 +59,95 @@ The user wrote the exact phrase AUTORIZZO LA GENERAZIONE on 2026-08-17. It is re
 
 Any run after G004 requires a new exact authorization.
 
-## Next action
+## Next production action
 
 If the user asks to execute the provider action, submit exactly one G004 generation with the documented settings and prompt. If the user only asks for prompt, review or repository work, do not open or control Higgsfield.
 
 After output arrives, compute its SHA-256, fill G004 run and review files, append registry/generations.csv, update PROJECT_STATUS.md and HANDOFF.md, and record the result in the dated log.
 
+---
+
+# Track B — MiniMax H3 / local ComfyUI harness
+
+Detailed source of truth: `docs/HARNESS_STATE.md`
+Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
+Operational branch: `agent/minimax-h3-comfyui-harness`
+Pull request: #1
+Harness implementation: existing Node.js application in `comfyui-harness/`
+Known package version: 0.4.0
+
+## Verified architecture
+
+- Harness UI default endpoint: `http://127.0.0.1:8787`.
+- ComfyUI default endpoint: `http://127.0.0.1:8188`.
+- The harness does not launch, stop or own the ComfyUI process lifecycle.
+- ComfyUI must be started externally before using the harness.
+- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser.
+- Manual prompt text is passed essentially unchanged to ComfyUI; the H3 Director skill is not executed inside the harness runtime.
+- `config.example.json` is the valid runtime fallback when no private `config.json` override exists.
+
+## Verified H3 workflow state
+
+Operational modes:
+
+- T2VA
+- I2VA
+- FL2VA
+- Ref2VA
+
+T2VA/I2VA/FL2VA intentionally use the same H3 Base FL2VA checkpoint. Ref2VA intentionally uses a separate task-specific reference checkpoint.
+
+The Base-family sampler currently comes from the source graphs as `res_multistep`; Ref2VA currently uses `er_sde`. This difference is inherited from the source workflows and is not recorded as an official MiniMax requirement.
+
+Current quality behavior:
+
+- Preview -> 0.3 megapixels
+- Final -> 0.4 megapixels
+
+Current presets bind `aspectRatio` and `megapixels`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.
+
+## Workflow source of truth
+
+For T2VA/I2VA/FL2VA:
+
+- ignored private `*.api.json` files = complete operational graph topology/defaults;
+- tracked `*.preset.json` files = UI-to-node binding contract.
+
+For Ref2VA:
+
+- tracked runtime workflow: `comfyui-harness/workflows/minimax-h3-reference.workflow.json`;
+- private ignored source/master export: `minimax-h3-ref2v.api.json`;
+- `scripts/build-ref-workflow.mjs` is used manually to sanitize/build the tracked reference workflow.
+
+## Current limitations that are not bugs
+
+- No runtime LLM / automatic Director prompt generation.
+- No Save Project API/UI; private project files are read/reused only.
+- No automatic ComfyUI startup by the harness.
+- No persistent harness log yet.
+- No multi-job management.
+- Recovery is primarily single-running-job plus WebSocket/SSE; no history polling fallback yet.
+- Previously uploaded reference filenames remain valid only while their files remain in the active ComfyUI input directory.
+
+## Recommended next harness changes
+
+After the 2026-08-19 audit and architecture clarification, the safest first runtime improvements are:
+
+1. privacy-safe persistent harness logging;
+2. read-only history polling as a recovery fallback.
+
+Do not change workflow topology, models, samplers, Preview/Final behavior, Base/Ref checkpoint separation or automatic ComfyUI lifecycle as part of those changes.
+
+Before any runtime edit, determine whether a Node harness restart is required and do not restart an active local generation without explicit user approval.
+
+## Repository/branch clarification
+
+The correct operational branch is `agent/minimax-h3-comfyui-harness` and its PR is #1.
+
+An accidental parallel implementation branch, `agent/minimax-h3-director-comfyui-harness`, was intentionally abandoned on 2026-08-19. PR #2 was closed without merge and that branch was deleted. Do not recreate or resume it.
+
+## Last audit result
+
+On 2026-08-19 the harness branch was reported clean and aligned with its remote; existing pure Node tests passed 7/7. The audit also verified that the active preset bindings referenced valid workflow node/input pairs and that the currently referenced H3 model names were available to ComfyUI at runtime.
+
+Treat this as a dated observation, not a permanent guarantee. Re-check live services, Git status and private workflow exports before future runtime changes.
