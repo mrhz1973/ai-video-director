@@ -83,7 +83,7 @@ Known package version: 0.4.0
 - ComfyUI default endpoint: `http://127.0.0.1:8188`.
 - The harness does not launch, stop or own the ComfyUI process lifecycle.
 - ComfyUI must be started externally before using the harness.
-- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7), plus v0.5.0 project CRUD and categorized asset library (Issue #5).
+- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7), plus project CRUD and categorized asset library (Issue #5). Harness v0.5.1 hardens HTTP response handling so late proxy failures cannot crash Node with `ERR_HTTP_HEADERS_SENT`.
 - Manual prompt text is passed essentially unchanged to ComfyUI; the H3 Director skill is not executed inside the harness runtime.
 - `config.example.json` is the valid runtime fallback when no private `config.json` override exists.
 
@@ -100,7 +100,7 @@ T2VA/I2VA/FL2VA intentionally use the same H3 Base FL2VA checkpoint. Ref2VA inte
 
 The Base-family sampler currently comes from the source graphs as `res_multistep`; Ref2VA currently uses `er_sde`. This difference is inherited from the source workflows and is not recorded as an official MiniMax requirement.
 
-Current resolution behavior (harness v0.5.0):
+Current resolution behavior (harness v0.5.1):
 
 - the UI exposes a direct `Megapixel` numeric field, not `Preview` / `Final`;
 - real ComfyUI `ResolutionSelector` constraints are min 0.1, max 16.0, step 0.1; harness default 0.3;
