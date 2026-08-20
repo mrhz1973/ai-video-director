@@ -59,9 +59,9 @@ Therefore:
 
 ## Configuration behavior
 
-`server.mjs` reads `comfyui-harness/config.json` when present. If absent, it falls back to `config.example.json`.
+`server.mjs` resolves config via `lib/config-path.mjs`: `comfyui-harness/config.json` when present, otherwise `config.example.json`.
 
-Optional override for isolated tests/tools only: set `H3_CONFIG_PATH` to an absolute or relative JSON config path. When unset, production resolution is unchanged.
+Optional override for isolated tests/tools only: set `H3_CONFIG_PATH` to an absolute or relative JSON config path. When unset, production resolution is unchanged. Tests must never write the real package-root `config.json`.
 
 This is intentional. `config.example.json` is also the default operational configuration. `config.json` is an optional local override and is ignored by Git.
 

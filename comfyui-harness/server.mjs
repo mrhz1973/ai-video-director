@@ -14,15 +14,10 @@ import {
   sendBufferedUpstream,
   sendJson
 } from "./lib/http-response.mjs";
+import { resolveConfigPath } from "./lib/config-path.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const resolveConfigPath = () => {
-  const override = process.env.H3_CONFIG_PATH;
-  if (override && String(override).trim()) return path.resolve(String(override).trim());
-  const local = path.join(root, "config.json");
-  return existsSync(local) ? local : path.join(root, "config.example.json");
-};
-const configPath = resolveConfigPath();
+const configPath = resolveConfigPath({ root, env: process.env, existsSync });
 const config = JSON.parse(await readFile(configPath, "utf8"));
 const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const comfy = config.comfyUrl.replace(/\/$/, "");

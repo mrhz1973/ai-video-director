@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, writeFile, mkdir, rm, readFile, access, constants } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ import {
   sendBufferedUpstream,
   sendJson
 } from "../lib/http-response.mjs";
+import { resolveConfigPath } from "../lib/config-path.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageConfigPath = path.join(packageRoot, "config.json");
@@ -273,21 +275,59 @@ test("integration: normal /api/view returns body and content-type", async () => 
   }
 });
 
-test("integration tests never mutate package-root config.json", async () => {
-  const sentinel = Buffer.from(
-    `{"comfyUrl":"http://127.0.0.1:65530","listenHost":"127.0.0.1","listenPort":65531,"workflowDirectory":"./workflows","projectDirectory":"./projects","__sentinel":"PRIVATE_TEST_CONFIG_DO_NOT_COMMIT"}\n`,
-    "utf8"
-  );
-  let existedBefore = false;
-  let original;
+test("resolveConfigPath: H3_CONFIG_PATH override wins over local files", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-cfg-resolve-"));
   try {
-    original = await readFile(packageConfigPath);
-    existedBefore = true;
-  } catch {
-    existedBefore = false;
+    const local = path.join(tmp, "config.json");
+    const example = path.join(tmp, "config.example.json");
+    const override = path.join(tmp, "explicit.json");
+    await writeFile(local, '{"__role":"local"}\n', "utf8");
+    await writeFile(example, '{"__role":"example"}\n', "utf8");
+    await writeFile(override, '{"__role":"override"}\n', "utf8");
+    assert.equal(
+      resolveConfigPath({ root: tmp, env: { H3_CONFIG_PATH: override }, existsSync }),
+      path.resolve(override)
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
   }
+});
 
-  await writeFile(packageConfigPath, sentinel);
+test("resolveConfigPath: without override, temp-root config.json wins", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-cfg-local-"));
+  try {
+    const local = path.join(tmp, "config.json");
+    const example = path.join(tmp, "config.example.json");
+    await writeFile(local, '{"__role":"local"}\n', "utf8");
+    await writeFile(example, '{"__role":"example"}\n', "utf8");
+    assert.equal(
+      resolveConfigPath({ root: tmp, env: {}, existsSync }),
+      local
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolveConfigPath: without local config, temp config.example.json wins", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-cfg-example-"));
+  try {
+    const example = path.join(tmp, "config.example.json");
+    await writeFile(example, '{"__role":"example"}\n', "utf8");
+    assert.equal(
+      resolveConfigPath({ root: tmp, env: { H3_CONFIG_PATH: "   " }, existsSync }),
+      example
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("integration spawn uses temp H3_CONFIG_PATH and never targets package-root config.json", async () => {
+  let packageBefore = null;
+  if (existsSync(packageConfigPath)) {
+    packageBefore = await readFile(packageConfigPath);
+  }
 
   const fakeComfy = http.createServer((req, res) => {
     if (req.url?.startsWith("/queue")) {
@@ -311,31 +351,21 @@ test("integration tests never mutate package-root config.json", async () => {
   const tempConfigPath = await writeTempHarnessConfig({ comfyPort, harnessPort, projectsDir: projects });
   let child;
   try {
-    const before = await readFile(packageConfigPath);
-    assert.equal(Buffer.compare(before, sentinel), 0);
+    assert.notEqual(path.resolve(tempConfigPath), path.resolve(packageConfigPath));
     const spawned = await spawnHarness(tempConfigPath);
     child = spawned.child;
     const response = await fetch(`http://127.0.0.1:${harnessPort}/api/view?filename=x.png`);
     assert.equal(response.status, 200);
-    const after = await readFile(packageConfigPath);
-    assert.equal(Buffer.compare(after, sentinel), 0);
-    assert.equal(Buffer.compare(after, before), 0);
-    assert.notEqual(tempConfigPath, packageConfigPath);
+
+    if (packageBefore === null) {
+      assert.equal(existsSync(packageConfigPath), false);
+    } else {
+      const packageAfter = await readFile(packageConfigPath);
+      assert.equal(Buffer.compare(packageAfter, packageBefore), 0);
+    }
   } finally {
     await stopHarness(child);
     fakeComfy.close();
     await rm(tmp, { recursive: true, force: true });
-    if (existedBefore) {
-      await writeFile(packageConfigPath, original);
-    } else {
-      await rm(packageConfigPath, { force: true });
-    }
-    // Prove final restore state matches pretest existence, without printing content.
-    try {
-      await access(packageConfigPath, constants.F_OK);
-      assert.equal(existedBefore, true);
-    } catch {
-      assert.equal(existedBefore, false);
-    }
   }
 });
