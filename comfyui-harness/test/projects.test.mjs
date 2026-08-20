@@ -29,8 +29,12 @@ import {
   restoreModelSelection,
   simulateWorkflowBindingView,
   toPersistedProject,
-  uniqueProjectId
+  uniqueProjectId,
+  describeGenerateBlockers,
+  formatMemberOrdinalLabel,
+  memberSelectOption
 } from "../lib/projects.mjs";
+import { lookupAvailability } from "../lib/asset-ref.mjs";
 import { createProjectStore } from "../lib/project-store.mjs";
 
 test("project id validation rejects traversal and absolute paths", () => {
@@ -343,4 +347,196 @@ test("project store create update duplicate delete and malformed JSON safety", a
   const remaining = await readFile(path.join(dir, `${dup.id}.local.json`), "utf8");
   assert.equal(remaining.includes(dir.replaceAll("\\", "\\\\")), false);
   assert.ok(!remaining.includes("C:\\\\"));
+});
+
+test("ordinal labels number members in group order without using the raw filename as primary text", () => {
+  const longName = "super-long-private-reference-file-name-do-not-show.png";
+  let library = addGroup(emptyLibrary(), "elements", createGroup({
+    id: "g-el",
+    label: "Martino",
+    members: [
+      createMember({ filename: longName, originalName: longName }),
+      createMember({ filename: "b.png", originalName: "b.png" }),
+      createMember({ filename: "c.png", originalName: "c.png" })
+    ]
+  }));
+  library = addGroup(library, "locations", createGroup({
+    id: "g-loc",
+    label: "Harbor",
+    members: [createMember({ filename: "dock.png", originalName: "dock.png" })]
+  }));
+  library = addGroup(library, "objects", createGroup({
+    id: "g-obj",
+    label: "Stick",
+    members: [createMember({ filename: "prop.png", originalName: "prop.png" })]
+  }));
+  library = addGroup(library, "audio", createGroup({
+    id: "g-au",
+    label: "Theme",
+    members: [createMember({ filename: "loop.wav", originalName: "loop.wav", type: "audio" })]
+  }));
+
+  const members = listAllMembers(library);
+  const el = members.filter(m => m.category === "elements");
+  assert.equal(formatMemberOrdinalLabel(el[0]), "Martino · Elements #1");
+  assert.equal(formatMemberOrdinalLabel(el[1]), "Martino · Elements #2");
+  assert.equal(formatMemberOrdinalLabel(el[2]), "Martino · Elements #3");
+  assert.equal(formatMemberOrdinalLabel(members.find(m => m.category === "locations")), "Harbor · Locations #1");
+  assert.equal(formatMemberOrdinalLabel(members.find(m => m.category === "objects")), "Stick · Objects #1");
+  assert.equal(formatMemberOrdinalLabel(members.find(m => m.category === "audio")), "Theme · Audio #1");
+
+  const option = memberSelectOption(el[0]);
+  assert.equal(option.value, longName);
+  assert.equal(option.label, "Martino · Elements #1");
+  assert.doesNotMatch(option.label, /super-long-private-reference-file-name/);
+  assert.equal(option.title, longName);
+
+  library = reorderMembers(library, "elements", "g-el", 0, 2);
+  const after = listAllMembers(library).filter(m => m.category === "elements");
+  assert.equal(after[0].filename, "b.png");
+  assert.equal(formatMemberOrdinalLabel(after[0]), "Martino · Elements #1");
+  assert.equal(after[2].filename, longName);
+  assert.equal(formatMemberOrdinalLabel(after[2]), "Martino · Elements #3");
+  assert.equal(after[2].filename, longName);
+});
+
+test("describeGenerateBlockers covers prompt, roles, stale assets, busy, and valid ready state", () => {
+  const attachments = [{ key: "firstImage", label: "Immagine iniziale", accept: "image/*" }];
+  const library = addGroup(emptyLibrary(), "elements", createGroup({
+    label: "Martino",
+    members: [createMember({ filename: "face.png", originalName: "face.png" })]
+  }));
+  const files = { firstImage: "face.png" };
+  assert.equal(describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files,
+    library,
+    availability: { "face.png": "available" },
+    submitting: true
+  }).code, "busy");
+  assert.equal(describeGenerateBlockers({
+    prompt: "   ",
+    attachments,
+    files,
+    library,
+    availability: { "face.png": "available" }
+  }).code, "prompt");
+  assert.equal(describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files: {},
+    library,
+    availability: { "face.png": "available" }
+  }).code, "roles");
+  assert.equal(describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files,
+    library,
+    availability: { "face.png": "missing" }
+  }).code, "roles");
+  assert.equal(describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files,
+    library,
+    availability: { "face.png": "error" }
+  }).code, "roles");
+  const ready = describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files,
+    library,
+    availability: { "face.png": "available" }
+  });
+  assert.equal(ready.blocked, false);
+  assert.equal(ready.code, null);
+});
+
+test("T2VA with prompt is ready even when the library is empty", () => {
+  const ready = describeGenerateBlockers({
+    prompt: "text only",
+    attachments: [],
+    files: { firstImage: "ignored.png" },
+    library: emptyLibrary(),
+    availability: {}
+  });
+  assert.equal(ready.blocked, false);
+});
+
+test("legacy projects keep filename bindings after ordinal helpers exist", () => {
+  const legacy = {
+    id: "legacy-demo",
+    label: "Legacy Demo",
+    workflowId: "minimax-h3-i2v",
+    prompt: "sanitized prompt",
+    settings: { megapixels: 0.3, steps: 20, duration: 5, aspect: "16:9", seed: 1 },
+    files: { firstImage: "ref-a.png" }
+  };
+  const normalized = normalizeProject(legacy);
+  assert.equal(normalized.schemaVersion, SCHEMA_VERSION);
+  assert.equal(normalized.files.firstImage, "ref-a.png");
+  const option = memberSelectOption(listAllMembers(normalized.library)[0]);
+  assert.equal(option.value, "ref-a.png");
+});
+
+test("E: Generate is not blocked for a valid nested-subfolder assignment", () => {
+  const attachments = [{ key: "firstImage", label: "Immagine iniziale", accept: "image/*" }];
+  const library = addGroup(emptyLibrary(), "elements", createGroup({
+    label: "Martino",
+    members: [createMember({
+      filename: "face.png",
+      originalName: "face.png",
+      subfolder: "characters/martino"
+    })]
+  }));
+  const persisted = toPersistedProject({
+    id: "nested-demo",
+    label: "Nested Demo",
+    workflowId: "minimax-h3-i2v",
+    prompt: "ok",
+    library,
+    files: { firstImage: "face.png" }
+  });
+  assert.equal(persisted.schemaVersion, SCHEMA_VERSION);
+  assert.equal(persisted.files.firstImage, "face.png");
+  assert.equal(persisted.library.elements[0].members[0].subfolder, "characters/martino");
+  assert.equal(JSON.stringify(persisted).includes("C:\\\\"), false);
+
+  const inherited = lookupAvailability(
+    { "face.png": "available" },
+    { filename: "face.png", subfolder: "characters/martino" }
+  );
+  assert.equal(inherited, "unknown");
+
+  const missingNested = describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "missing" }
+  });
+  assert.equal(missingNested.blocked, true);
+  assert.equal(missingNested.code, "roles");
+
+  const ready = describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "available" }
+  });
+  assert.equal(ready.blocked, false);
+  assert.equal(ready.code, null);
+
+  const built = buildSubmissionFiles({
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "available" },
+    activeKeys: ["firstImage"],
+    requiredKeys: ["firstImage"]
+  });
+  assert.equal(built.files.firstImage, "face.png");
+  assert.deepEqual(built.missingRequired, []);
 });

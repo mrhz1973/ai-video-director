@@ -12,6 +12,9 @@ import {
   resolveObserverClientId,
   summarizeMonitor
 } from "./monitor.mjs";
+import { connectionBadge } from "./connection-badge.mjs";
+import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
+import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -23,11 +26,15 @@ import {
   clearRolesForFilenames,
   createGroup,
   createMember,
+  describeGenerateBlockers,
   editorStateFromDomLike,
   emptyLibrary,
   filterFilesForActivePreset,
+  findMemberByFilename,
+  formatMemberOrdinalLabel,
   isProjectDirty,
   listAllMembers,
+  memberSelectOption,
   membersCompatibleWithRole,
   normalizeProject,
   projectEditorSnapshot,
@@ -48,6 +55,8 @@ let queueTimer;
 let logTimer;
 let elapsedTimer;
 let completing = false;
+let busy = false;
+let submitting = false;
 let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || null;
 let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
 let monitorState = initialMonitorState();
@@ -74,12 +83,44 @@ const add = (text, kind = "system") => {
   el.scrollIntoView();
 };
 
-const setBusy = busy => {
-  $("send").disabled = busy;
-  $("send").textContent = busy ? "Generazione…" : "Genera";
-  $("send").style.opacity = busy ? ".5" : "1";
-  $("send").style.cursor = busy ? "not-allowed" : "pointer";
+const setBusy = nextBusy => {
+  busy = Boolean(nextBusy);
+  updateGenerateButton();
 };
+
+function updateGenerateButton() {
+  const send = $("send");
+  const reasonEl = $("generateReason");
+  if (!send) return;
+  const gate = describeGenerateBlockers({
+    prompt: $("prompt")?.value,
+    attachments: currentPreset()?.attachments || [],
+    files: draft.files,
+    library: draft.library,
+    availability: draft.availability,
+    busy,
+    submitting
+  });
+  send.disabled = gate.blocked;
+  send.textContent = busy || submitting ? "Generazione…" : "Genera";
+  send.style.opacity = gate.blocked ? ".55" : "1";
+  send.style.cursor = gate.blocked ? "not-allowed" : "pointer";
+  if (reasonEl) {
+    reasonEl.hidden = !gate.blocked || gate.code === "busy";
+    reasonEl.textContent = gate.code === "busy" ? "" : (gate.reason || "");
+  }
+}
+
+function applyConnection(state) {
+  const badge = connectionBadge(state);
+  const top = $("connection");
+  if (top) {
+    top.textContent = badge.text;
+    top.className = `status ${badge.className}`;
+  }
+  monitorState = { ...monitorState, connection: badge.text };
+  renderMonitor();
+}
 
 const rememberJob = (promptId, meta = {}) => {
   currentPrompt = promptId;
@@ -163,7 +204,9 @@ function renderMonitor() {
   $("monitorPercent").textContent = summary.barMode === "numeric" ? `${summary.percent}%` : summary.barMode === "indeterminate" ? "Elaborazione…" : "—";
   $("monitorNode").textContent = summary.nodeLabel;
   $("monitorJob").textContent = summary.promptId ? promptIdPrefix(summary.promptId) : "—";
-  $("monitorConnection").textContent = summary.connection;
+  const badge = connectionBadge(summary.connection);
+  $("monitorConnection").textContent = badge.text;
+  $("monitorConnection").className = badge.className;
   $("monitorQueue").textContent = `${summary.queueRunning ?? 0} running · ${summary.queuePending ?? 0} pending`;
   const events = monitorState.events || [];
   $("monitorEvents").textContent = events.length ? events.map(item => `[${item.t}] ${item.m}`).join("\n") : "Nessun evento.";
@@ -230,7 +273,9 @@ async function upload(file) {
   form.append("type", "input");
   const response = await fetch("/api/upload", { method: "POST", body: form });
   if (!response.ok) throw new Error(`Upload fallito: ${response.status}`);
-  return (await response.json()).name;
+  const parsed = parseUploadResult(await response.json());
+  if (!parsed.filename) throw new Error("Upload senza nome file");
+  return parsed;
 }
 
 async function outputs() {
@@ -320,16 +365,11 @@ function connect() {
   events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
   events.addEventListener("connection", event => {
     const state = JSON.parse(event.data).state;
-    const label = state === "open" ? "ComfyUI collegato" : "Connessione…";
-    $("connection").textContent = label;
-    monitorState = { ...monitorState, connection: label };
-    renderMonitor();
+    applyConnection(state);
   });
   events.onmessage = handleMessage;
   events.onerror = () => {
-    $("connection").textContent = "Riconnessione…";
-    monitorState = { ...monitorState, connection: "Riconnessione…" };
-    renderMonitor();
+    applyConnection("reconnecting");
   };
 }
 
@@ -370,9 +410,7 @@ async function recoverActive() {
       return;
     }
   } catch {
-    $("connection").textContent = "Recupero connessione…";
-    monitorState = { ...monitorState, connection: "Recupero connessione…" };
-    renderMonitor();
+    applyConnection("connecting");
     if (!currentPrompt) {
       $("progress").textContent = "Connessione temporaneamente non disponibile";
       return;
@@ -438,11 +476,16 @@ function markBaselineFromDraft() {
 function updateDirtyFlag() {
   const dirty = isProjectDirty(draft.baseline, projectEditorSnapshot(currentEditorState()));
   $("projectDirty").hidden = !dirty;
+  updateGenerateButton();
   return dirty;
 }
 
-function viewUrl(filename) {
-  return `/api/view?${new URLSearchParams({ filename, type: "input" })}`;
+function viewUrl(filename, subfolder = "") {
+  const member = filename ? findMemberByFilename(draft.library, filename) : null;
+  return buildInputViewUrl({
+    filename,
+    subfolder: subfolder || member?.member?.subfolder || ""
+  });
 }
 
 function statusLabel(status) {
@@ -453,23 +496,37 @@ function statusLabel(status) {
   return "Sconosciuto";
 }
 
+function draftAssetDescriptors() {
+  const descriptors = [];
+  for (const member of listAllMembers(draft.library)) {
+    descriptors.push({ filename: member.filename, subfolder: member.subfolder || "" });
+  }
+  for (const name of Object.values(draft.files || {})) {
+    if (!name) continue;
+    const found = findMemberByFilename(draft.library, name);
+    descriptors.push({ filename: name, subfolder: found?.member?.subfolder || "" });
+  }
+  return uniqueAssetDescriptors(descriptors);
+}
+
+function availabilityOf(filename, subfolder = "") {
+  return lookupAvailability(draft.availability, { filename, subfolder });
+}
+
 async function refreshAvailability() {
-  const filenames = listAllMembers(draft.library).map(m => m.filename);
-  for (const name of Object.values(draft.files || {})) if (name) filenames.push(name);
-  const unique = [...new Set(filenames.filter(Boolean))];
+  const unique = draftAssetDescriptors();
   if (!unique.length) {
     draft.availability = {};
     return;
   }
-  const params = new URLSearchParams();
-  for (const name of unique) params.append("filename", name);
   try {
-    const response = await fetch(`/api/asset-status?${params}`);
+    const response = await fetch(buildAssetStatusUrl(unique));
     const data = await response.json();
     draft.availability = data.statuses || {};
   } catch {
-    draft.availability = Object.fromEntries(unique.map(name => [name, "error"]));
+    draft.availability = Object.fromEntries(unique.map(item => [assetStatusKey(item), "error"]));
   }
+  updateGenerateButton();
 }
 
 function setCategory(category) {
@@ -567,7 +624,7 @@ function renderGroupCard(group) {
 }
 
 function renderMemberCard(group, member, index) {
-  const status = draft.availability[member.filename] || "unknown";
+  const status = availabilityOf(member.filename, member.subfolder);
   const card = document.createElement("div");
   card.className = `member-card${member.type === "audio" || activeCategory === "audio" ? " audio-card" : ""}${status === "missing" || status === "error" ? " missing" : ""}`;
 
@@ -578,9 +635,17 @@ function renderMemberCard(group, member, index) {
     card.append(icon);
   } else if (status === "available") {
     const img = document.createElement("img");
-    img.alt = member.label;
-    img.src = viewUrl(member.filename);
-    img.onerror = () => { img.replaceWith(Object.assign(document.createElement("div"), { className: "member-thumb", textContent: "?" })); };
+    img.alt = formatMemberOrdinalLabel({ groupLabel: group.label, category: activeCategory, index });
+    img.title = member.originalName || member.filename;
+    img.decoding = "async";
+    img.src = viewUrl(member.filename, member.subfolder);
+    img.onerror = () => {
+      const ph = document.createElement("div");
+      ph.className = "member-thumb";
+      ph.textContent = "?";
+      ph.title = member.originalName || member.filename;
+      img.replaceWith(ph);
+    };
     card.append(img);
   } else {
     const ph = document.createElement("div");
@@ -592,7 +657,8 @@ function renderMemberCard(group, member, index) {
   const meta = document.createElement("div");
   meta.className = "meta";
   const title = document.createElement("strong");
-  title.textContent = member.label || member.originalName;
+  title.textContent = formatMemberOrdinalLabel({ groupLabel: group.label, category: activeCategory, index });
+  title.title = member.originalName || member.filename;
   const sub = document.createElement("span");
   sub.textContent = `${statusLabel(status)} · ${member.originalName || member.filename}`;
   meta.append(title, sub);
@@ -607,6 +673,7 @@ function renderMemberCard(group, member, index) {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index - 1);
     updateDirtyFlag();
     renderLibrary();
+    renderRoleFields();
   };
   const down = document.createElement("button");
   down.type = "button";
@@ -616,6 +683,7 @@ function renderMemberCard(group, member, index) {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index + 1);
     updateDirtyFlag();
     renderLibrary();
+    renderRoleFields();
   };
   const remove = document.createElement("button");
   remove.type = "button";
@@ -646,7 +714,8 @@ function renderRoleFields() {
   for (const field of libraryRoles) {
     const row = document.createElement("div");
     const filename = draft.files[field.key];
-    const status = filename ? (draft.availability[filename] || "unknown") : null;
+    const foundForRole = filename ? findMemberByFilename(draft.library, filename) : null;
+    const status = filename ? availabilityOf(filename, foundForRole?.member?.subfolder || "") : null;
     row.className = `role-row${status === "missing" || status === "error" ? " stale" : ""}`;
     const label = document.createElement("label");
     label.textContent = field.label;
@@ -654,16 +723,15 @@ function renderRoleFields() {
     select.append(new Option("— non assegnato —", ""));
     const compatible = membersCompatibleWithRole(draft.library, field.accept);
     for (const member of compatible) {
-      const opt = new Option(
-        `${member.groupLabel} / ${member.label}`,
-        member.filename,
-        false,
-        member.filename === filename
-      );
+      const option = memberSelectOption(member);
+      const opt = new Option(option.label, option.value, false, member.filename === filename);
+      opt.title = option.title;
       select.append(opt);
     }
     if (filename && !compatible.some(m => m.filename === filename)) {
-      select.append(new Option(`(fuori libreria) ${filename}`, filename, true, true));
+      const orphan = new Option(`(fuori libreria) ${filename}`, filename, true, true);
+      orphan.title = filename;
+      select.append(orphan);
     }
     select.onchange = () => {
       draft.files = assignRole(draft.files, field.key, select.value || undefined);
@@ -674,8 +742,17 @@ function renderRoleFields() {
     preview.className = "role-preview";
     if (filename && roleAcceptKind(field.accept) === "image" && status === "available") {
       const img = document.createElement("img");
-      img.src = viewUrl(filename);
+      const found = foundForRole;
+      img.src = viewUrl(filename, found?.member?.subfolder);
       img.alt = field.label;
+      img.title = found?.member?.originalName || filename;
+      img.decoding = "async";
+      img.onerror = () => {
+        const ph = document.createElement("div");
+        ph.className = "member-thumb";
+        ph.textContent = "?";
+        img.replaceWith(ph);
+      };
       preview.append(img);
     }
     const note = document.createElement("span");
@@ -700,7 +777,8 @@ function renderRoleFields() {
       if (!input.files[0]) return;
       try {
         showAssetFeedback(`Caricamento ${input.files[0].name}…`);
-        const name = await upload(input.files[0]);
+        const uploaded = await upload(input.files[0]);
+        const name = uploaded.filename;
         draft.files = assignRole(draft.files, field.key, name);
         showAssetFeedback("");
         updateDirtyFlag();
@@ -871,9 +949,10 @@ async function ingestFiles(fileList, { groupId = null } = {}) {
   showAssetFeedback(`Caricamento ${accepted.length} file…`);
   const members = [];
   for (const file of accepted) {
-    const filename = await upload(file);
+    const uploaded = await upload(file);
     members.push(createMember({
-      filename,
+      filename: uploaded.filename,
+      subfolder: uploaded.subfolder,
       originalName: file.name,
       type: activeCategory === "audio" ? "audio" : "image"
     }));
@@ -996,6 +1075,7 @@ $("projectDelete").onclick = async () => {
 selectPreset({ preserveLibrary: true, trackDirty: false });
 setCategory("elements");
 markBaselineFromDraft();
+updateGenerateButton();
 renderMonitor();
 await recoverActive();
 sessionStorage.setItem("h3ClientId", clientId);
@@ -1005,10 +1085,24 @@ logTimer = setInterval(refreshComfyLogs, LOG_POLL_MS);
 startQueuePolling();
 
 $("send").onclick = async () => {
+  if (submitting || busy) return;
+  const gate = describeGenerateBlockers({
+    prompt: $("prompt").value,
+    attachments: currentPreset()?.attachments || [],
+    files: draft.files,
+    library: draft.library,
+    availability: draft.availability,
+    busy,
+    submitting
+  });
+  if (gate.blocked) {
+    updateGenerateButton();
+    return;
+  }
+  submitting = true;
+  setBusy(true);
   try {
-    setBusy(true);
     const prompt = $("prompt").value.trim();
-    if (!prompt) throw new Error("Inserisci un prompt");
     const megapixels = $("megapixels").value;
     if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
     add(prompt, "user");
@@ -1017,11 +1111,11 @@ $("send").onclick = async () => {
     await refreshAvailability();
     const activeKeys = (preset?.attachments || []).map(field => field.key);
     const requiredKeys = activeKeys;
-    // Merge any freshly chosen video file uploads already in draft.files.
     for (const input of $("attachmentFields").querySelectorAll("input[type=file]")) {
       if (input.files[0]) {
         $("progress").textContent = `Caricamento · ${input.closest("label").firstChild.textContent.trim()}`;
-        draft.files[input.dataset.key] = await upload(input.files[0]);
+        const uploaded = await upload(input.files[0]);
+        draft.files[input.dataset.key] = uploaded.filename;
       }
     }
     const built = buildSubmissionFiles({
@@ -1035,7 +1129,6 @@ $("send").onclick = async () => {
       const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
       throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
     }
-    // Defense in depth: never send inactive-workflow bindings.
     const files = filterFilesForActivePreset(built.files, activeKeys);
     $("progress").textContent = "In coda…";
     const payload = {
@@ -1078,5 +1171,8 @@ $("send").onclick = async () => {
     monitorState = { ...monitorState, phase: "error" };
     renderMonitor();
     add(error.message);
+  } finally {
+    submitting = false;
+    updateGenerateButton();
   }
 };

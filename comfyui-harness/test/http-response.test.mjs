@@ -369,3 +369,69 @@ test("integration spawn uses temp H3_CONFIG_PATH and never targets package-root 
     await rm(tmp, { recursive: true, force: true });
   }
 });
+
+test("integration: asset-status honors subfolder and does not call /api/queue", async () => {
+  const viewHits = [];
+  let comfyPromptCalls = 0;
+  const fakeComfy = http.createServer((req, res) => {
+    if (req.url?.startsWith("/queue")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ queue_running: [], queue_pending: [] }));
+      return;
+    }
+    if (req.url?.startsWith("/prompt")) {
+      comfyPromptCalls += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+      return;
+    }
+    if (req.url?.startsWith("/view")) {
+      const parsed = new URL(req.url, "http://comfy.local");
+      viewHits.push({
+        filename: parsed.searchParams.get("filename") || "",
+        type: parsed.searchParams.get("type") || "",
+        subfolder: parsed.searchParams.get("subfolder") ?? ""
+      });
+      const filename = parsed.searchParams.get("filename");
+      const subfolder = parsed.searchParams.get("subfolder") ?? "";
+      const ok = (filename === "root.png" && subfolder === "")
+        || (filename === "face.png" && subfolder === "characters/martino");
+      if (!ok) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(Buffer.from("png"));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  const comfyPort = await listen(fakeComfy);
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-http-asset-status-"));
+  const projects = path.join(tmp, "projects");
+  await mkdir(projects, { recursive: true });
+  const harnessPort = await freePort();
+  const configPath = await writeTempHarnessConfig({ comfyPort, harnessPort, projectsDir: projects });
+  let child;
+  try {
+    const spawned = await spawnHarness(configPath);
+    child = spawned.child;
+    const root = await fetch(`http://127.0.0.1:${harnessPort}/api/asset-status?filename=root.png`);
+    const nested = await fetch(`http://127.0.0.1:${harnessPort}/api/asset-status?filename=face.png&subfolder=characters%2Fmartino`);
+    const wrong = await fetch(`http://127.0.0.1:${harnessPort}/api/asset-status?filename=face.png&subfolder=other`);
+    const legacy = await fetch(`http://127.0.0.1:${harnessPort}/api/asset-status?filename=face.png`);
+    assert.equal((await root.json()).statuses["root.png"], "available");
+    assert.equal((await nested.json()).statuses["characters/martino/face.png"], "available");
+    assert.equal((await wrong.json()).statuses["other/face.png"], "missing");
+    assert.equal((await legacy.json()).statuses["face.png"], "missing");
+    assert.ok(viewHits.some(hit => hit.filename === "root.png" && hit.type === "input" && hit.subfolder === ""));
+    assert.ok(viewHits.some(hit => hit.filename === "face.png" && hit.type === "input" && hit.subfolder === "characters/martino"));
+    assert.equal(comfyPromptCalls, 0);
+  } finally {
+    await stopHarness(child);
+    fakeComfy.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});

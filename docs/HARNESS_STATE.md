@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -205,7 +205,7 @@ REST-like routes (loopback only):
 - `GET/POST /api/projects`
 - `GET/PUT/DELETE /api/projects/:id`
 - `POST /api/projects/:id/duplicate`
-- `GET /api/asset-status?filename=...`
+- `GET /api/asset-status?filename=...&subfolder=...` (repeated parallel pairs; omitted subfolder defaults to root `""`)
 
 Project ids are sanitized; path traversal and absolute paths are rejected. Writes are atomic under the configured `projectDirectory` only. Malformed `.local.json` files are skipped on list and do not crash the server.
 
@@ -230,9 +230,15 @@ The full binding map is retained across workflow switches. Switching I2VA → T2
 
 ### Stale / missing references
 
-`GET /api/asset-status` probes ComfyUI `/view` read-only. Members/roles classify as available / missing / error. Missing required roles block Generate with a clear error. Removing a group/member clears role assignments that pointed at those filenames but does **not** delete ComfyUI input files.
+`GET /api/asset-status` probes ComfyUI `/view` read-only using the same percent-encoded `filename`, `type=input`, and `subfolder` query as thumbnails. Library members persist optional `subfolder`; workflow `files[role]` bindings remain filename-only. Status map keys stay the filename for root/legacy assets and use `<subfolder>/<filename>` when the subfolder is non-empty (filenames cannot contain `/`, so this is unambiguous). The same filename in two subfolders is classified under two keys; role/Generate lookup uses the first library member with that filename. Legacy filename-only callers still default to root input `subfolder=""`. For image files, `available` requires HTTP success **and** an `image/*` content-type. Audio uses non-image MIME rules (JSON/image responses are not treated as available audio). Missing required roles disable Generate with a visible reason. Removing a group/member clears role assignments that pointed at those filenames but does **not** delete ComfyUI input files.
 
-Thumbnails use the existing `/api/view` proxy. Audio uses non-image cards (filename/status).
+Thumbnails request `/api/view` with percent-encoded `filename`, `type=input`, and `subfolder`. This avoids `URLSearchParams` `+` / `%2B` encoding, which 404s ComfyUI for input names that contain spaces even when status still reported Disponibile. Library/selector thumbs are identification only; they are not a generation crop preview.
+
+Workflow binding `<option>` labels are dynamic ordinals (`Martino · Elements #1`) from current group order. Reorder refreshes labels immediately. The option value and saved project binding remain the ComfyUI filename. `schemaVersion` is unchanged.
+
+The desktop workspace order is header → prompt/Generate → render monitor → log. Generation settings use two columns at viewport ≥1100px and one column below that. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
+
+Aspect-ratio-safe I2VA/FL2VA preprocessing is **not** in v0.5.2. Issue #11 PR B will rewire MiniMax first/last frames through the existing center-crop resize nodes.
 
 Saving persists label, workflow, prompt, generation settings, library groups/members/order, and explicit role assignments. It does **not** persist job id, progress, terminal logs, queue state, or session `clientId`.
 

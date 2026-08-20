@@ -7,6 +7,8 @@ import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } fr
 import { createLogger } from "./lib/logger.mjs";
 import { createProjectStore } from "./lib/project-store.mjs";
 import { isValidProjectId } from "./lib/projects.mjs";
+import { probeAssetStatuses } from "./lib/asset-status.mjs";
+import { parseAssetStatusDescriptors } from "./lib/asset-ref.mjs";
 import {
   attachSafeStaticStream,
   canWriteResponse,
@@ -62,22 +64,8 @@ async function projects() {
   return projectStore.list();
 }
 
-async function assetStatuses(filenames = []) {
-  const unique = [...new Set(filenames.filter(Boolean).map(String))];
-  const statuses = {};
-  await Promise.all(unique.map(async filename => {
-    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
-      statuses[filename] = "error";
-      return;
-    }
-    try {
-      const upstream = await fetch(`${comfy}/view?${new URLSearchParams({ filename, type: "input" })}`, { method: "GET" });
-      statuses[filename] = upstream.ok ? "available" : upstream.status === 404 ? "missing" : "error";
-    } catch {
-      statuses[filename] = "error";
-    }
-  }));
-  return statuses;
+async function assetStatuses(descriptors = []) {
+  return probeAssetStatuses(descriptors, { comfyUrl: comfy });
 }
 
 async function loadPreset(id) {
@@ -131,10 +119,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === "GET" && url.pathname === "/api/asset-status") {
-      const filenames = url.searchParams.getAll("filename").concat(
-        (url.searchParams.get("filenames") || "").split(",").map(s => s.trim()).filter(Boolean)
-      );
-      return json(res, 200, { statuses: await assetStatuses(filenames) });
+      return json(res, 200, { statuses: await assetStatuses(parseAssetStatusDescriptors(url.searchParams)) });
     }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {

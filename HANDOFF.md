@@ -75,7 +75,7 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.4.0
+Known package version: 0.5.2
 
 ## Verified architecture
 
@@ -83,7 +83,7 @@ Known package version: 0.4.0
 - ComfyUI default endpoint: `http://127.0.0.1:8188`.
 - The harness does not launch, stop or own the ComfyUI process lifecycle.
 - ComfyUI must be started externally before using the harness.
-- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7), plus project CRUD and categorized asset library (Issue #5). Harness v0.5.1 hardens HTTP response handling so late proxy failures cannot crash Node with `ERR_HTTP_HEADERS_SENT`.
+- the harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7), plus project CRUD and categorized asset library (Issue #5). Harness v0.5.1 hardens HTTP response handling so late proxy failures cannot crash Node with `ERR_HTTP_HEADERS_SENT`. v0.5.2 is UI/UX polish (Issue #11 PR A): prompt above the monitor, two-column generation settings, semantic connection colors, ordinal asset labels, safer thumbnails, and Generate blockers. Availability checks honor persisted member `subfolder` so nested ComfyUI inputs are not false-missing. I2VA/FL2VA safe-crop rewiring remains Issue #11 PR B.
 - Manual prompt text is passed essentially unchanged to ComfyUI; the H3 Director skill is not executed inside the harness runtime.
 - `config.example.json` is the valid runtime fallback when no private `config.json` override exists.
 
