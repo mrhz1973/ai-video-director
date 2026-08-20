@@ -406,6 +406,45 @@ export function retainCompatibleRoles(files, attachmentKeys = []) {
   return next;
 }
 
+/** Submission/view filter only — never use to mutate persisted draft.files. */
+export function filterFilesForActivePreset(files, attachmentKeys = []) {
+  return retainCompatibleRoles(files, attachmentKeys);
+}
+
+/**
+ * Restore a saved model after the preset rebuilds the <select>.
+ * Prefer the saved model when it is still listed; otherwise fall back and warn.
+ */
+export function restoreModelSelection({ availableModels = [], savedModel, presetDefault } = {}) {
+  const models = (availableModels || []).filter(Boolean).map(String);
+  const saved = savedModel == null || savedModel === "" ? undefined : String(savedModel);
+  const fallback = presetDefault != null && presetDefault !== ""
+    ? String(presetDefault)
+    : (models[0] || "");
+  if (!saved) {
+    return { model: fallback, warning: null, restored: false };
+  }
+  if (models.includes(saved)) {
+    return { model: saved, warning: null, restored: true };
+  }
+  return {
+    model: fallback,
+    warning: `Modello salvato non disponibile: ${saved}. Uso: ${fallback || "(nessuno)"}`,
+    restored: false
+  };
+}
+
+/**
+ * Pure workflow-switch simulation: stored bindings must survive inactive presets.
+ * activeFilesFor(workflowId) returns only roles declared by that workflow.
+ */
+export function simulateWorkflowBindingView(storedFiles, workflowAttachmentKeys) {
+  return {
+    stored: { ...(storedFiles || {}) },
+    active: filterFilesForActivePreset(storedFiles, workflowAttachmentKeys)
+  };
+}
+
 export function roleAcceptKind(accept = "") {
   const value = String(accept || "image/*").toLowerCase();
   if (value.includes("audio")) return "audio";
@@ -422,11 +461,19 @@ export function membersCompatibleWithRole(library, accept = "image/*") {
   });
 }
 
-export function buildSubmissionFiles({ files = {}, library, availability = {}, requiredKeys = [] } = {}) {
-  const known = new Set(listAllMembers(library).map(m => m.filename));
+export function buildSubmissionFiles({
+  files = {},
+  library,
+  availability = {},
+  requiredKeys = [],
+  activeKeys
+} = {}) {
+  const keys = Array.isArray(activeKeys) ? activeKeys : requiredKeys;
+  const active = filterFilesForActivePreset(files, keys);
+  const known = new Set(listAllMembers(library || emptyLibrary()).map(m => m.filename));
   const out = {};
   const missingRequired = [];
-  for (const [role, filename] of Object.entries(files || {})) {
+  for (const [role, filename] of Object.entries(active)) {
     if (!filename) continue;
     const status = availability[filename] || (known.has(filename) ? "unknown" : "missing");
     if (status === "missing" || status === "error") {
@@ -436,6 +483,7 @@ export function buildSubmissionFiles({ files = {}, library, availability = {}, r
     out[role] = filename;
   }
   for (const role of requiredKeys) {
+    if (!keys.includes(role)) continue;
     if (!out[role]) missingRequired.push(role);
   }
   return { files: out, missingRequired: [...new Set(missingRequired)] };

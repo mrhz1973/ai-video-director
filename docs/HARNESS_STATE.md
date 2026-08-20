@@ -224,7 +224,7 @@ Each group has a stable id, editable label, and ordered members. Each member sto
 
 `files` (or equivalent role map) remains the **explicit** workflow slot assignment (`firstImage`, `lastImage`, Ref2VA slots, audio roles declared by the active preset). Drag/drop into the library never auto-assigns roles, never changes workflow, and never calls `/api/queue` or ComfyUI `/prompt`.
 
-The active preset remains the source of truth for which slots exist. T2VA may keep library assets while submitting none. Switching workflow preserves the library and retains only compatible role keys — it does not silently reassign assets.
+The full binding map is retained across workflow switches. Switching I2VA → T2VA → I2VA must not erase `firstImage`. Only the active preset's attachment keys are rendered and submitted; inactive bindings stay persisted but are filtered out of the queue payload. Saved `settings.model` is restored after the preset rebuilds the model list; if unavailable, the UI falls back to the preset default with an explicit warning.
 
 ### Stale / missing references
 

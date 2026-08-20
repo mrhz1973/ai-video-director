@@ -25,6 +25,7 @@ import {
   createMember,
   editorStateFromDomLike,
   emptyLibrary,
+  filterFilesForActivePreset,
   isProjectDirty,
   listAllMembers,
   membersCompatibleWithRole,
@@ -34,7 +35,7 @@ import {
   removeMember,
   renameGroup,
   reorderMembers,
-  retainCompatibleRoles,
+  restoreModelSelection,
   roleAcceptKind
 } from "/lib/projects.mjs";
 
@@ -714,14 +715,27 @@ function renderRoleFields() {
   }
 }
 
-function selectPreset({ preserveLibrary = true, clearProjectSelection = false } = {}) {
+function selectPreset({
+  preserveLibrary = true,
+  clearProjectSelection = false,
+  preferredModel,
+  trackDirty = true
+} = {}) {
   const preset = currentPreset();
   applyMegapixelsContract();
   monitorState = { ...monitorState, title: workflowTitle() };
   renderMonitor();
-  $("model").replaceChildren(...(preset?.options?.models || [""]).map(name => new Option(name, name)));
-  const keys = (preset?.attachments || []).map(field => field.key);
-  draft.files = retainCompatibleRoles(draft.files, keys);
+  const models = preset?.options?.models || [""];
+  const currentModel = preferredModel !== undefined ? preferredModel : $("model").value;
+  $("model").replaceChildren(...models.map(name => new Option(name, name)));
+  const restored = restoreModelSelection({
+    availableModels: models,
+    savedModel: currentModel,
+    presetDefault: models[0]
+  });
+  $("model").value = restored.model;
+  if (restored.warning) add(restored.warning);
+  // Never destroy stored bindings when merely viewing another workflow.
   if (!preserveLibrary) draft.library = emptyLibrary();
   if (clearProjectSelection) {
     draft.id = "";
@@ -729,7 +743,7 @@ function selectPreset({ preserveLibrary = true, clearProjectSelection = false } 
   }
   renderLibrary();
   renderRoleFields();
-  updateDirtyFlag();
+  if (trackDirty) updateDirtyFlag();
 }
 
 async function loadProjectById(id) {
@@ -746,10 +760,14 @@ async function loadProjectById(id) {
   $("projectLabel").value = normalized.label;
   $("workflow").value = normalized.workflowId;
   $("prompt").value = normalized.prompt || "";
-  for (const [key, value] of Object.entries(normalized.settings || {})) if ($(key)) $(key).value = value;
+  const savedModel = normalized.settings?.model;
+  for (const [key, value] of Object.entries(normalized.settings || {})) {
+    if (key === "model") continue;
+    if ($(key)) $(key).value = value;
+  }
   const restored = megapixelsFromSettings(normalized.settings || {});
   if (restored !== undefined) $("megapixels").value = restored;
-  selectPreset({ preserveLibrary: true });
+  selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false });
   await refreshAvailability();
   markBaselineFromDraft();
   renderLibrary();
@@ -896,10 +914,9 @@ config = await (await fetch("/api/config")).json();
 $("version").textContent = `v${config.version}`;
 $("workflow").replaceChildren(...(config.presets.length ? config.presets.map(item => new Option(item.label, item.id)) : [new Option("Nessun preset", "")]));
 refreshProjectSelect();
-draft.baseline = projectEditorSnapshot(currentEditorState());
 
 $("workflow").onchange = () => {
-  // Preserve library; drop incompatible role keys only — never silent reassignment.
+  // Preserve library and full binding map; only the active preset's roles are rendered/submitted.
   selectPreset({ preserveLibrary: true, clearProjectSelection: false });
   $("project").value = draft.id || "";
 };
@@ -976,8 +993,9 @@ $("projectDelete").onclick = async () => {
   add("Progetto eliminato (solo definizione locale).");
 };
 
-selectPreset({ preserveLibrary: true });
+selectPreset({ preserveLibrary: true, trackDirty: false });
 setCategory("elements");
+markBaselineFromDraft();
 renderMonitor();
 await recoverActive();
 sessionStorage.setItem("h3ClientId", clientId);
@@ -997,7 +1015,8 @@ $("send").onclick = async () => {
     $("progress").textContent = "Controllo allegati…";
     const preset = currentPreset();
     await refreshAvailability();
-    const requiredKeys = (preset?.attachments || []).map(field => field.key);
+    const activeKeys = (preset?.attachments || []).map(field => field.key);
+    const requiredKeys = activeKeys;
     // Merge any freshly chosen video file uploads already in draft.files.
     for (const input of $("attachmentFields").querySelectorAll("input[type=file]")) {
       if (input.files[0]) {
@@ -1009,12 +1028,15 @@ $("send").onclick = async () => {
       files: draft.files,
       library: draft.library,
       availability: draft.availability,
+      activeKeys,
       requiredKeys
     });
     if (built.missingRequired.length) {
       const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
       throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
     }
+    // Defense in depth: never send inactive-workflow bindings.
+    const files = filterFilesForActivePreset(built.files, activeKeys);
     $("progress").textContent = "In coda…";
     const payload = {
       clientId,
@@ -1026,7 +1048,7 @@ $("send").onclick = async () => {
       duration: $("duration").value,
       aspect: $("aspect").value,
       seed: $("seed").value,
-      files: built.files
+      files
     };
     const response = await fetch("/api/queue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();

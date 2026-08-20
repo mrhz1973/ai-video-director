@@ -14,6 +14,7 @@ import {
   createGroup,
   createMember,
   emptyLibrary,
+  filterFilesForActivePreset,
   isProjectDirty,
   isValidProjectId,
   listAllMembers,
@@ -25,7 +26,8 @@ import {
   renameGroup,
   reorderMembers,
   resolveSafeProjectPathNode,
-  retainCompatibleRoles,
+  restoreModelSelection,
+  simulateWorkflowBindingView,
   toPersistedProject,
   uniqueProjectId
 } from "../lib/projects.mjs";
@@ -161,13 +163,21 @@ test("removing member or group clears role assignments", () => {
   assert.equal(files.environment, undefined);
 });
 
-test("workflow change retains library and drops incompatible roles only", () => {
+test("workflow change retains library and preserves inactive bindings in storage", () => {
   const library = addGroup(emptyLibrary(), "elements", createGroup({
     label: "Keep",
     members: [createMember({ filename: "a.png", originalName: "a.png" })]
   }));
-  const files = retainCompatibleRoles({ firstImage: "a.png", lastImage: "b.png", characterBody: "c.png" }, ["firstImage"]);
-  assert.deepEqual(files, { firstImage: "a.png" });
+  const stored = {
+    firstImage: "a.png",
+    lastImage: "b.png",
+    characterBody: "c.png"
+  };
+  const t2v = filterFilesForActivePreset(stored, []);
+  assert.deepEqual(t2v, {});
+  assert.equal(stored.firstImage, "a.png");
+  const back = filterFilesForActivePreset(stored, ["firstImage"]);
+  assert.deepEqual(back, { firstImage: "a.png" });
   assert.equal(library.elements.length, 1);
 });
 
@@ -185,15 +195,88 @@ test("submission blocks missing required roles and preserves Ref2VA order in lib
   };
   assert.deepEqual(listAllMembers(library).map(m => m.filename), ["body.png", "expr1.png", "expr2.png"]);
   const built = buildSubmissionFiles({
-    files: { characterBody: "body.png", characterExpressions1: "expr1.png" },
+    files: {
+      characterBody: "body.png",
+      characterExpressions1: "expr1.png",
+      firstImage: "should-not-submit.png"
+    },
     library,
-    availability: { "body.png": "available", "expr1.png": "missing" },
+    availability: { "body.png": "available", "expr1.png": "missing", "should-not-submit.png": "available" },
+    activeKeys: ["characterBody", "characterExpressions1", "environment"],
     requiredKeys: ["characterBody", "characterExpressions1", "environment"]
   });
   assert.ok(built.missingRequired.includes("characterExpressions1"));
   assert.ok(built.missingRequired.includes("environment"));
   assert.equal(built.files.characterBody, "body.png");
   assert.equal(built.files.characterExpressions1, undefined);
+  assert.equal(built.files.firstImage, undefined);
+});
+
+test("I2VA -> T2VA -> I2VA keeps firstImage binding in storage", () => {
+  const i2vKeys = ["firstImage"];
+  const t2vKeys = [];
+  let stored = { firstImage: "martino-front.png" };
+  let view = simulateWorkflowBindingView(stored, i2vKeys);
+  assert.equal(view.active.firstImage, "martino-front.png");
+  view = simulateWorkflowBindingView(stored, t2vKeys);
+  assert.equal(view.active.firstImage, undefined);
+  assert.equal(view.stored.firstImage, "martino-front.png");
+  view = simulateWorkflowBindingView(stored, i2vKeys);
+  assert.equal(view.active.firstImage, "martino-front.png");
+});
+
+test("Ref2VA -> I2VA -> Ref2VA keeps Ref2VA bindings in storage", () => {
+  const refKeys = ["characterBody", "environment", "audioReference"];
+  const i2vKeys = ["firstImage"];
+  const stored = {
+    characterBody: "body.png",
+    environment: "harbor.png",
+    audioReference: "wind.wav",
+    firstImage: "front.png"
+  };
+  let view = simulateWorkflowBindingView(stored, refKeys);
+  assert.equal(view.active.characterBody, "body.png");
+  assert.equal(view.active.firstImage, undefined);
+  view = simulateWorkflowBindingView(stored, i2vKeys);
+  assert.equal(view.active.firstImage, "front.png");
+  assert.equal(view.stored.characterBody, "body.png");
+  view = simulateWorkflowBindingView(stored, refKeys);
+  assert.equal(view.active.environment, "harbor.png");
+  assert.equal(view.active.audioReference, "wind.wav");
+});
+
+test("restoreModelSelection keeps saved model when listed and warns when missing", () => {
+  const multi = ["model-a.gguf", "model-b.gguf", "model-c.gguf"];
+  const ok = restoreModelSelection({ availableModels: multi, savedModel: "model-b.gguf", presetDefault: "model-a.gguf" });
+  assert.equal(ok.model, "model-b.gguf");
+  assert.equal(ok.restored, true);
+  assert.equal(ok.warning, null);
+  const missing = restoreModelSelection({ availableModels: multi, savedModel: "gone.gguf", presetDefault: "model-a.gguf" });
+  assert.equal(missing.model, "model-a.gguf");
+  assert.equal(missing.restored, false);
+  assert.match(missing.warning, /non disponibile/);
+});
+
+test("initial baseline matches post-selectPreset form snapshot", () => {
+  const before = projectEditorSnapshot({
+    label: "",
+    workflowId: "minimax-h3-fl2v",
+    prompt: "",
+    settings: { megapixels: 0.3, steps: 20, duration: 5, aspect: "16:9", seed: 1, model: "" },
+    library: emptyLibrary(),
+    files: {}
+  });
+  const afterInit = projectEditorSnapshot({
+    label: "",
+    workflowId: "minimax-h3-fl2v",
+    prompt: "",
+    settings: { megapixels: 0.3, steps: 20, duration: 5, aspect: "16:9", seed: 1, model: "minimax_h3_fl2va_pruned_fp8_Q4_0.gguf" },
+    library: emptyLibrary(),
+    files: {}
+  });
+  // Capturing baseline before model init would look dirty; after init it must match itself.
+  assert.equal(isProjectDirty(before, afterInit), true);
+  assert.equal(isProjectDirty(afterInit, afterInit), false);
 });
 
 test("dirty state flips with prompt/settings/library and clears on matching snapshot", () => {
