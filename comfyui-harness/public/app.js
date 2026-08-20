@@ -1,12 +1,31 @@
 import { classifyHistoryState, historyFailureLabel, promptIdPrefix, POLL_INTERVAL_MS } from "./recovery.mjs";
 import { DISPLAY_MULTIPLE, MEGAPIXELS_LIMITS, formatResolutionHint, isValidMegapixels, megapixelsFromSettings } from "./resolution.mjs";
+import {
+  LOG_POLL_MS,
+  QUEUE_POLL_MS,
+  applyMonitorEvent,
+  compactProgressText,
+  formatElapsed,
+  initialMonitorState,
+  mergeTerminalEntries,
+  resolveJobStartMs,
+  resolveObserverClientId,
+  summarizeMonitor
+} from "./monitor.mjs";
 
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
 let config, events, selectedProject;
 let currentPrompt = sessionStorage.getItem("h3CurrentPrompt") || undefined;
 let pollTimer;
+let queueTimer;
+let logTimer;
+let elapsedTimer;
 let completing = false;
+let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || null;
+let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
+let monitorState = initialMonitorState();
+let logsAvailable = null;
 
 const add = (text, kind = "system") => {
   const el = document.createElement("div");
@@ -23,11 +42,49 @@ const setBusy = busy => {
   $("send").style.cursor = busy ? "not-allowed" : "pointer";
 };
 
-const rememberJob = promptId => {
+const rememberJob = (promptId, meta = {}) => {
   currentPrompt = promptId;
-  if (promptId) sessionStorage.setItem("h3CurrentPrompt", promptId);
-  else sessionStorage.removeItem("h3CurrentPrompt");
-  if (!promptId) stopPolling();
+  if (promptId) {
+    sessionStorage.setItem("h3CurrentPrompt", promptId);
+    if (!jobFirstSeenAt) {
+      jobFirstSeenAt = Date.now();
+      sessionStorage.setItem("h3JobFirstSeenAt", String(jobFirstSeenAt));
+    }
+    if (meta.createdAt) {
+      jobCreatedAt = Number(meta.createdAt);
+      sessionStorage.setItem("h3JobCreatedAt", String(jobCreatedAt));
+    }
+    monitorState = {
+      ...monitorState,
+      phase: monitorState.phase === "idle" ? "running" : monitorState.phase,
+      promptId,
+      title: workflowTitle()
+    };
+    startElapsedClock();
+    startQueuePolling();
+  } else {
+    sessionStorage.removeItem("h3CurrentPrompt");
+    sessionStorage.removeItem("h3JobCreatedAt");
+    sessionStorage.removeItem("h3JobFirstSeenAt");
+    jobCreatedAt = null;
+    jobFirstSeenAt = null;
+    stopPolling();
+    stopQueuePolling();
+    stopElapsedClock();
+    const keep = ["completed", "error", "interrupted"].includes(monitorState.phase);
+    monitorState = initialMonitorState({
+      connection: monitorState.connection,
+      terminal: monitorState.terminal,
+      title: workflowTitle(),
+      phase: keep ? monitorState.phase : "idle",
+      progress: keep ? monitorState.progress : { kind: "idle", value: null, max: null, percent: null },
+      promptId: keep ? monitorState.promptId : null,
+      events: monitorState.events,
+      queueRunning: monitorState.queueRunning,
+      queuePending: monitorState.queuePending
+    });
+  }
+  renderMonitor();
 };
 
 const stopPolling = () => {
@@ -41,6 +98,126 @@ const startPolling = () => {
   if (!currentPrompt) return;
   pollTimer = setInterval(() => { pollHistory(); }, POLL_INTERVAL_MS);
 };
+
+const stopQueuePolling = () => {
+  if (!queueTimer) return;
+  clearInterval(queueTimer);
+  queueTimer = undefined;
+};
+
+const startQueuePolling = () => {
+  stopQueuePolling();
+  refreshQueueCounts();
+  queueTimer = setInterval(() => { refreshQueueCounts(); }, QUEUE_POLL_MS);
+};
+
+const stopElapsedClock = () => {
+  if (!elapsedTimer) return;
+  clearInterval(elapsedTimer);
+  elapsedTimer = undefined;
+};
+
+const startElapsedClock = () => {
+  stopElapsedClock();
+  updateElapsed();
+  elapsedTimer = setInterval(updateElapsed, 1000);
+};
+
+function workflowTitle() {
+  const preset = currentPreset();
+  return preset?.label ? `RENDERING — ${preset.label}` : "RENDERING";
+}
+
+function updateElapsed() {
+  if (!currentPrompt) {
+    $("monitorElapsed").textContent = "non disponibile";
+    return;
+  }
+  const resolved = resolveJobStartMs({
+    createdAt: jobCreatedAt,
+    storedStartedAt: Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null,
+    firstSeenAt: jobFirstSeenAt,
+    now: Date.now()
+  });
+  $("monitorElapsed").textContent = formatElapsed(resolved.elapsedMs, { approximate: resolved.approximate });
+}
+
+function renderMonitor() {
+  const summary = summarizeMonitor({ ...monitorState, title: monitorState.title || workflowTitle() });
+  $("renderMonitor").classList.toggle("idle", summary.barMode === "idle");
+  $("monitorTitle").textContent = summary.title;
+  $("monitorPhase").textContent = summary.summary;
+  $("monitorBarWrap").dataset.mode = summary.barMode;
+  $("monitorBar").style.width = summary.barMode === "numeric" ? `${summary.percent}%` : "0%";
+  $("monitorFraction").textContent = summary.barMode === "numeric" ? `${summary.value} / ${summary.max}` : "—";
+  $("monitorPercent").textContent = summary.barMode === "numeric" ? `${summary.percent}%` : summary.barMode === "indeterminate" ? "Elaborazione…" : "—";
+  $("monitorNode").textContent = summary.nodeLabel;
+  $("monitorJob").textContent = summary.promptId ? promptIdPrefix(summary.promptId) : "—";
+  $("monitorConnection").textContent = summary.connection;
+  const running = summary.queueRunning ?? 0;
+  const pending = summary.queuePending ?? 0;
+  $("monitorQueue").textContent = `${running} running · ${pending} pending`;
+  const events = monitorState.events || [];
+  $("monitorEvents").textContent = events.length
+    ? events.map(item => `[${item.t}] ${item.m}`).join("\n")
+    : "Nessun evento.";
+  $("progress").textContent = compactProgressText(summary);
+  updateElapsed();
+}
+
+function pushMonitorMessage(message) {
+  monitorState = applyMonitorEvent(monitorState, message);
+  if (message.type === "logs") renderTerminal();
+  renderMonitor();
+}
+
+function renderTerminal() {
+  const lines = monitorState.terminal || [];
+  if (logsAvailable === false && !lines.length) {
+    $("monitorTerminal").textContent = "Log terminale ComfyUI non disponibile tramite API in questa installazione.";
+    return;
+  }
+  if (!lines.length) {
+    $("monitorTerminal").textContent = logsAvailable ? "In attesa di log ComfyUI…" : "Controllo disponibilità log…";
+    return;
+  }
+  $("monitorTerminal").textContent = lines.map(entry => {
+    const time = entry.t ? String(entry.t).replace("T", " ").slice(0, 19) : "--";
+    return `[${time}] ${entry.m}`.trimEnd();
+  }).join("\n");
+  $("monitorTerminal").scrollTop = $("monitorTerminal").scrollHeight;
+}
+
+async function refreshQueueCounts() {
+  try {
+    const response = await fetch("/api/active");
+    if (!response.ok) return;
+    const data = await response.json();
+    monitorState = {
+      ...monitorState,
+      queueRunning: Number(data.running || 0),
+      queuePending: Number(data.pending || 0)
+    };
+    renderMonitor();
+  } catch {
+    // Ignore transient queue poll failures.
+  }
+}
+
+async function refreshComfyLogs() {
+  try {
+    const response = await fetch("/api/comfy-logs");
+    const data = await response.json();
+    logsAvailable = Boolean(data.available);
+    if (logsAvailable && Array.isArray(data.entries)) {
+      monitorState = { ...monitorState, terminal: mergeTerminalEntries([], data.entries.slice(-200)) };
+    }
+    renderTerminal();
+  } catch {
+    logsAvailable = false;
+    renderTerminal();
+  }
+}
 
 async function upload(file) {
   if (!file) return undefined;
@@ -60,9 +237,15 @@ async function outputs() {
     const response = await fetch(`/api/outputs?promptId=${encodeURIComponent(currentPrompt)}`);
     const items = await response.json();
     if (!response.ok) throw new Error(items.error || "Output non disponibile");
-    $("progress").textContent = "Completato";
+    monitorState = applyMonitorEvent(monitorState, { type: "executing", data: { node: null, prompt_id: currentPrompt } });
+    monitorState = {
+      ...monitorState,
+      phase: "completed",
+      events: [...monitorState.events, { t: new Date().toLocaleTimeString("it-IT", { hour12: false }), m: "Output disponibile", at: Date.now() }]
+    };
     setBusy(false);
     rememberJob();
+    renderMonitor();
     for (const item of items) {
       const link = document.createElement("a");
       link.href = item.url;
@@ -75,7 +258,8 @@ async function outputs() {
     }
   } catch (error) {
     setBusy(false);
-    $("progress").textContent = "Errore";
+    monitorState = { ...monitorState, phase: "error" };
+    renderMonitor();
     add(error.message);
     startPolling();
   } finally {
@@ -86,9 +270,13 @@ async function outputs() {
 function handleHistoryFailure(history) {
   stopPolling();
   setBusy(false);
-  rememberJob();
   const label = historyFailureLabel(history, currentPrompt);
-  $("progress").textContent = label === "interrupted" ? "Interrotta" : "Errore";
+  monitorState = applyMonitorEvent(monitorState, {
+    type: label === "interrupted" ? "execution_interrupted" : "execution_error",
+    data: { prompt_id: currentPrompt }
+  });
+  rememberJob();
+  renderMonitor();
   add(label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).");
 }
 
@@ -106,25 +294,19 @@ async function pollHistory() {
   }
 }
 
-function showProgress(data) {
-  const nodes = Object.values(data?.nodes || {});
-  const active = nodes.filter(node => node.state === "running").at(-1);
-  if (!active) return;
-  const value = Number(active.value || 0), max = Number(active.max || 0);
-  const percent = max ? Math.round(value / max * 100) : 0;
-  $("progress").textContent = max ? `In esecuzione · ${value}/${max} · ${percent}%` : `In esecuzione · nodo ${active.display_node_id || active.node_id}`;
-}
-
 async function handleMessage(event) {
   const message = JSON.parse(event.data);
-  if (message.data?.prompt_id && message.data.prompt_id !== currentPrompt) return;
-  if (message.type === "progress") $("progress").textContent = `In esecuzione · ${message.data.value}/${message.data.max} · ${Math.round(message.data.value / message.data.max * 100)}%`;
-  if (message.type === "progress_state") showProgress(message.data);
-  if (message.type === "executing" && message.data.node !== null && currentPrompt && !String($("progress").textContent).includes("%")) $("progress").textContent = `In esecuzione · nodo ${message.data.display_node || message.data.node}`;
+  if (message.data?.prompt_id && currentPrompt && message.data.prompt_id !== currentPrompt) return;
+  if (message.type === "logs") {
+    pushMonitorMessage(message);
+    return;
+  }
+  if (["progress", "progress_state", "executing", "executed", "execution_error", "execution_interrupted"].includes(message.type)) {
+    pushMonitorMessage(message);
+  }
   if (message.type === "executing" && message.data.node === null && currentPrompt) await outputs();
   if (["execution_error", "execution_interrupted"].includes(message.type)) {
     stopPolling();
-    $("progress").textContent = "Errore";
     setBusy(false);
     rememberJob();
     add(JSON.stringify(message.data, null, 2));
@@ -135,10 +317,18 @@ function connect() {
   events?.close();
   events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
   events.addEventListener("connection", event => {
-    $("connection").textContent = JSON.parse(event.data).state === "open" ? "ComfyUI collegato" : "Connessione…";
+    const state = JSON.parse(event.data).state;
+    const label = state === "open" ? "ComfyUI collegato" : "Connessione…";
+    $("connection").textContent = label;
+    monitorState = { ...monitorState, connection: label };
+    renderMonitor();
   });
   events.onmessage = handleMessage;
-  events.onerror = () => { $("connection").textContent = "Riconnessione…"; };
+  events.onerror = () => {
+    $("connection").textContent = "Riconnessione…";
+    monitorState = { ...monitorState, connection: "Riconnessione…" };
+    renderMonitor();
+  };
 }
 
 async function recoverActive() {
@@ -147,17 +337,40 @@ async function recoverActive() {
     const response = await fetch("/api/active");
     if (!response.ok) throw new Error(`active status ${response.status}`);
     active = await response.json();
+    monitorState = {
+      ...monitorState,
+      queueRunning: Number(active.running || 0),
+      queuePending: Number(active.pending || 0)
+    };
     if (active.active) {
-      if (active.clientId) clientId = active.clientId;
+      const observer = resolveObserverClientId({ localClientId: clientId, activeClientId: active.clientId });
+      clientId = observer.clientId;
       sessionStorage.setItem("h3ClientId", clientId);
-      rememberJob(active.promptId);
+      rememberJob(active.promptId, { createdAt: active.createdAt });
+      monitorState = applyMonitorEvent(monitorState, {
+        type: "executing",
+        data: { node: "?", display_node: "Job recuperato", prompt_id: active.promptId }
+      });
+      const note = observer.ignoredActiveClientId && observer.ignoredActiveClientId !== clientId
+        ? `Job rilevato · ${promptIdPrefix(active.promptId)} · osservazione indipendente`
+        : `Job rilevato · ${promptIdPrefix(active.promptId)}`;
+      monitorState = {
+        ...monitorState,
+        events: [...monitorState.events, {
+          t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
+          m: note,
+          at: Date.now()
+        }]
+      };
       setBusy(true);
-      $("progress").textContent = `In esecuzione · ${promptIdPrefix(active.promptId)}`;
       startPolling();
+      renderMonitor();
       return;
     }
   } catch {
     $("connection").textContent = "Recupero connessione…";
+    monitorState = { ...monitorState, connection: "Recupero connessione…" };
+    renderMonitor();
     if (!currentPrompt) {
       $("progress").textContent = "Connessione temporaneamente non disponibile";
       return;
@@ -165,9 +378,19 @@ async function recoverActive() {
   }
   if (currentPrompt) {
     setBusy(true);
-    $("progress").textContent = `Recupero · ${promptIdPrefix(currentPrompt)}`;
+    rememberJob(currentPrompt);
+    monitorState = {
+      ...monitorState,
+      phase: "running",
+      events: [...monitorState.events, {
+        t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
+        m: `Recupero locale · ${promptIdPrefix(currentPrompt)}`,
+        at: Date.now()
+      }]
+    };
     startPolling();
     await pollHistory();
+    renderMonitor();
   }
 }
 
@@ -175,7 +398,6 @@ function currentPreset() {
   return config.presets.find(item => item.id === $("workflow").value);
 }
 
-// Read-only hint. It never rewrites the megapixel value or the aspect ratio.
 function updateResolutionHint() {
   const contract = currentPreset()?.options?.megapixels || {};
   $("resolutionHint").textContent = formatResolutionHint($("megapixels").value, $("aspect").value, contract.multiple || DISPLAY_MULTIPLE);
@@ -193,6 +415,8 @@ function applyMegapixelsContract() {
 function selectPreset() {
   const preset = currentPreset();
   applyMegapixelsContract();
+  monitorState = { ...monitorState, title: workflowTitle() };
+  renderMonitor();
   $("model").replaceChildren(...(preset?.options?.models || [""]).map(name => new Option(name, name)));
   const saved = selectedProject?.workflowId === preset?.id ? selectedProject.files || {} : {};
   $("attachmentFields").replaceChildren(...(preset?.attachments || []).map(field => {
@@ -236,9 +460,13 @@ $("project").onchange = selectProject;
 $("megapixels").oninput = updateResolutionHint;
 $("aspect").onchange = updateResolutionHint;
 selectPreset();
+renderMonitor();
 await recoverActive();
 sessionStorage.setItem("h3ClientId", clientId);
 connect();
+await refreshComfyLogs();
+logTimer = setInterval(refreshComfyLogs, LOG_POLL_MS);
+startQueuePolling();
 
 $("send").onclick = async () => {
   try {
@@ -275,13 +503,30 @@ $("send").onclick = async () => {
     const response = await fetch("/api/queue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok || !data.prompt_id) throw new Error(data.error || JSON.stringify(data.node_errors) || "Invio fallito");
+    jobFirstSeenAt = Date.now();
+    sessionStorage.setItem("h3JobFirstSeenAt", String(jobFirstSeenAt));
     rememberJob(data.prompt_id);
+    monitorState = {
+      ...initialMonitorState({
+        phase: "running",
+        promptId: data.prompt_id,
+        connection: monitorState.connection,
+        terminal: monitorState.terminal,
+        title: workflowTitle(),
+        events: [{
+          t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
+          m: `Job inviato · ${promptIdPrefix(data.prompt_id)}`,
+          at: Date.now()
+        }]
+      })
+    };
     startPolling();
-    $("progress").textContent = `In esecuzione · ${promptIdPrefix(currentPrompt)}`;
+    renderMonitor();
   } catch (error) {
     stopPolling();
     setBusy(false);
-    $("progress").textContent = "Errore";
+    monitorState = { ...monitorState, phase: "error" };
+    renderMonitor();
     add(error.message);
   }
 };

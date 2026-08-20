@@ -73,7 +73,7 @@ Therefore:
 
 Browser form fields are not authoritative for an already-running job. Another tab may show defaults or stale values while recovering the same active prompt through `/api/active`.
 
-For a submitted job, the source of truth is the actual ComfyUI queued/running graph and job metadata.
+For a submitted job, the source of truth is the actual ComfyUI queued/running graph and job metadata. The harness progress monitor shows **current-node** `value/max` from live events; treat that percentage as node progress, not guaranteed whole-job completion. The Eventi/Terminale panels are read-only and must not be used to cancel, reorder or resubmit jobs.
 
 When diagnosing a running generation, identify at minimum:
 

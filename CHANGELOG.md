@@ -66,3 +66,7 @@
 - Versioned the harness as v0.4.1. No H3 model, sampler, scheduler, workflow topology or ComfyUI lifecycle behavior was changed.
 - Fixed the standard run handoff: the assistant/director defines prompt and settings, Cursor may start missing local services and fully prepare the harness form, and the user performs the final `Genera` click manually in the normal browser session.
 - Documented that Cursor preparation must not submit `/api/queue`, press `Genera`, or silently turn preparation into execution; if ComfyUI or the harness is already running, Cursor must leave the existing process alone unless a real restart need exists.
+- Implemented Issue #7: prominent graphical render monitor driven by real ComfyUI `progress` / `progress_state` / `executing` events, with active-node labeling, elapsed time (no ETA), conservative queue counts, expandable Eventi ComfyUI feed, and Terminale ComfyUI via `/internal/logs/raw` + subscribe on the existing SSE bridge client id.
+- Documented that displayed percentages are current-node progress only, never timer-faked whole-job completion; job completion remains history/`executing null` authoritative.
+- Documented native Windows console as an external `run_nvidia_gpu.bat` launch concern; harness remains not a ComfyUI service manager.
+- Versioned the harness as v0.4.2. Validation: 44/44 Node tests plus repository validation.
