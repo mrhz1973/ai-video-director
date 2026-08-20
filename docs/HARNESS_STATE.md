@@ -264,7 +264,11 @@ node scripts/apply_h3_safe_fit.mjs --check --i2v <private-i2v.api.json> --fl2v <
 node scripts/apply_h3_safe_fit.mjs --apply --i2v <path> --fl2v <path>
 ```
 
-`--apply` is explicit-only, fail-closed, creates `<file>.pre-safe-fit.bak` (never overwrites an existing backup), writes atomically, and is idempotent (`ALREADY_SAFE` on second run). Inspector lives in `comfyui-harness/lib/h3-safe-fit.mjs`.
+`--apply` is explicit-only, fail-closed, and **transactional**: PHASE 1 preflights every supplied workflow in memory (existence, parse, graph contract, backup destination, in-memory patched result reaches `safe`) with **zero writes**; PHASE 2 creates backups and atomic-writes only if every job passed preflight. A failure on any supplied file aborts the whole command (no partial patch, no backups). Already-safe files are left untouched (`ALREADY_SAFE`). Idempotent on second `--apply`. Never overwrites an existing `.pre-safe-fit.bak`.
+
+`--check` exit codes (most severe nonzero wins for multi-file: UNEXPECTED > IO > NEEDS_APPLY): `0` SAFE/not-applicable; `3` NEEDS_APPLY; `2` UNEXPECTED/invalid graph; `1` missing/unreadable/parse/IO. Automation must not treat exit `0` as “needs action” or “unexpected”.
+
+Inspector lives in `comfyui-harness/lib/h3-safe-fit.mjs`.
 
 **Harness behavior:** `/api/config` presets include read-only `safeFit` (`safe` / `needs-apply` / `unexpected` / `not-applicable`). I2VA/FL2VA Generate is blocked when not `safe` (UI + `/api/queue` 409). T2VA/Ref2VA are `not-applicable`. Crop preview for first/last roles uses CSS `object-fit: cover` + center and only appears when status is `safe`. Preset bindings and `schemaVersion: 1` filename project roles are unchanged (patch is downstream of LoadImage).
 

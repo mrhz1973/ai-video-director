@@ -306,7 +306,7 @@ test("CLI patcher check/apply/idempotence/backup on temp copies", async () => {
   const beforeFl = await readFile(fl2vPath);
 
   const check = await runPatcher(["--check", "--i2v", i2vPath, "--fl2v", fl2vPath]);
-  assert.equal(check.code, 0);
+  assert.equal(check.code, 3, "NEEDS_APPLY must exit 3");
   assert.match(check.stdout, /needs-apply/);
 
   const apply = await runPatcher(["--apply", "--i2v", i2vPath, "--fl2v", fl2vPath]);
@@ -348,4 +348,124 @@ test("CLI patcher check/apply/idempotence/backup on temp copies", async () => {
 test("CLI usage without check/apply exits non-zero", async () => {
   const result = await runPatcher(["--i2v", "x.json"]);
   assert.notEqual(result.code, 0);
+});
+
+async function fileExists(p) {
+  try {
+    await access(p, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test("transactional apply: valid I2VA + invalid FL2VA writes nothing", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-tx-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(i2vPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  const badFl = makeFL2VA({ firstFrom: "999" });
+  await writeFile(fl2vPath, `${JSON.stringify(badFl, null, 2)}\n`);
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const result = await runPatcher(["--apply", "--i2v", i2vPath, "--fl2v", fl2vPath]);
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /ABORT/);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), false);
+  assert.equal(await fileExists(`${fl2vPath}.pre-safe-fit.bak`), false);
+});
+
+test("transactional apply: backup collision aborts before any write", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-bak-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(i2vPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(fl2vPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  const existingFlBak = `${fl2vPath}.pre-safe-fit.bak`;
+  const sentinel = Buffer.from("existing-fl2v-backup-sentinel\n");
+  await writeFile(existingFlBak, sentinel);
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const result = await runPatcher(["--apply", "--i2v", i2vPath, "--fl2v", fl2vPath]);
+  assert.notEqual(result.code, 0);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /ABORT|Backup already exists/i);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), false);
+  assert.equal(Buffer.compare(await readFile(existingFlBak), sentinel), 0);
+});
+
+test("transactional apply: SAFE I2VA + NEEDS_APPLY FL2VA patches only FL2VA", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-mix-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(
+    i2vPath,
+    `${JSON.stringify(makeI2VA({ firstFrom: c.firstResizeId }), null, 2)}\n`
+  );
+  await writeFile(fl2vPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const result = await runPatcher(["--apply", "--i2v", i2vPath, "--fl2v", fl2vPath]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), false);
+  assert.match(result.stdout, /APPLIED.*fl2v/i);
+  const afterFl = JSON.parse(await readFile(fl2vPath, "utf8"));
+  assert.deepEqual(afterFl[c.minimaxNodeId].inputs.first_frame, [c.firstResizeId, 0]);
+  assert.deepEqual(afterFl[c.minimaxNodeId].inputs.last_frame, [c.lastResizeId, 0]);
+  assert.equal(Buffer.compare(await readFile(`${fl2vPath}.pre-safe-fit.bak`), beforeFl), 0);
+});
+
+test("transactional apply: both SAFE writes nothing", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-safe-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(
+    i2vPath,
+    `${JSON.stringify(makeI2VA({ firstFrom: c.firstResizeId }), null, 2)}\n`
+  );
+  await writeFile(
+    fl2vPath,
+    `${JSON.stringify(makeFL2VA({ firstFrom: c.firstResizeId, lastFrom: c.lastResizeId }), null, 2)}\n`
+  );
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const result = await runPatcher(["--apply", "--i2v", i2vPath, "--fl2v", fl2vPath]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /ALREADY_SAFE/);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), false);
+  assert.equal(await fileExists(`${fl2vPath}.pre-safe-fit.bak`), false);
+});
+
+test("--check exit codes: SAFE=0 NEEDS_APPLY=3 UNEXPECTED=2 multi-file", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-check-"));
+  const safePath = path.join(tmp, "safe-i2v.api.json");
+  const needsPath = path.join(tmp, "needs-i2v.api.json");
+  const unexpectedPath = path.join(tmp, "unexpected-i2v.api.json");
+  await writeFile(
+    safePath,
+    `${JSON.stringify(makeI2VA({ firstFrom: c.firstResizeId }), null, 2)}\n`
+  );
+  await writeFile(needsPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(
+    unexpectedPath,
+    `${JSON.stringify(makeI2VA({ firstFrom: "999" }), null, 2)}\n`
+  );
+
+  assert.equal((await runPatcher(["--check", "--i2v", safePath])).code, 0);
+  assert.equal((await runPatcher(["--check", "--i2v", needsPath])).code, 3);
+  assert.equal((await runPatcher(["--check", "--i2v", unexpectedPath])).code, 2);
+
+  const mixed = await runPatcher(["--check", "--i2v", safePath, "--fl2v", unexpectedPath]);
+  assert.equal(mixed.code, 2, "SAFE + UNEXPECTED must not exit 0");
 });
