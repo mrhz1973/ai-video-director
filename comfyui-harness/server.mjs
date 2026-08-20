@@ -7,6 +7,13 @@ import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } fr
 import { createLogger } from "./lib/logger.mjs";
 import { createProjectStore } from "./lib/project-store.mjs";
 import { isValidProjectId } from "./lib/projects.mjs";
+import {
+  attachSafeStaticStream,
+  canWriteResponse,
+  endStartedResponse,
+  sendBufferedUpstream,
+  sendJson
+} from "./lib/http-response.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(root, "config.json");
@@ -18,7 +25,7 @@ const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 
-const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); };
+const json = (res, status, body) => sendJson(res, status, body);
 const body = async req => { const chunks=[]; for await (const c of req) chunks.push(c); return Buffer.concat(chunks); };
 const shortId = value => value ? String(value).slice(0, 8) : undefined;
 const readJsonBody = async req => {
@@ -220,8 +227,7 @@ const server = http.createServer(async (req, res) => {
         } else {
           logger.info("upload_ok", { status: upstream.status });
         }
-        res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") || "application/octet-stream" });
-        res.end(Buffer.from(await upstream.arrayBuffer()));
+        await sendBufferedUpstream(res, upstream);
       } catch (error) {
         logger.error("upload_failed", { reason: error.message });
         json(res, 502, { error: "Upload failed" });
@@ -241,8 +247,14 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === "GET" && url.pathname === "/api/view") {
-      const upstream = await fetch(`${comfy}/view?${url.searchParams}`);
-      res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") || "application/octet-stream" }); return res.end(Buffer.from(await upstream.arrayBuffer()));
+      try {
+        const upstream = await fetch(`${comfy}/view?${url.searchParams}`);
+        await sendBufferedUpstream(res, upstream);
+      } catch (error) {
+        logger.error("view_fetch", { reason: error.message });
+        json(res, 502, { error: "View fetch failed" });
+      }
+      return;
     }
     if (req.method === "POST" && url.pathname === "/api/queue") {
       const input = JSON.parse((await body(req)).toString("utf8"));
@@ -305,8 +317,20 @@ const server = http.createServer(async (req, res) => {
       return "text/html";
     };
     const type = staticContentType(target);
-    res.writeHead(200, { "content-type": `${type}; charset=utf-8` }); createReadStream(target).pipe(res);
+    res.writeHead(200, { "content-type": `${type}; charset=utf-8` });
+    attachSafeStaticStream(res, createReadStream(target), logger, relative);
   } catch (error) {
+    if (!canWriteResponse(res)) {
+      logger.error("request_failed_late", {
+        path: req.url,
+        reason: error.message,
+        headers_sent: Boolean(res?.headersSent),
+        writable_ended: Boolean(res?.writableEnded),
+        destroyed: Boolean(res?.destroyed)
+      });
+      endStartedResponse(res);
+      return;
+    }
     logger.error("request_failed", { path: req.url, reason: error.message });
     json(res, 500, { error: error.message });
   }

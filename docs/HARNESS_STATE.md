@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -272,12 +272,13 @@ Activation verified on 2026-08-19: the Node harness was restarted with an empty 
 
 ## Current completeness
 
-At v0.5.0:
+At v0.5.1:
 
 - H3 workflow launching: working;
 - direct megapixels control with read-only resolution hint: implemented;
 - graphical ComfyUI progress monitor + event feed + terminal log panel: implemented (Issue #7);
 - project CRUD + categorized multi-asset library + explicit role binding + stale detection: implemented (Issue #5);
+- HTTP response safety: hardened so a late failure after headers are sent cannot crash Node with `ERR_HTTP_HEADERS_SENT` (notably `/api/view` and `/api/upload`);
 - attachments: working;
 - output retrieval: basic but working;
 - progress/recovery normal path: working;

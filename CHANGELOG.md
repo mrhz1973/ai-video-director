@@ -75,3 +75,5 @@
 - Added legacy `.local.json` in-memory normalization to `schemaVersion: 1` without rewriting on load; stale/missing ComfyUI inputs are classified via `/api/asset-status` and block required roles on Generate.
 - Removing a group/member clears role assignments but does not delete ComfyUI input files.
 - Versioned the harness as v0.5.0. Validation: 56/56 Node tests plus repository validation.
+- Fixed harness crash after completed generation/output retrieval caused by an attempted second HTTP response (`ERR_HTTP_HEADERS_SENT`). `/api/view` and `/api/upload` now buffer the upstream body before writing downstream headers; the JSON helper and outer request catch refuse duplicate `writeHead` after headers are already sent.
+- Versioned the harness as v0.5.1. Validation: 67/67 Node tests plus repository validation.
