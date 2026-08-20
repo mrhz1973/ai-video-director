@@ -26,6 +26,10 @@ import {
   createGroup,
   createMember
 } from "../lib/projects.mjs";
+import {
+  createDefaultFs,
+  runPatcherCommand
+} from "../../scripts/apply_h3_safe_fit.mjs";
 
 const c = H3_SAFE_FIT_CONTRACT;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -468,4 +472,94 @@ test("--check exit codes: SAFE=0 NEEDS_APPLY=3 UNEXPECTED=2 multi-file", async (
 
   const mixed = await runPatcher(["--check", "--i2v", safePath, "--fl2v", unexpectedPath]);
   assert.equal(mixed.code, 2, "SAFE + UNEXPECTED must not exit 0");
+});
+
+function wrapFs(overrides) {
+  const real = createDefaultFs();
+  return { ...real, ...overrides };
+}
+
+test("apply-phase rollback: second write failure restores first workflow", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-rb-write-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(i2vPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(fl2vPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const real = createDefaultFs();
+  const fs = wrapFs({
+    async rename(src, dest) {
+      if (path.resolve(dest) === path.resolve(fl2vPath)) {
+        throw new Error("injected FL2VA atomic write failure");
+      }
+      return real.rename(src, dest);
+    }
+  });
+
+  const result = await runPatcherCommand({
+    apply: true,
+    check: false,
+    jobs: [
+      { filePath: i2vPath, mode: "I2VA" },
+      { filePath: fl2vPath, mode: "FL2VA" }
+    ],
+    fs
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.rolledBack, true);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
+  // Neither graph remains partially patched.
+  assert.deepEqual(
+    JSON.parse(await readFile(i2vPath, "utf8"))[c.minimaxNodeId].inputs.first_frame,
+    [c.firstLoadId, 0]
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(fl2vPath, "utf8"))[c.minimaxNodeId].inputs.first_frame,
+    [c.firstLoadId, 0]
+  );
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), true);
+});
+
+test("apply-phase rollback: second backup failure restores first workflow", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-rb-bak-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(i2vPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(fl2vPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  const beforeI2v = await readFile(i2vPath);
+  const beforeFl = await readFile(fl2vPath);
+
+  const real = createDefaultFs();
+  const fs = wrapFs({
+    async copyFile(src, dest) {
+      if (path.resolve(src) === path.resolve(fl2vPath)) {
+        throw new Error("injected FL2VA backup failure");
+      }
+      return real.copyFile(src, dest);
+    }
+  });
+
+  const result = await runPatcherCommand({
+    apply: true,
+    check: false,
+    jobs: [
+      { filePath: i2vPath, mode: "I2VA" },
+      { filePath: fl2vPath, mode: "FL2VA" }
+    ],
+    fs
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.rolledBack, true);
+  assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+  assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
+  assert.deepEqual(
+    JSON.parse(await readFile(i2vPath, "utf8"))[c.minimaxNodeId].inputs.first_frame,
+    [c.firstLoadId, 0]
+  );
+  assert.equal(await fileExists(`${fl2vPath}.pre-safe-fit.bak`), false);
 });

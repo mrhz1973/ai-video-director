@@ -9,9 +9,13 @@
  *   node scripts/apply_h3_safe_fit.mjs --check --i2v <path> --fl2v <path>
  *   node scripts/apply_h3_safe_fit.mjs --apply --i2v <path> --fl2v <path>
  *
- * --apply is transactional:
+ * --apply is transactional for detected/caught failures (not filesystem ACID):
  *   PHASE 1 (preflight): validate every supplied workflow in memory; ZERO writes.
- *   PHASE 2 (apply): only if every job passes preflight, backup+patch NEEDS_APPLY files.
+ *   PHASE 2 (apply): backup+patch prepared NEEDS_APPLY jobs; on a caught apply-phase
+ *     failure after any commit, restore every workflow modified by THIS invocation
+ *     to its exact original bytes (atomic replace from backup).
+ *   Backups created by a failed invocation remain as recovery artifacts (reported);
+ *   pre-existing backups are never deleted (preflight already rejects collisions).
  * Already-safe workflows are left untouched (ALREADY_SAFE).
  *
  * --check exit codes (most severe nonzero wins for multi-file):
@@ -21,7 +25,13 @@
  *   1  missing file / unreadable / JSON parse / IO / backup collision / other
  */
 
-import { readFile, writeFile, rename, access, copyFile } from "node:fs/promises";
+import {
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+  rename as fsRename,
+  access as fsAccess,
+  copyFile as fsCopyFile
+} from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -41,6 +51,17 @@ export const EXIT = Object.freeze({
   NEEDS_APPLY: 3
 });
 
+/** Injectable filesystem for PHASE 2 tests. */
+export function createDefaultFs() {
+  return {
+    readFile: fsReadFile,
+    writeFile: fsWriteFile,
+    rename: fsRename,
+    access: fsAccess,
+    copyFile: fsCopyFile
+  };
+}
+
 function usage(exitCode = EXIT.IO) {
   const text = `Usage:
   node scripts/apply_h3_safe_fit.mjs --check --i2v <path> [--fl2v <path>]
@@ -49,6 +70,9 @@ function usage(exitCode = EXIT.IO) {
 Options:
   --check   Inspect only; never write.
   --apply   Transactional patch: preflight ALL jobs, then write only if all pass.
+            Caught apply-phase failures roll back every workflow modified by this
+            invocation to original bytes. Backups from the failed run may remain
+            as recovery artifacts. Not a guarantee against power loss / kill -9.
   --i2v     Path to private MiniMax H3 I2VA API JSON.
   --fl2v    Path to private MiniMax H3 FL2VA API JSON.
 
@@ -59,7 +83,7 @@ Options:
   1  missing/unreadable/parse/IO
 
 Multi-file: most severe nonzero wins (UNEXPECTED > IO > NEEDS_APPLY).
---apply: if any job fails preflight, abort with ZERO writes and ZERO backups.
+--apply: preflight failure => ZERO writes. Apply-phase caught failure => rollback.
 `;
   process.stderr.write(text);
   process.exit(exitCode);
@@ -82,9 +106,9 @@ function parseArgs(argv) {
   return out;
 }
 
-async function exists(filePath) {
+async function exists(filePath, fs = createDefaultFs()) {
   try {
-    await access(filePath, fsConstants.F_OK);
+    await fs.access(filePath, fsConstants.F_OK);
     return true;
   } catch {
     return false;
@@ -121,10 +145,14 @@ function printStatus(label, filePath, inspection, extra = "") {
   );
 }
 
+function asBuffer(value) {
+  return Buffer.isBuffer(value) ? value : Buffer.from(value);
+}
+
 /**
  * PHASE 1 — read/inspect/plan only. Never writes, never creates backups.
  */
-export async function preflightJob({ filePath, mode }) {
+export async function preflightJob({ filePath, mode }, { fs = createDefaultFs() } = {}) {
   const job = {
     filePath,
     mode,
@@ -133,26 +161,28 @@ export async function preflightJob({ filePath, mode }) {
     needsWrite: false,
     backupPath: null,
     patchedWorkflow: null,
+    originalBytes: null,
     inspection: null,
     error: null
   };
 
   try {
-    if (!(await exists(filePath))) {
+    if (!(await exists(filePath, fs))) {
       job.exitCode = EXIT.IO;
       job.error = `File not found: ${path.basename(filePath)}`;
       return job;
     }
 
-    let raw;
+    let originalBytes;
     try {
-      raw = await readFile(filePath, "utf8");
+      originalBytes = asBuffer(await fs.readFile(filePath));
     } catch (error) {
       job.exitCode = EXIT.IO;
       job.error = `Unreadable: ${path.basename(filePath)} (${error.message})`;
       return job;
     }
 
+    const raw = originalBytes.toString("utf8");
     let workflow;
     try {
       workflow = JSON.parse(raw);
@@ -161,6 +191,8 @@ export async function preflightJob({ filePath, mode }) {
       job.error = `JSON parse failed: ${path.basename(filePath)} (${error.message})`;
       return job;
     }
+
+    job.originalBytes = originalBytes;
 
     const inspection = inspectH3SafeFit(workflow, { mode });
     job.inspection = inspection;
@@ -203,13 +235,12 @@ export async function preflightJob({ filePath, mode }) {
     }
 
     const bak = backupPathFor(filePath);
-    if (await exists(bak)) {
+    if (await exists(bak, fs)) {
       job.exitCode = EXIT.IO;
       job.error = `Backup already exists (refusing silent overwrite): ${path.basename(bak)}`;
       return job;
     }
 
-    // Keep original needs-apply inspection for --check reporting; store patched graph separately.
     job.needsWrite = true;
     job.backupPath = bak;
     job.patchedWorkflow = result.workflow;
@@ -222,45 +253,138 @@ export async function preflightJob({ filePath, mode }) {
   }
 }
 
-async function atomicWriteJson(filePath, workflow) {
+async function atomicReplaceBytes(filePath, bytes, fs) {
   const dir = path.dirname(filePath);
   const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
-  const body = `${JSON.stringify(workflow, null, 2)}\n`;
-  await writeFile(tmp, body, "utf8");
-  await rename(tmp, filePath);
+  await fs.writeFile(tmp, bytes);
+  await fs.rename(tmp, filePath);
+}
+
+async function atomicWriteJson(filePath, workflow, fs = createDefaultFs()) {
+  const body = Buffer.from(`${JSON.stringify(workflow, null, 2)}\n`, "utf8");
+  await atomicReplaceBytes(filePath, body, fs);
+}
+
+async function restoreJobFromBackup(job, fs) {
+  const backupBytes = asBuffer(await fs.readFile(job.backupPath));
+  await atomicReplaceBytes(job.filePath, backupBytes, fs);
+  const restored = asBuffer(await fs.readFile(job.filePath));
+  if (!restored.equals(asBuffer(job.originalBytes))) {
+    throw new Error(
+      `ROLLBACK VERIFY FAILED for ${path.basename(job.filePath)}: restored bytes do not match original`
+    );
+  }
+  return restored;
+}
+
+async function verifyOriginalBytes(job, fs) {
+  const current = asBuffer(await fs.readFile(job.filePath));
+  if (!current.equals(asBuffer(job.originalBytes))) {
+    throw new Error(
+      `VERIFY FAILED for ${path.basename(job.filePath)}: source bytes differ from preflight original`
+    );
+  }
 }
 
 /**
- * PHASE 2 — only after every job passed preflight. Writes only NEEDS_APPLY jobs.
+ * PHASE 2 — only after every job passed preflight.
+ * Tracks commits; on caught failure, restores every committed workflow.
  */
-export async function applyPreparedJobs(jobs) {
+export async function applyPreparedJobs(jobs, { fs = createDefaultFs() } = {}) {
   const results = [];
-  for (const job of jobs) {
-    if (!job.needsWrite) {
-      if (job.status === SAFE_FIT_STATES.SAFE || job.exitCode === EXIT.OK) {
-        process.stdout.write(`ALREADY_SAFE ${path.basename(job.filePath)}\n`);
-      } else if (job.status === SAFE_FIT_STATES.NOT_APPLICABLE) {
-        process.stdout.write(`SKIP ${path.basename(job.filePath)} (not-applicable)\n`);
+  const committed = [];
+  const createdBackups = [];
+  let current = null;
+
+  try {
+    for (const job of jobs) {
+      if (!job.needsWrite) {
+        if (job.status === SAFE_FIT_STATES.SAFE || job.exitCode === EXIT.OK) {
+          process.stdout.write(`ALREADY_SAFE ${path.basename(job.filePath)}\n`);
+        } else if (job.status === SAFE_FIT_STATES.NOT_APPLICABLE) {
+          process.stdout.write(`SKIP ${path.basename(job.filePath)} (not-applicable)\n`);
+        }
+        results.push({ ...job, changed: false, alreadySafe: job.status === SAFE_FIT_STATES.SAFE });
+        continue;
       }
-      results.push({ ...job, changed: false, alreadySafe: job.status === SAFE_FIT_STATES.SAFE });
-      continue;
+
+      current = job;
+      await fs.copyFile(job.filePath, job.backupPath);
+      job.backupCreated = true;
+      createdBackups.push(job.backupPath);
+
+      await atomicWriteJson(job.filePath, job.patchedWorkflow, fs);
+      job.committed = true;
+      committed.push(job);
+      current = null;
+
+      process.stdout.write(
+        `APPLIED ${path.basename(job.filePath)} backup=${path.basename(job.backupPath)}\n`
+      );
+      printStatus("AFTER", job.filePath, job.patchedInspection || job.inspection);
+      results.push({ ...job, changed: true });
     }
 
-    await copyFile(job.filePath, job.backupPath);
-    await atomicWriteJson(job.filePath, job.patchedWorkflow);
-    process.stdout.write(
-      `APPLIED ${path.basename(job.filePath)} backup=${path.basename(job.backupPath)}\n`
+    return {
+      ok: true,
+      results,
+      createdBackups,
+      rolledBack: false
+    };
+  } catch (error) {
+    process.stderr.write(`ERROR: apply-phase failure: ${error.message}\n`);
+    process.stderr.write(
+      "ROLLBACK: restoring every workflow modified by this invocation to original bytes.\n"
     );
-    printStatus("AFTER", job.filePath, job.patchedInspection || job.inspection);
-    results.push({ ...job, changed: true });
+
+    const restoreTargets = [...committed];
+    if (current && current.backupCreated && !current.committed) {
+      // Backup exists; source should still be original if rename did not complete,
+      // but restore from backup anyway if bytes drifted.
+      try {
+        const cur = asBuffer(await fs.readFile(current.filePath));
+        if (!cur.equals(asBuffer(current.originalBytes))) {
+          restoreTargets.push(current);
+        }
+      } catch {
+        restoreTargets.push(current);
+      }
+    }
+
+    const rolledBack = [];
+    for (const job of restoreTargets) {
+      await restoreJobFromBackup(job, fs);
+      job.committed = false;
+      job.rolledBack = true;
+      rolledBack.push(job.filePath);
+      process.stderr.write(`ROLLBACK OK ${path.basename(job.filePath)}\n`);
+    }
+
+    // Every NEEDS_APPLY source must match preflight original bytes.
+    for (const job of jobs) {
+      if (!job.needsWrite || !job.originalBytes) continue;
+      await verifyOriginalBytes(job, fs);
+    }
+
+    for (const bak of createdBackups) {
+      process.stderr.write(
+        `RECOVERY_ARTIFACT backup retained: ${path.basename(bak)}\n`
+      );
+    }
+
+    const fail = new Error(error.message);
+    fail.code = "APPLY_PHASE_FAILED";
+    fail.cause = error;
+    fail.rolledBack = rolledBack;
+    fail.createdBackups = createdBackups;
+    throw fail;
   }
-  return results;
 }
 
-export async function runPatcherCommand({ check, apply, jobs }) {
+export async function runPatcherCommand({ check, apply, jobs, fs = createDefaultFs() }) {
   const prepared = [];
   for (const job of jobs) {
-    const result = await preflightJob(job);
+    const result = await preflightJob(job, { fs });
     prepared.push(result);
     if (result.inspection) {
       printStatus("CHECK", result.filePath, {
@@ -281,7 +405,6 @@ export async function runPatcherCommand({ check, apply, jobs }) {
     return { exitCode: combined, jobs: prepared, wrote: false };
   }
 
-  // --apply: any preflight failure aborts with ZERO writes.
   const blockers = prepared.filter(j => j.exitCode !== EXIT.OK && j.exitCode !== EXIT.NEEDS_APPLY);
   const needsApplyOk = prepared.every(
     j => j.exitCode === EXIT.OK || j.exitCode === EXIT.NEEDS_APPLY
@@ -298,7 +421,6 @@ export async function runPatcherCommand({ check, apply, jobs }) {
     };
   }
 
-  // All jobs are SAFE (exit 0) or NEEDS_APPLY (exit 3) with a prepared patch plan.
   const anyWrite = prepared.some(j => j.needsWrite);
   if (!anyWrite) {
     for (const job of prepared) {
@@ -307,8 +429,27 @@ export async function runPatcherCommand({ check, apply, jobs }) {
     return { exitCode: EXIT.OK, jobs: prepared, wrote: false };
   }
 
-  await applyPreparedJobs(prepared);
-  return { exitCode: EXIT.OK, jobs: prepared, wrote: true };
+  try {
+    const applied = await applyPreparedJobs(prepared, { fs });
+    return {
+      exitCode: EXIT.OK,
+      jobs: prepared,
+      wrote: true,
+      createdBackups: applied.createdBackups
+    };
+  } catch (error) {
+    process.stderr.write(
+      "ABORT: apply-phase failed after rollback; all supplied source workflows match preflight originals.\n"
+    );
+    return {
+      exitCode: EXIT.IO,
+      jobs: prepared,
+      wrote: false,
+      rolledBack: true,
+      createdBackups: error.createdBackups || [],
+      error: error.message
+    };
+  }
 }
 
 async function main() {
