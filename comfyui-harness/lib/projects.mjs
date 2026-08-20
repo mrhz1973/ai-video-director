@@ -538,10 +538,17 @@ export function describeGenerateBlockers({
   library,
   availability = {},
   busy = false,
-  submitting = false
+  submitting = false,
+  safeFitStatus = null
 } = {}) {
   if (busy || submitting) {
     return { blocked: true, reason: "Generazione in corso", code: "busy" };
+  }
+  if (safeFitStatus === "needs-apply") {
+    return { blocked: true, reason: "Workflow image-fit non aggiornato", code: "safe-fit" };
+  }
+  if (safeFitStatus === "unexpected") {
+    return { blocked: true, reason: "Workflow image-fit non valido", code: "safe-fit" };
   }
   if (!String(prompt || "").trim()) {
     return { blocked: true, reason: "Inserisci un prompt", code: "prompt" };

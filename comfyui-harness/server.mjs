@@ -10,6 +10,12 @@ import { isValidProjectId } from "./lib/projects.mjs";
 import { probeAssetStatuses } from "./lib/asset-status.mjs";
 import { parseAssetStatusDescriptors } from "./lib/asset-ref.mjs";
 import {
+  inspectH3SafeFit,
+  publicSafeFitSummary,
+  safeFitBlocksGenerate,
+  describeSafeFitBlocker
+} from "./lib/h3-safe-fit.mjs";
+import {
   attachSafeStaticStream,
   canWriteResponse,
   endStartedResponse,
@@ -56,7 +62,36 @@ async function presets() {
   const files = (await readdir(workflowDir)).filter(x => x.endsWith(".preset.json"));
   return Promise.all(files.map(async file => {
     const preset = JSON.parse(await readFile(path.join(workflowDir, file), "utf8"));
-    return { ...preset, presetFile: file };
+    let safeFit = {
+      status: "not-applicable",
+      mode: preset.mode || null,
+      reason: "workflow_unavailable",
+      blocksGenerate: false
+    };
+    try {
+      const workflowPath = path.join(workflowDir, preset.workflow);
+      if (existsSync(workflowPath)) {
+        const workflow = JSON.parse(await readFile(workflowPath, "utf8"));
+        safeFit = publicSafeFitSummary(inspectH3SafeFit(workflow, { mode: preset.mode }));
+      } else if (["I2VA", "FL2VA"].includes(String(preset.mode || "").toUpperCase())) {
+        safeFit = {
+          status: "unexpected",
+          mode: preset.mode,
+          reason: "workflow_file_missing",
+          blocksGenerate: true
+        };
+      }
+    } catch {
+      if (["I2VA", "FL2VA"].includes(String(preset.mode || "").toUpperCase())) {
+        safeFit = {
+          status: "unexpected",
+          mode: preset.mode,
+          reason: "workflow_inspect_failed",
+          blocksGenerate: true
+        };
+      }
+    }
+    return { ...preset, presetFile: file, safeFit };
   }));
 }
 
@@ -246,6 +281,12 @@ const server = http.createServer(async (req, res) => {
       const input = JSON.parse((await body(req)).toString("utf8"));
       logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
       const { preset, workflow } = await loadPreset(input.workflowId);
+      const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
+      if (safeFitBlocksGenerate(fit.status)) {
+        const gate = describeSafeFitBlocker(fit.status);
+        logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
+        return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
+      }
       let requested;
       try {
         requested = selectMegapixels(input);
