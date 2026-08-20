@@ -200,17 +200,9 @@ Each comparison should change as few variables as possible. Record the variables
 
 ## 7. Improve project persistence
 
-The current private project layer is read/reuse only. A future harness version should add a safe Save Project / Update Project flow for local `.local.json` files.
+Status: implemented in harness v0.5.0 (Issue #5). See `docs/HARNESS_STATE.md`.
 
-It should preserve:
-
-- workflow;
-- prompt;
-- user-visible settings;
-- reference-role filenames held in ComfyUI input;
-- optional experiment notes.
-
-Because project files can contain private local reference filenames, they remain Git-ignored. The public repository should record only the schema/behavior and sanitized examples.
+The private project layer now supports Save / Update / Save As / Duplicate / Delete with dirty-state tracking, plus a categorized multi-file asset library (Elements, Locations, Objects, Audio). Library groups are distinct from workflow role bindings. Project files remain Git-ignored; the public repository records only schema/behavior and sanitized examples.
 
 ## 8. Better workflow and model registry
 
