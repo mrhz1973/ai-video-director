@@ -41,7 +41,7 @@ Default/basic view should continue to expose the high-value controls needed for 
 - aspect ratio;
 - steps;
 - seed;
-- Generate and progress/output state.
+- Generate and progress/output state, including the Issue #7 graphical current-node progress monitor and expandable ComfyUI event/terminal panels.
 
 Do not turn the basic view into a node editor.
 

@@ -9,14 +9,39 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.4.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.4.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, private reusable projects, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, live progress, active-job recovery and output links.
+The harness already supports prompt input, private reusable projects, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery and output links.
+
+## Progress and terminal monitor (Issue #7)
+
+Since v0.4.2 the harness UI includes a prominent render monitor driven only by real ComfyUI events bridged through `/api/events`:
+
+- `progress` → `{ value, max, prompt_id, node }`
+- `progress_state` → `{ prompt_id, nodes[id].{ value, max, state, node_id, display_node_id, ... } }`
+- `executing` / `executed` / `execution_error` / `execution_interrupted`
+
+Displayed percentage is **current-node numeric progress** (`value/max`), labeled as such. It is never a timer-based estimate and is never claimed to be whole-job completion. When a node is running without a usable `max`, the UI shows an indeterminate `Elaborazione…` state. Job completion remains authoritative from `executing` with `node: null` and/or history outputs.
+
+Elapsed wall-clock time uses ComfyUI `create_time` when recovered via `/api/active`, otherwise a local first-seen timestamp (marked approximate). There is no ETA.
+
+Queue running/pending counts are refreshed conservatively from the existing `/api/active` queue read (about every 8s while relevant).
+
+Two expandable panels:
+
+1. **Eventi ComfyUI** — reconstructed lifecycle feed from real events (not raw stdout).
+2. **Terminale ComfyUI** — uses the installed ComfyUI internal log API:
+   - `GET /internal/logs/raw` proxied as harness `GET /api/comfy-logs`
+   - live push via `PATCH /internal/logs/subscribe` on the **existing** SSE-bridged WebSocket client id (no second job WebSocket)
+
+If the log API is unavailable, the panel shows a graceful fallback message. Log contents are local-only and must not be committed to Git.
+
+Native Windows ComfyUI console visibility remains an **external launcher** concern. The portable `run_nvidia_gpu.bat` already runs Python in the foreground of its console (`python_embeded\python.exe -s ComfyUI\main.py ...` then `pause`). Launch that `.bat` from an ordinary visible `cmd.exe` window when a native console is desired. Do not restart an active ComfyUI job merely to attach a console. The harness is not a ComfyUI service manager.
 
 ## Critical architecture decision: the harness does not start ComfyUI
 
@@ -211,10 +236,11 @@ Activation verified on 2026-08-19: the Node harness was restarted with an empty 
 
 ## Current completeness
 
-At v0.4.1:
+At v0.4.2:
 
 - H3 workflow launching: working;
 - direct megapixels control with read-only resolution hint: implemented;
+- graphical ComfyUI progress monitor + event feed + terminal log panel: implemented (Issue #7);
 - attachments: working;
 - output retrieval: basic but working;
 - progress/recovery normal path: working;

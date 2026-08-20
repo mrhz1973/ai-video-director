@@ -1,6 +1,6 @@
 # ComfyUI terminal and rendering progress monitor
 
-Status: backlog / implementation target
+Status: implemented in harness v0.4.2 (Issue #7)
 
 ## Goal
 

@@ -62,15 +62,38 @@ const server = http.createServer(async (req, res) => {
           logger.error("active_fetch", { status: upstream.status });
           return json(res, upstream.status, queue);
         }
+        const runningCount = Array.isArray(queue.queue_running) ? queue.queue_running.length : 0;
+        const pendingCount = Array.isArray(queue.queue_pending) ? queue.queue_pending.length : 0;
         const running = queue.queue_running?.[0];
         if (running) {
           logger.info("job_recovery", { prompt_id: shortId(running[1]), client_id: shortId(running[3]?.client_id) });
-          return json(res, upstream.status, { active: true, promptId: running[1], clientId: running[3]?.client_id, createdAt: running[3]?.create_time });
+          return json(res, upstream.status, {
+            active: true,
+            promptId: running[1],
+            clientId: running[3]?.client_id,
+            createdAt: running[3]?.create_time,
+            running: runningCount,
+            pending: pendingCount
+          });
         }
-        return json(res, upstream.status, { active: false });
+        return json(res, upstream.status, { active: false, running: runningCount, pending: pendingCount });
       } catch (error) {
         logger.error("active_fetch", { reason: error.message });
         return json(res, 502, { error: "Failed to query ComfyUI queue" });
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/comfy-logs") {
+      try {
+        const upstream = await fetch(`${comfy}/internal/logs/raw`);
+        if (!upstream.ok) {
+          logger.error("comfy_logs_fetch", { status: upstream.status });
+          return json(res, upstream.status, { available: false, error: "ComfyUI log API unavailable", entries: [] });
+        }
+        const data = await upstream.json();
+        return json(res, 200, { available: true, entries: data.entries || [], size: data.size || null });
+      } catch (error) {
+        logger.error("comfy_logs_fetch", { reason: error.message });
+        return json(res, 502, { available: false, error: "ComfyUI log API unreachable", entries: [] });
       }
     }
     if (req.method === "GET" && url.pathname === "/api/events") {
@@ -81,10 +104,25 @@ const server = http.createServer(async (req, res) => {
       logger.info("sse_bridge_open", { client_id: shortId(clientId) });
       const upstream = new WebSocket(`${comfy.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`);
       const sendEvent = (event, data) => { if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
-      upstream.addEventListener("open", () => sendEvent("connection", { state: "open" }));
+      const subscribeLogs = async enabled => {
+        try {
+          await fetch(`${comfy}/internal/logs/subscribe`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ clientId, enabled: Boolean(enabled) })
+          });
+        } catch {
+          // Optional capability; progress monitoring still works without live log push.
+        }
+      };
+      upstream.addEventListener("open", () => {
+        sendEvent("connection", { state: "open" });
+        subscribeLogs(true);
+      });
       upstream.addEventListener("message", event => { if (typeof event.data === "string" && !res.destroyed) res.write(`data: ${event.data}\n\n`); });
       upstream.addEventListener("close", () => {
         logger.info("sse_bridge_close", { client_id: shortId(clientId) });
+        subscribeLogs(false);
         sendEvent("connection", { state: "closed" });
       });
       upstream.addEventListener("error", () => {
@@ -94,6 +132,7 @@ const server = http.createServer(async (req, res) => {
       const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": heartbeat\n\n"); }, 15000);
       req.on("close", () => {
         clearInterval(heartbeat);
+        subscribeLogs(false);
         if (upstream.readyState < 2) upstream.close();
       });
       return;

@@ -2,7 +2,7 @@
 
 Current architecture/status source of truth: `docs/HARNESS_STATE.md`.
 
-The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, live progress, and output links.
+The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, and output links.
 
 ## 1. Prepare ComfyUI
 
@@ -54,6 +54,10 @@ The current UI can read/reuse these projects but does not yet provide a Save Pro
 Attachments are uploaded through `/upload/image`; ComfyUI stores supported image, video or audio input bytes and returns a local filename. The filename is inserted only into the loader binding declared by the preset. The selected API workflow is cloned, sidebar values are applied only to validated bindings, and the graph is sent to `/prompt`.
 
 The backend bridges ComfyUI WebSocket events to the page, filters progress by `prompt_id`, and retrieves completed history and output files through `/history/{prompt_id}` and `/view`.
+
+Since v0.4.2 the UI also shows a graphical **current-node** progress monitor from those live events, plus expandable Eventi ComfyUI and Terminale ComfyUI panels. Terminal logs use ComfyUI `GET /internal/logs/raw` (proxied) and optional subscribe on the existing bridge client id. See Issue #7 and `docs/HARNESS_STATE.md`.
+
+To keep a **visible native Windows console** for ComfyUI, start the portable launcher from an ordinary visible `cmd.exe` window, for example by double-clicking or running `run_nvidia_gpu.bat` in `D:\Ai\ComfyUI_windows_portable_nvidia`. That bat already runs Python in the foreground. Do not restart an active job merely to attach a console. The harness does not manage ComfyUI lifecycle.
 
 The manual prompt is passed essentially unchanged to ComfyUI. The browser trims only leading/trailing whitespace. The MiniMax H3 Director skill is an AI-side authoring/review layer; the harness does not currently execute an LLM or load `SKILL.md` files at runtime.
 
