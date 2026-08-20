@@ -16,8 +16,14 @@ import {
 } from "./lib/http-response.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const configPath = path.join(root, "config.json");
-const config = JSON.parse(await readFile(existsSync(configPath) ? configPath : path.join(root, "config.example.json"), "utf8"));
+const resolveConfigPath = () => {
+  const override = process.env.H3_CONFIG_PATH;
+  if (override && String(override).trim()) return path.resolve(String(override).trim());
+  const local = path.join(root, "config.json");
+  return existsSync(local) ? local : path.join(root, "config.example.json");
+};
+const configPath = resolveConfigPath();
+const config = JSON.parse(await readFile(configPath, "utf8"));
 const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
