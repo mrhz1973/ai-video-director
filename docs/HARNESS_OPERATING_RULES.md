@@ -16,10 +16,38 @@ For routine use:
 1. prepare the prompt, workflow, model, megapixels, duration, aspect ratio, steps, seed and references;
 2. verify that the ComfyUI queue is empty or that any existing job is understood;
 3. show the prepared state to the user;
-4. stop before submission unless the user has explicitly asked to generate;
-5. submit exactly one job only after that explicit instruction.
+4. stop before submission;
+5. the user performs the final `Genera` action manually in the normal browser session.
 
 Do not infer generation approval merely because a previous preparation task succeeded.
+
+## Standard operating split: Director / Cursor / user
+
+The default operating model is deliberately split into three roles:
+
+- **Director/assistant**: writes and refines the H3 prompt, chooses the intended workflow and generation settings, and defines what Cursor should prepare.
+- **Cursor/automation**: checks or starts the required local services when needed, prepares the harness form completely, loads the requested references, pastes the exact prompt and sets the requested values, then stops.
+- **User**: visually reviews the prepared run in the normal browser session and clicks `Genera` manually.
+
+Cursor must not submit `/api/queue`, press `Genera`, or otherwise start a generation during a prepare-only task.
+
+The purpose of automation is to remove repetitive setup work while keeping the final paid/expensive generation action visible and under direct user control.
+
+## Local service preparation
+
+Cursor may prepare the local runtime before filling the harness:
+
+1. check whether ComfyUI is listening on `127.0.0.1:8188`;
+2. if ComfyUI is already running, leave it running and do not restart it;
+3. if ComfyUI is not running, start the known local ComfyUI installation using the established launcher, then wait until port `8188` responds;
+4. check whether the Node harness is listening on `127.0.0.1:8787`;
+5. if the harness is already running, leave it running unless a restart is genuinely required by a runtime code change;
+6. if the harness is not running, start the existing Node harness and wait until port `8787` responds;
+7. verify `queue_running = []` and `queue_pending = []` before preparing a new run.
+
+If an existing job is running or pending, do not overwrite or submit another job. Stop and report the active queue state first.
+
+Starting a missing service for preparation is allowed; restarting an already-running service without a concrete need is not.
 
 ## Browser ownership
 
@@ -35,9 +63,11 @@ Reasons:
 Therefore:
 
 - prefer the user's own browser for visual review and the final Generate action;
-- Cursor may inspect backend/API state, prepare text, validate files/settings and perform read-only diagnostics;
-- do not open a separate visible automation browser merely to press Generate unless the user explicitly requests browser automation for that run;
-- when an automation browser is used, report the exact submitted job/prompt ID and effective settings immediately after submission.
+- Cursor may inspect backend/API state and may prepare the harness form, including workflow, model, megapixels, duration, aspect ratio, steps, seed, prompt and requested reference files;
+- Cursor preparation must stop with the run visibly ready but unsent;
+- do not open a separate visible automation browser merely to press Generate;
+- do not submit a generation from an automation browser during the standard prepare-only workflow;
+- if the user explicitly requests automated submission for a specific run, treat that as a separate instruction and immediately report the exact submitted job/prompt ID and effective settings.
 
 ## Source of truth after submission
 
