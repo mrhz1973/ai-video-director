@@ -13,7 +13,8 @@ import {
   summarizeMonitor
 } from "./monitor.mjs";
 import { connectionBadge } from "./connection-badge.mjs";
-import { buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
+import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
+import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -495,22 +496,35 @@ function statusLabel(status) {
   return "Sconosciuto";
 }
 
+function draftAssetDescriptors() {
+  const descriptors = [];
+  for (const member of listAllMembers(draft.library)) {
+    descriptors.push({ filename: member.filename, subfolder: member.subfolder || "" });
+  }
+  for (const name of Object.values(draft.files || {})) {
+    if (!name) continue;
+    const found = findMemberByFilename(draft.library, name);
+    descriptors.push({ filename: name, subfolder: found?.member?.subfolder || "" });
+  }
+  return uniqueAssetDescriptors(descriptors);
+}
+
+function availabilityOf(filename, subfolder = "") {
+  return lookupAvailability(draft.availability, { filename, subfolder });
+}
+
 async function refreshAvailability() {
-  const filenames = listAllMembers(draft.library).map(m => m.filename);
-  for (const name of Object.values(draft.files || {})) if (name) filenames.push(name);
-  const unique = [...new Set(filenames.filter(Boolean))];
+  const unique = draftAssetDescriptors();
   if (!unique.length) {
     draft.availability = {};
     return;
   }
-  const params = new URLSearchParams();
-  for (const name of unique) params.append("filename", name);
   try {
-    const response = await fetch(`/api/asset-status?${params}`);
+    const response = await fetch(buildAssetStatusUrl(unique));
     const data = await response.json();
     draft.availability = data.statuses || {};
   } catch {
-    draft.availability = Object.fromEntries(unique.map(name => [name, "error"]));
+    draft.availability = Object.fromEntries(unique.map(item => [assetStatusKey(item), "error"]));
   }
   updateGenerateButton();
 }
@@ -610,7 +624,7 @@ function renderGroupCard(group) {
 }
 
 function renderMemberCard(group, member, index) {
-  const status = draft.availability[member.filename] || "unknown";
+  const status = availabilityOf(member.filename, member.subfolder);
   const card = document.createElement("div");
   card.className = `member-card${member.type === "audio" || activeCategory === "audio" ? " audio-card" : ""}${status === "missing" || status === "error" ? " missing" : ""}`;
 
@@ -700,7 +714,8 @@ function renderRoleFields() {
   for (const field of libraryRoles) {
     const row = document.createElement("div");
     const filename = draft.files[field.key];
-    const status = filename ? (draft.availability[filename] || "unknown") : null;
+    const foundForRole = filename ? findMemberByFilename(draft.library, filename) : null;
+    const status = filename ? availabilityOf(filename, foundForRole?.member?.subfolder || "") : null;
     row.className = `role-row${status === "missing" || status === "error" ? " stale" : ""}`;
     const label = document.createElement("label");
     label.textContent = field.label;
@@ -727,7 +742,7 @@ function renderRoleFields() {
     preview.className = "role-preview";
     if (filename && roleAcceptKind(field.accept) === "image" && status === "available") {
       const img = document.createElement("img");
-      const found = findMemberByFilename(draft.library, filename);
+      const found = foundForRole;
       img.src = viewUrl(filename, found?.member?.subfolder);
       img.alt = field.label;
       img.title = found?.member?.originalName || filename;

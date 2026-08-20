@@ -81,3 +81,4 @@
 - Thumbnails: `<img src>` no longer uses `URLSearchParams` (`+` / `%2B`) for filenames that contain spaces. View URLs now percent-encode `filename`, `type=input`, and `subfolder`. Image `available` status requires an `image/*` content-type. Audio is not classified with image MIME rules.
 - Aspect-ratio-safe I2VA/FL2VA crop rewiring remains pending (Issue #11 PR B). No generation graph or private `*.api.json` was changed.
 - Versioned the harness as v0.5.2. Validation: 86/86 Node tests plus repository validation.
+- Fixed asset availability so `/api/asset-status` probes the member ComfyUI input `subfolder` instead of always using `""`. Thumbnails and status share `filename` + `type=input` + `subfolder`. Workflow bindings and `schemaVersion: 1` are unchanged; filename-only callers still default to root input. Generate no longer false-blocks a valid nested-subfolder assignment. Validation: 100/100 Node tests plus repository validation.

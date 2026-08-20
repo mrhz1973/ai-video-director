@@ -34,6 +34,7 @@ import {
   formatMemberOrdinalLabel,
   memberSelectOption
 } from "../lib/projects.mjs";
+import { lookupAvailability } from "../lib/asset-ref.mjs";
 import { createProjectStore } from "../lib/project-store.mjs";
 
 test("project id validation rejects traversal and absolute paths", () => {
@@ -478,4 +479,64 @@ test("legacy projects keep filename bindings after ordinal helpers exist", () =>
   assert.equal(normalized.files.firstImage, "ref-a.png");
   const option = memberSelectOption(listAllMembers(normalized.library)[0]);
   assert.equal(option.value, "ref-a.png");
+});
+
+test("E: Generate is not blocked for a valid nested-subfolder assignment", () => {
+  const attachments = [{ key: "firstImage", label: "Immagine iniziale", accept: "image/*" }];
+  const library = addGroup(emptyLibrary(), "elements", createGroup({
+    label: "Martino",
+    members: [createMember({
+      filename: "face.png",
+      originalName: "face.png",
+      subfolder: "characters/martino"
+    })]
+  }));
+  const persisted = toPersistedProject({
+    id: "nested-demo",
+    label: "Nested Demo",
+    workflowId: "minimax-h3-i2v",
+    prompt: "ok",
+    library,
+    files: { firstImage: "face.png" }
+  });
+  assert.equal(persisted.schemaVersion, SCHEMA_VERSION);
+  assert.equal(persisted.files.firstImage, "face.png");
+  assert.equal(persisted.library.elements[0].members[0].subfolder, "characters/martino");
+  assert.equal(JSON.stringify(persisted).includes("C:\\\\"), false);
+
+  const inherited = lookupAvailability(
+    { "face.png": "available" },
+    { filename: "face.png", subfolder: "characters/martino" }
+  );
+  assert.equal(inherited, "unknown");
+
+  const missingNested = describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "missing" }
+  });
+  assert.equal(missingNested.blocked, true);
+  assert.equal(missingNested.code, "roles");
+
+  const ready = describeGenerateBlockers({
+    prompt: "ok",
+    attachments,
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "available" }
+  });
+  assert.equal(ready.blocked, false);
+  assert.equal(ready.code, null);
+
+  const built = buildSubmissionFiles({
+    files: persisted.files,
+    library,
+    availability: { "characters/martino/face.png": "available" },
+    activeKeys: ["firstImage"],
+    requiredKeys: ["firstImage"]
+  });
+  assert.equal(built.files.firstImage, "face.png");
+  assert.deepEqual(built.missingRequired, []);
 });

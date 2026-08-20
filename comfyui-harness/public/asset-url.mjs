@@ -1,22 +1,32 @@
+import { encodeQueryPairs, uniqueAssetDescriptors } from "../lib/asset-ref.mjs";
+
 /**
- * Build a harness /api/view URL for a ComfyUI input asset.
- * Uses encodeURIComponent (percent-encoding) so spaces never become "+" / "%2B".
+ * Shared ComfyUI /view query for harness proxy and asset-status probes.
+ * Percent-encodes so spaces never become "+" / "%2B".
  */
-export function buildInputViewUrl({ filename, subfolder = "", type = "input" } = {}) {
+export function buildInputViewQuery({ filename, subfolder = "", type = "input" } = {}) {
   if (!filename) return "";
-  const params = [
+  return encodeQueryPairs([
     ["filename", filename],
-    ["type", type || "input"]
-  ];
-  if (subfolder != null && String(subfolder) !== "") {
-    params.push(["subfolder", String(subfolder)]);
-  } else {
-    params.push(["subfolder", ""]);
+    ["type", type || "input"],
+    ["subfolder", subfolder == null ? "" : String(subfolder)]
+  ]);
+}
+
+export function buildInputViewUrl({ filename, subfolder = "", type = "input" } = {}) {
+  const query = buildInputViewQuery({ filename, subfolder, type });
+  return query ? `/api/view?${query}` : "";
+}
+
+export function buildAssetStatusUrl(descriptors = []) {
+  const unique = uniqueAssetDescriptors(descriptors);
+  if (!unique.length) return "";
+  const pairs = [];
+  for (const item of unique) {
+    pairs.push(["filename", item.filename]);
+    pairs.push(["subfolder", item.subfolder || ""]);
   }
-  const query = params
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join("&");
-  return `/api/view?${query}`;
+  return `/api/asset-status?${encodeQueryPairs(pairs)}`;
 }
 
 export function parseUploadResult(data = {}) {

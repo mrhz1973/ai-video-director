@@ -205,7 +205,7 @@ REST-like routes (loopback only):
 - `GET/POST /api/projects`
 - `GET/PUT/DELETE /api/projects/:id`
 - `POST /api/projects/:id/duplicate`
-- `GET /api/asset-status?filename=...`
+- `GET /api/asset-status?filename=...&subfolder=...` (repeated parallel pairs; omitted subfolder defaults to root `""`)
 
 Project ids are sanitized; path traversal and absolute paths are rejected. Writes are atomic under the configured `projectDirectory` only. Malformed `.local.json` files are skipped on list and do not crash the server.
 
@@ -230,7 +230,7 @@ The full binding map is retained across workflow switches. Switching I2VA → T2
 
 ### Stale / missing references
 
-`GET /api/asset-status` probes ComfyUI `/view` read-only. For image files, `available` requires HTTP success **and** an `image/*` content-type. Audio uses non-image MIME rules (JSON/image responses are not treated as available audio). Missing required roles disable Generate with a visible reason. Removing a group/member clears role assignments that pointed at those filenames but does **not** delete ComfyUI input files.
+`GET /api/asset-status` probes ComfyUI `/view` read-only using the same percent-encoded `filename`, `type=input`, and `subfolder` query as thumbnails. Library members persist optional `subfolder`; workflow `files[role]` bindings remain filename-only. Status map keys stay the filename for root/legacy assets and use `<subfolder>/<filename>` when the subfolder is non-empty (filenames cannot contain `/`, so this is unambiguous). The same filename in two subfolders is classified under two keys; role/Generate lookup uses the first library member with that filename. Legacy filename-only callers still default to root input `subfolder=""`. For image files, `available` requires HTTP success **and** an `image/*` content-type. Audio uses non-image MIME rules (JSON/image responses are not treated as available audio). Missing required roles disable Generate with a visible reason. Removing a group/member clears role assignments that pointed at those filenames but does **not** delete ComfyUI input files.
 
 Thumbnails request `/api/view` with percent-encoded `filename`, `type=input`, and `subfolder`. This avoids `URLSearchParams` `+` / `%2B` encoding, which 404s ComfyUI for input names that contain spaces even when status still reported Disponibile. Library/selector thumbs are identification only; they are not a generation crop preview.
 

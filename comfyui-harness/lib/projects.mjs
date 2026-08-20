@@ -1,5 +1,7 @@
 /** Local project schema, path safety, and categorized asset-library helpers (pure). */
 
+import { lookupAvailability, normalizeInputSubfolder } from "./asset-ref.mjs";
+
 export const SCHEMA_VERSION = 1;
 
 export const CATEGORIES = ["elements", "locations", "objects", "audio"];
@@ -116,7 +118,10 @@ export function createMember({ filename, originalName, label, type, id, subfolde
     originalName: originalName || safe,
     label: label || stripExtension(originalName || safe) || safe,
     type: inferred,
-    subfolder: subfolder == null ? "" : String(subfolder)
+    subfolder: (() => {
+      const folder = normalizeInputSubfolder(subfolder);
+      return folder == null ? "" : folder;
+    })()
   };
 }
 
@@ -498,13 +503,19 @@ export function buildSubmissionFiles({
 } = {}) {
   const keys = Array.isArray(activeKeys) ? activeKeys : requiredKeys;
   const active = filterFilesForActivePreset(files, keys);
-  const known = new Set(listAllMembers(library || emptyLibrary()).map(m => m.filename));
+  const lib = library || emptyLibrary();
+  const known = new Set(listAllMembers(lib).map(m => m.filename));
   const out = {};
   const missingRequired = [];
   for (const [role, filename] of Object.entries(active)) {
     if (!filename) continue;
-    const status = availability[filename] || (known.has(filename) ? "unknown" : "missing");
-    if (status === "missing" || status === "error") {
+    const found = findMemberByFilename(lib, filename);
+    const status = lookupAvailability(availability, {
+      filename,
+      subfolder: found?.member?.subfolder || ""
+    });
+    const resolved = status === "unknown" && !known.has(filename) ? "missing" : status;
+    if (resolved === "missing" || resolved === "error") {
       if (requiredKeys.includes(role)) missingRequired.push(role);
       continue;
     }

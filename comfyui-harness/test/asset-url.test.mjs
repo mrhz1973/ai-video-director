@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildInputViewUrl, parseUploadResult } from "../public/asset-url.mjs";
+import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "../public/asset-url.mjs";
 
 test("thumbnail URL percent-encodes filename, sets type=input, and includes subfolder", () => {
   const url = buildInputViewUrl({
@@ -27,4 +27,24 @@ test("parseUploadResult keeps ComfyUI name and subfolder without renaming identi
   assert.equal(parsed.filename, "a b.png");
   assert.equal(parsed.subfolder, "in");
   assert.equal(parsed.type, "input");
+});
+
+test("asset-status request encodes parallel filename and subfolder pairs", () => {
+  const url = buildAssetStatusUrl([
+    { filename: "face.png", subfolder: "" },
+    { filename: "face.png", subfolder: "characters/martino" }
+  ]);
+  const parsed = new URL(url, "http://harness.local");
+  assert.equal(parsed.pathname, "/api/asset-status");
+  assert.deepEqual(parsed.searchParams.getAll("filename"), ["face.png", "face.png"]);
+  assert.deepEqual(parsed.searchParams.getAll("subfolder"), ["", "characters/martino"]);
+});
+
+test("thumbnail and asset-status queries agree on nested input identity", () => {
+  const descriptor = { filename: "face.png", subfolder: "characters/martino", type: "input" };
+  const thumb = new URL(buildInputViewUrl(descriptor), "http://harness.local");
+  const status = new URL(buildAssetStatusUrl([descriptor]), "http://harness.local");
+  assert.equal(thumb.searchParams.get("filename"), status.searchParams.get("filename"));
+  assert.equal(thumb.searchParams.get("subfolder"), status.searchParams.get("subfolder"));
+  assert.equal(thumb.searchParams.get("type"), "input");
 });
