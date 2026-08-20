@@ -12,10 +12,14 @@
  * --apply is transactional for detected/caught failures (not filesystem ACID):
  *   PHASE 1 (preflight): validate every supplied workflow in memory; ZERO writes.
  *   PHASE 2 (apply): backup+patch prepared NEEDS_APPLY jobs; on a caught apply-phase
- *     failure after any commit, restore every workflow modified by THIS invocation
- *     to its exact original bytes (atomic replace from backup).
+ *     failure after any commit, attempt restore of every workflow modified by THIS
+ *     invocation to exact original bytes (atomic replace from backup).
+ *   Successful rollback is byte-verified (APPLY_FAILED_ROLLBACK_OK).
+ *   Incomplete rollback is reported explicitly (APPLY_FAILED_ROLLBACK_FAILED) and
+ *   never claims that all sources match originals.
  *   Backups created by a failed invocation remain as recovery artifacts (reported);
  *   pre-existing backups are never deleted (preflight already rejects collisions).
+ *   No guarantee against power loss / process kill / hardware failure.
  * Already-safe workflows are left untouched (ALREADY_SAFE).
  *
  * --check exit codes (most severe nonzero wins for multi-file):
@@ -70,9 +74,11 @@ function usage(exitCode = EXIT.IO) {
 Options:
   --check   Inspect only; never write.
   --apply   Transactional patch: preflight ALL jobs, then write only if all pass.
-            Caught apply-phase failures roll back every workflow modified by this
-            invocation to original bytes. Backups from the failed run may remain
-            as recovery artifacts. Not a guarantee against power loss / kill -9.
+            Caught apply-phase failures attempt rollback of every workflow modified
+            by this invocation. Successful rollback is byte-verified.
+            Incomplete rollback is reported as APPLY_FAILED_ROLLBACK_FAILED and
+            never claims originals match. Backups from the failed run remain as
+            recovery artifacts. Not a guarantee against power loss / kill -9.
   --i2v     Path to private MiniMax H3 I2VA API JSON.
   --fl2v    Path to private MiniMax H3 FL2VA API JSON.
 
@@ -83,7 +89,7 @@ Options:
   1  missing/unreadable/parse/IO
 
 Multi-file: most severe nonzero wins (UNEXPECTED > IO > NEEDS_APPLY).
---apply: preflight failure => ZERO writes. Apply-phase caught failure => rollback.
+--apply: preflight failure => ZERO writes. Apply-phase caught failure => rollback attempt.
 `;
   process.stderr.write(text);
   process.exit(exitCode);
@@ -277,18 +283,45 @@ async function restoreJobFromBackup(job, fs) {
   return restored;
 }
 
-async function verifyOriginalBytes(job, fs) {
-  const current = asBuffer(await fs.readFile(job.filePath));
-  if (!current.equals(asBuffer(job.originalBytes))) {
-    throw new Error(
-      `VERIFY FAILED for ${path.basename(job.filePath)}: source bytes differ from preflight original`
-    );
+async function matchesOriginalBytes(job, fs) {
+  try {
+    const current = asBuffer(await fs.readFile(job.filePath));
+    return current.equals(asBuffer(job.originalBytes));
+  } catch {
+    return false;
   }
+}
+
+function rollbackOutcomePayload({
+  applyError,
+  restoredFiles,
+  failedRestoreFiles,
+  createdBackups,
+  originalVerificationComplete,
+  unverifiedFiles
+}) {
+  const rollbackComplete = failedRestoreFiles.length === 0
+    && originalVerificationComplete
+    && unverifiedFiles.length === 0;
+  return {
+    applyFailed: true,
+    rollbackAttempted: true,
+    rollbackComplete,
+    rolledBack: rollbackComplete,
+    restoredFiles,
+    failedRestoreFiles,
+    createdBackups,
+    originalVerificationComplete,
+    unverifiedFiles,
+    code: rollbackComplete ? "APPLY_FAILED_ROLLBACK_OK" : "APPLY_FAILED_ROLLBACK_FAILED",
+    message: applyError.message
+  };
 }
 
 /**
  * PHASE 2 — only after every job passed preflight.
- * Tracks commits; on caught failure, restores every committed workflow.
+ * Tracks commits; on caught failure, attempts restore of every committed workflow
+ * (continues after individual restore failures) and reports completeness truthfully.
  */
 export async function applyPreparedJobs(jobs, { fs = createDefaultFs() } = {}) {
   const results = [];
@@ -329,18 +362,19 @@ export async function applyPreparedJobs(jobs, { fs = createDefaultFs() } = {}) {
       ok: true,
       results,
       createdBackups,
+      applyFailed: false,
+      rollbackAttempted: false,
+      rollbackComplete: false,
       rolledBack: false
     };
   } catch (error) {
     process.stderr.write(`ERROR: apply-phase failure: ${error.message}\n`);
     process.stderr.write(
-      "ROLLBACK: restoring every workflow modified by this invocation to original bytes.\n"
+      "ROLLBACK: attempting restore of every workflow modified by this invocation.\n"
     );
 
     const restoreTargets = [...committed];
     if (current && current.backupCreated && !current.committed) {
-      // Backup exists; source should still be original if rename did not complete,
-      // but restore from backup anyway if bytes drifted.
       try {
         const cur = asBuffer(await fs.readFile(current.filePath));
         if (!cur.equals(asBuffer(current.originalBytes))) {
@@ -351,19 +385,33 @@ export async function applyPreparedJobs(jobs, { fs = createDefaultFs() } = {}) {
       }
     }
 
-    const rolledBack = [];
+    const restoredFiles = [];
+    const failedRestoreFiles = [];
+
     for (const job of restoreTargets) {
-      await restoreJobFromBackup(job, fs);
-      job.committed = false;
-      job.rolledBack = true;
-      rolledBack.push(job.filePath);
-      process.stderr.write(`ROLLBACK OK ${path.basename(job.filePath)}\n`);
+      try {
+        await restoreJobFromBackup(job, fs);
+        job.committed = false;
+        job.rolledBack = true;
+        restoredFiles.push(job.filePath);
+        process.stderr.write(`ROLLBACK OK ${path.basename(job.filePath)}\n`);
+      } catch (restoreError) {
+        failedRestoreFiles.push(job.filePath);
+        process.stderr.write(
+          `ROLLBACK FAILED ${path.basename(job.filePath)}: ${restoreError.message}\n`
+        );
+      }
     }
 
-    // Every NEEDS_APPLY source must match preflight original bytes.
+    let originalVerificationComplete = true;
+    const unverifiedFiles = [];
     for (const job of jobs) {
       if (!job.needsWrite || !job.originalBytes) continue;
-      await verifyOriginalBytes(job, fs);
+      const ok = await matchesOriginalBytes(job, fs);
+      if (!ok) {
+        originalVerificationComplete = false;
+        unverifiedFiles.push(job.filePath);
+      }
     }
 
     for (const bak of createdBackups) {
@@ -372,11 +420,33 @@ export async function applyPreparedJobs(jobs, { fs = createDefaultFs() } = {}) {
       );
     }
 
+    const outcome = rollbackOutcomePayload({
+      applyError: error,
+      restoredFiles,
+      failedRestoreFiles,
+      createdBackups,
+      originalVerificationComplete,
+      unverifiedFiles
+    });
+
+    if (outcome.rollbackComplete) {
+      process.stderr.write(
+        "APPLY_FAILED_ROLLBACK_OK: all supplied source workflows match preflight originals.\n"
+      );
+    } else {
+      process.stderr.write(
+        "APPLY_FAILED_ROLLBACK_FAILED: rollback incomplete — do NOT assume sources match originals.\n"
+      );
+      if (unverifiedFiles.length) {
+        process.stderr.write(
+          `UNVERIFIED_SOURCES: ${unverifiedFiles.map(p => path.basename(p)).join(", ")}\n`
+        );
+      }
+    }
+
     const fail = new Error(error.message);
-    fail.code = "APPLY_PHASE_FAILED";
+    Object.assign(fail, outcome);
     fail.cause = error;
-    fail.rolledBack = rolledBack;
-    fail.createdBackups = createdBackups;
     throw fail;
   }
 }
@@ -438,15 +508,30 @@ export async function runPatcherCommand({ check, apply, jobs, fs = createDefault
       createdBackups: applied.createdBackups
     };
   } catch (error) {
-    process.stderr.write(
-      "ABORT: apply-phase failed after rollback; all supplied source workflows match preflight originals.\n"
-    );
+    const rollbackComplete = error.rollbackComplete === true;
+    if (rollbackComplete) {
+      process.stderr.write(
+        "ABORT: apply-phase failed; rollback complete — all supplied source workflows match preflight originals.\n"
+      );
+    } else {
+      process.stderr.write(
+        "ABORT: APPLY_FAILED_ROLLBACK_FAILED — rollback incomplete; do NOT assume sources match originals. Use recovery backups for manual repair.\n"
+      );
+    }
     return {
       exitCode: EXIT.IO,
       jobs: prepared,
       wrote: false,
-      rolledBack: true,
+      applyFailed: true,
+      rollbackAttempted: error.rollbackAttempted === true,
+      rollbackComplete,
+      rolledBack: rollbackComplete,
+      restoredFiles: error.restoredFiles || [],
+      failedRestoreFiles: error.failedRestoreFiles || [],
       createdBackups: error.createdBackups || [],
+      originalVerificationComplete: error.originalVerificationComplete === true,
+      unverifiedFiles: error.unverifiedFiles || [],
+      outcome: error.code || (rollbackComplete ? "APPLY_FAILED_ROLLBACK_OK" : "APPLY_FAILED_ROLLBACK_FAILED"),
       error: error.message
     };
   }

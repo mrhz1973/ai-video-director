@@ -509,7 +509,11 @@ test("apply-phase rollback: second write failure restores first workflow", async
   });
 
   assert.equal(result.exitCode, 1);
+  assert.equal(result.applyFailed, true);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackComplete, true);
   assert.equal(result.rolledBack, true);
+  assert.equal(result.originalVerificationComplete, true);
   assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
   assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
   // Neither graph remains partially patched.
@@ -554,6 +558,9 @@ test("apply-phase rollback: second backup failure restores first workflow", asyn
   });
 
   assert.equal(result.exitCode, 1);
+  assert.equal(result.applyFailed, true);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackComplete, true);
   assert.equal(result.rolledBack, true);
   assert.equal(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
   assert.equal(Buffer.compare(await readFile(fl2vPath), beforeFl), 0);
@@ -562,4 +569,121 @@ test("apply-phase rollback: second backup failure restores first workflow", asyn
     [c.firstLoadId, 0]
   );
   assert.equal(await fileExists(`${fl2vPath}.pre-safe-fit.bak`), false);
+});
+
+test("apply-phase rollback: incomplete restore is reported truthfully", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-rb-fail-"));
+  const i2vPath = path.join(tmp, "i2v.api.json");
+  const fl2vPath = path.join(tmp, "fl2v.api.json");
+  await writeFile(i2vPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(fl2vPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  const beforeI2v = await readFile(i2vPath);
+
+  const real = createDefaultFs();
+  let allowI2vRename = true;
+  const fs = wrapFs({
+    async rename(src, dest) {
+      const destR = path.resolve(dest);
+      if (destR === path.resolve(i2vPath)) {
+        if (!allowI2vRename) {
+          throw new Error("injected I2VA restore failure");
+        }
+        const out = await real.rename(src, dest);
+        allowI2vRename = false;
+        return out;
+      }
+      if (destR === path.resolve(fl2vPath)) {
+        throw new Error("injected FL2VA atomic write failure");
+      }
+      return real.rename(src, dest);
+    }
+  });
+
+  let stderr = "";
+  const origErr = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk, ...args) => {
+    stderr += String(chunk);
+    return origErr(chunk, ...args);
+  };
+  let result;
+  try {
+    result = await runPatcherCommand({
+      apply: true,
+      check: false,
+      jobs: [
+        { filePath: i2vPath, mode: "I2VA" },
+        { filePath: fl2vPath, mode: "FL2VA" }
+      ],
+      fs
+    });
+  } finally {
+    process.stderr.write = origErr;
+  }
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.applyFailed, true);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackComplete, false);
+  assert.notEqual(result.rolledBack, true);
+  assert.equal(result.outcome, "APPLY_FAILED_ROLLBACK_FAILED");
+  assert.ok(result.failedRestoreFiles.some(p => path.resolve(p) === path.resolve(i2vPath)));
+  assert.equal(await fileExists(`${i2vPath}.pre-safe-fit.bak`), true);
+  assert.match(stderr, /APPLY_FAILED_ROLLBACK_FAILED/);
+  assert.doesNotMatch(stderr, /all supplied source workflows match preflight originals/);
+  // I2VA remains patched because restore failed.
+  assert.deepEqual(
+    JSON.parse(await readFile(i2vPath, "utf8"))[c.minimaxNodeId].inputs.first_frame,
+    [c.firstResizeId, 0]
+  );
+  assert.notEqual(Buffer.compare(await readFile(i2vPath), beforeI2v), 0);
+});
+
+test("apply-phase rollback: continues remaining restores after one failure", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "h3-safe-fit-rb-multi-"));
+  const aPath = path.join(tmp, "a-i2v.api.json");
+  const bPath = path.join(tmp, "b-fl2v.api.json");
+  const cPath = path.join(tmp, "c-i2v.api.json");
+  await writeFile(aPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  await writeFile(bPath, `${JSON.stringify(makeFL2VA(), null, 2)}\n`);
+  await writeFile(cPath, `${JSON.stringify(makeI2VA(), null, 2)}\n`);
+  const beforeB = await readFile(bPath);
+
+  const real = createDefaultFs();
+  let aRenames = 0;
+  const fs = wrapFs({
+    async rename(src, dest) {
+      const destR = path.resolve(dest);
+      if (destR === path.resolve(cPath)) {
+        throw new Error("injected third write failure");
+      }
+      if (destR === path.resolve(aPath)) {
+        aRenames += 1;
+        if (aRenames > 1) {
+          throw new Error("injected first restore failure");
+        }
+      }
+      return real.rename(src, dest);
+    }
+  });
+
+  const result = await runPatcherCommand({
+    apply: true,
+    check: false,
+    jobs: [
+      { filePath: aPath, mode: "I2VA" },
+      { filePath: bPath, mode: "FL2VA" },
+      { filePath: cPath, mode: "I2VA" }
+    ],
+    fs
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.rollbackAttempted, true);
+  assert.equal(result.rollbackComplete, false);
+  assert.notEqual(result.rolledBack, true);
+  assert.ok(result.failedRestoreFiles.some(p => path.resolve(p) === path.resolve(aPath)));
+  assert.ok(result.restoredFiles.some(p => path.resolve(p) === path.resolve(bPath)));
+  assert.equal(Buffer.compare(await readFile(bPath), beforeB), 0);
+  assert.equal(await fileExists(`${aPath}.pre-safe-fit.bak`), true);
+  assert.equal(await fileExists(`${bPath}.pre-safe-fit.bak`), true);
 });
