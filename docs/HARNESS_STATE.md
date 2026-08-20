@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.6.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -238,7 +238,41 @@ Workflow binding `<option>` labels are dynamic ordinals (`Martino · Elements #1
 
 The desktop workspace order is header → prompt/Generate → render monitor → log. Generation settings use two columns at viewport ≥1100px and one column below that. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
 
-Aspect-ratio-safe I2VA/FL2VA preprocessing is **not** in v0.5.2. Issue #11 PR B will rewire MiniMax first/last frames through the existing center-crop resize nodes.
+Aspect-ratio-safe I2VA/FL2VA preprocessing is implemented in harness **v0.6.0** as fail-closed inspection + an external private-workflow patcher (Issue #11 PR B). Pad/Stretch UI modes remain deferred.
+
+### Safe center-crop image fit (Issue #11 PR B, v0.6.0)
+
+**Why:** MiniMax `MiniMaxH3ImageToVideo` linked directly to `LoadImage` resizes first/last frames with independent X/Y scales to ResolutionSelector WxH. A portrait source (e.g. 1024×1536) into a landscape target (e.g. ~736×416) widens the subject. Safe behavior is center COVER crop to the target aspect, then uniform resize.
+
+**Public graph contract (do not commit private JSON):**
+
+| Role | Node | Class | Notes |
+|------|------|-------|-------|
+| Resolution | 115 | `ResolutionSelector` | width/height outputs |
+| First LoadImage | 114 | `LoadImage` | preset binding target |
+| Last LoadImage | 141 | `LoadImage` | FL2VA only |
+| First resize | 144 | `ResizeImageMaskNode` | `crop=center`, WxH from 115, input←114 |
+| Last resize | 142 | `ResizeImageMaskNode` | `crop=center`, WxH from 115, input←141 |
+| MiniMax | 133 | `MiniMaxH3ImageToVideo` | safe: first←144, last←142 |
+
+Legacy unsafe: `133.first_frame←114` (and FL2VA `last_frame←141`). Safe: `133.first_frame←144`, FL2VA `last_frame←142`.
+
+**Reproduce without committing private files:**
+
+```text
+node scripts/apply_h3_safe_fit.mjs --check --i2v <private-i2v.api.json> --fl2v <private-fl2v.api.json>
+node scripts/apply_h3_safe_fit.mjs --apply --i2v <path> --fl2v <path>
+```
+
+`--apply` is explicit-only, fail-closed, and **transactional for detected/caught failures** (not a filesystem ACID / power-loss / process-kill / hardware-failure guarantee): PHASE 1 preflights every supplied workflow in memory (existence, parse, graph contract, backup destination, in-memory patched result reaches `safe`) with **zero writes**; PHASE 2 creates backups and atomic-writes only if every job passed preflight. If a caught apply-phase error occurs after one or more workflows were already modified, restore is attempted for every workflow modified by **this invocation** (continues after individual restore failures). Successful rollback is byte-verified (`APPLY_FAILED_ROLLBACK_OK`, `rollbackComplete=true`, `rolledBack=true`). Incomplete rollback is reported explicitly (`APPLY_FAILED_ROLLBACK_FAILED`, `rollbackComplete=false`, `rolledBack` must not be true) and never claims that all sources match originals; `failedRestoreFiles` / unverified sources are listed. Backups created by the failed invocation remain as recovery artifacts for manual repair; pre-existing backups are never deleted (preflight already rejects collisions). A preflight failure still aborts with zero writes and zero backups. Already-safe files are left untouched (`ALREADY_SAFE`). Idempotent on second `--apply`.
+
+`--check` exit codes (most severe nonzero wins for multi-file: UNEXPECTED > IO > NEEDS_APPLY): `0` SAFE/not-applicable; `3` NEEDS_APPLY; `2` UNEXPECTED/invalid graph; `1` missing/unreadable/parse/IO. Automation must not treat exit `0` as “needs action” or “unexpected”.
+
+Inspector lives in `comfyui-harness/lib/h3-safe-fit.mjs`.
+
+**Harness behavior:** `/api/config` presets include read-only `safeFit` (`safe` / `needs-apply` / `unexpected` / `not-applicable`). I2VA/FL2VA Generate is blocked when not `safe` (UI + `/api/queue` 409). T2VA/Ref2VA are `not-applicable`. Crop preview for first/last roles uses CSS `object-fit: cover` + center and only appears when status is `safe`. Preset bindings and `schemaVersion: 1` filename project roles are unchanged (patch is downstream of LoadImage).
+
+Pad and Stretch remain future options only; Crop is the supported v0.6.0 safe mode.
 
 Saving persists label, workflow, prompt, generation settings, library groups/members/order, and explicit role assignments. It does **not** persist job id, progress, terminal logs, queue state, or session `clientId`.
 

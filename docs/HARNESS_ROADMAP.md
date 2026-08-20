@@ -258,10 +258,11 @@ A change is not considered fully integrated if the implementation exists only on
 
 Recommended order after the current video experiment:
 
-1. Issue #11 PR B — I2VA/FL2VA aspect-ratio-safe center-crop (do not stretch first frames);
-2. design the Basic + Advanced harness UI from the real existing ComfyUI inputs;
-3. add effective submitted/running workflow inspection and, where possible, a matching visual `Open/View in ComfyUI` path;
-4. improve prompt versioning and experiment records;
-5. expose validated advanced generation controls;
-6. evaluate stronger compatible H3 model variants against the stable baseline;
-7. consider an optional Director prompt-create/validate action only after manual prompt workflows remain fully preserved.
+1. ~~Issue #11 PR B — I2VA/FL2VA aspect-ratio-safe center-crop~~ — implemented in harness **v0.6.0** (fail-closed inspector + public `scripts/apply_h3_safe_fit.mjs`; private graphs patched separately). Optional future Pad/Stretch modes remain deferred;
+2. activate v0.6.0 on live after PR merge + controlled private-workflow `--apply` + visual approval (Issue #11 stays open until that activation completes);
+3. design the Basic + Advanced harness UI from the real existing ComfyUI inputs;
+4. add effective submitted/running workflow inspection and, where possible, a matching visual `Open/View in ComfyUI` path;
+5. improve prompt versioning and experiment records;
+6. expose validated advanced generation controls;
+7. evaluate stronger compatible H3 model variants against the stable baseline;
+8. consider an optional Director prompt-create/validate action only after manual prompt workflows remain fully preserved.

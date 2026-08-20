@@ -88,29 +88,6 @@ const setBusy = nextBusy => {
   updateGenerateButton();
 };
 
-function updateGenerateButton() {
-  const send = $("send");
-  const reasonEl = $("generateReason");
-  if (!send) return;
-  const gate = describeGenerateBlockers({
-    prompt: $("prompt")?.value,
-    attachments: currentPreset()?.attachments || [],
-    files: draft.files,
-    library: draft.library,
-    availability: draft.availability,
-    busy,
-    submitting
-  });
-  send.disabled = gate.blocked;
-  send.textContent = busy || submitting ? "Generazione…" : "Genera";
-  send.style.opacity = gate.blocked ? ".55" : "1";
-  send.style.cursor = gate.blocked ? "not-allowed" : "pointer";
-  if (reasonEl) {
-    reasonEl.hidden = !gate.blocked || gate.code === "busy";
-    reasonEl.textContent = gate.code === "busy" ? "" : (gate.reason || "");
-  }
-}
-
 function applyConnection(state) {
   const badge = connectionBadge(state);
   const top = $("connection");
@@ -438,6 +415,52 @@ function currentPreset() {
   return config.presets.find(item => item.id === $("workflow").value);
 }
 
+function currentSafeFitStatus() {
+  return currentPreset()?.safeFit?.status || "not-applicable";
+}
+
+function selectedAspectLabel() {
+  return $("aspect")?.value || "16:9";
+}
+
+function updateGenerateButton() {
+  const send = $("send");
+  const reasonEl = $("generateReason");
+  if (!send) return;
+  const gate = describeGenerateBlockers({
+    prompt: $("prompt")?.value,
+    attachments: currentPreset()?.attachments || [],
+    files: draft.files,
+    library: draft.library,
+    availability: draft.availability,
+    busy,
+    submitting,
+    safeFitStatus: currentSafeFitStatus()
+  });
+  send.disabled = gate.blocked;
+  send.textContent = busy || submitting ? "Generazione…" : "Genera";
+  send.style.opacity = gate.blocked ? ".55" : "1";
+  send.style.cursor = gate.blocked ? "not-allowed" : "pointer";
+  if (reasonEl) {
+    reasonEl.hidden = !gate.blocked || gate.code === "busy";
+    reasonEl.textContent = gate.code === "busy" ? "" : (gate.reason || "");
+  }
+  const warn = $("safeFitWarning");
+  if (warn) {
+    const status = currentSafeFitStatus();
+    if (status === "needs-apply") {
+      warn.hidden = false;
+      warn.textContent = "Workflow image-fit non aggiornato. Applica lo script pubblico apply_h3_safe_fit.mjs alle API workflow private (I2VA/FL2VA) prima di generare.";
+    } else if (status === "unexpected") {
+      warn.hidden = false;
+      warn.textContent = "Workflow image-fit non valido. Controlla la topologia del grafo privato I2VA/FL2VA.";
+    } else {
+      warn.hidden = true;
+      warn.textContent = "";
+    }
+  }
+}
+
 function updateResolutionHint() {
   const contract = currentPreset()?.options?.megapixels || {};
   $("resolutionHint").textContent = formatResolutionHint($("megapixels").value, $("aspect").value, contract.multiple || DISPLAY_MULTIPLE);
@@ -740,23 +763,53 @@ function renderRoleFields() {
     };
     const preview = document.createElement("div");
     preview.className = "role-preview";
+    const fitStatus = currentSafeFitStatus();
+    const cropEligible = ["firstImage", "lastImage"].includes(field.key)
+      && roleAcceptKind(field.accept) === "image";
     if (filename && roleAcceptKind(field.accept) === "image" && status === "available") {
-      const img = document.createElement("img");
-      const found = foundForRole;
-      img.src = viewUrl(filename, found?.member?.subfolder);
-      img.alt = field.label;
-      img.title = found?.member?.originalName || filename;
-      img.decoding = "async";
-      img.onerror = () => {
-        const ph = document.createElement("div");
-        ph.className = "member-thumb";
-        ph.textContent = "?";
-        img.replaceWith(ph);
-      };
-      preview.append(img);
+      if (cropEligible && fitStatus === "safe") {
+        const crop = document.createElement("div");
+        crop.className = "crop-preview";
+        crop.style.aspectRatio = selectedAspectLabel().replace(":", " / ");
+        const img = document.createElement("img");
+        img.src = viewUrl(filename, foundForRole?.member?.subfolder);
+        img.alt = field.label;
+        img.title = foundForRole?.member?.originalName || filename;
+        img.decoding = "async";
+        img.onerror = () => {
+          const ph = document.createElement("div");
+          ph.className = "member-thumb";
+          ph.textContent = "?";
+          crop.replaceWith(ph);
+        };
+        const cap = document.createElement("span");
+        cap.className = "crop-preview-label";
+        cap.textContent = `Crop ${selectedAspectLabel()} · centro`;
+        crop.append(img);
+        preview.append(crop, cap);
+      } else {
+        const img = document.createElement("img");
+        img.src = viewUrl(filename, foundForRole?.member?.subfolder);
+        img.alt = field.label;
+        img.title = foundForRole?.member?.originalName || filename;
+        img.decoding = "async";
+        img.onerror = () => {
+          const ph = document.createElement("div");
+          ph.className = "member-thumb";
+          ph.textContent = "?";
+          img.replaceWith(ph);
+        };
+        preview.append(img);
+      }
     }
     const note = document.createElement("span");
-    note.textContent = filename ? statusLabel(status || "unknown") : "nessuna assegnazione";
+    if (cropEligible && (fitStatus === "needs-apply" || fitStatus === "unexpected")) {
+      note.textContent = fitStatus === "needs-apply"
+        ? "image-fit non aggiornato"
+        : "image-fit non valido";
+    } else {
+      note.textContent = filename ? statusLabel(status || "unknown") : "nessuna assegnazione";
+    }
     preview.append(note);
     label.append(select);
     row.append(label, preview);
@@ -821,6 +874,7 @@ function selectPreset({
   }
   renderLibrary();
   renderRoleFields();
+  updateGenerateButton();
   if (trackDirty) updateDirtyFlag();
 }
 
@@ -1007,7 +1061,12 @@ $("project").onchange = async () => {
   await loadProjectById($("project").value);
 };
 $("megapixels").oninput = () => { updateResolutionHint(); updateDirtyFlag(); };
-$("aspect").onchange = () => { updateResolutionHint(); updateDirtyFlag(); };
+$("aspect").onchange = () => {
+  updateResolutionHint();
+  updateDirtyFlag();
+  renderRoleFields();
+  updateGenerateButton();
+};
 for (const id of ["prompt", "projectLabel", "model", "steps", "duration", "seed"]) {
   $(id).addEventListener("input", updateDirtyFlag);
   $(id).addEventListener("change", updateDirtyFlag);
@@ -1093,7 +1152,8 @@ $("send").onclick = async () => {
     library: draft.library,
     availability: draft.availability,
     busy,
-    submitting
+    submitting,
+    safeFitStatus: currentSafeFitStatus()
   });
   if (gate.blocked) {
     updateGenerateButton();
