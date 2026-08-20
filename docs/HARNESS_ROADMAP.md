@@ -258,9 +258,9 @@ A change is not considered fully integrated if the implementation exists only on
 
 Recommended order after the current video experiment:
 
-1. design the Basic + Advanced harness UI from the real existing ComfyUI inputs;
-2. add effective submitted/running workflow inspection and, where possible, a matching visual `Open/View in ComfyUI` path;
-3. implement Save/Update Project locally;
+1. Issue #11 PR B — I2VA/FL2VA aspect-ratio-safe center-crop (do not stretch first frames);
+2. design the Basic + Advanced harness UI from the real existing ComfyUI inputs;
+3. add effective submitted/running workflow inspection and, where possible, a matching visual `Open/View in ComfyUI` path;
 4. improve prompt versioning and experiment records;
 5. expose validated advanced generation controls;
 6. evaluate stronger compatible H3 model variants against the stable baseline;

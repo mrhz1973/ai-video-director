@@ -7,6 +7,7 @@ import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } fr
 import { createLogger } from "./lib/logger.mjs";
 import { createProjectStore } from "./lib/project-store.mjs";
 import { isValidProjectId } from "./lib/projects.mjs";
+import { assetKindFromFilename, classifyAssetAvailability } from "./lib/asset-status.mjs";
 import {
   attachSafeStaticStream,
   canWriteResponse,
@@ -71,8 +72,20 @@ async function assetStatuses(filenames = []) {
       return;
     }
     try {
-      const upstream = await fetch(`${comfy}/view?${new URLSearchParams({ filename, type: "input" })}`, { method: "GET" });
-      statuses[filename] = upstream.ok ? "available" : upstream.status === 404 ? "missing" : "error";
+      const query = [
+        ["filename", filename],
+        ["type", "input"],
+        ["subfolder", ""]
+      ].map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join("&");
+      const upstream = await fetch(`${comfy}/view?${query}`, { method: "GET" });
+      const kind = assetKindFromFilename(filename);
+      statuses[filename] = classifyAssetAvailability({
+        ok: upstream.ok,
+        status: upstream.status,
+        contentType: upstream.headers.get("content-type"),
+        kind
+      });
+      try { await upstream.body?.cancel?.(); } catch { /* ignore */ }
     } catch {
       statuses[filename] = "error";
     }

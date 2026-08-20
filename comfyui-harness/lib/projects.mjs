@@ -107,7 +107,7 @@ export function assertSafeFilename(filename) {
   return filename;
 }
 
-export function createMember({ filename, originalName, label, type, id } = {}) {
+export function createMember({ filename, originalName, label, type, id, subfolder } = {}) {
   const safe = assertSafeFilename(filename);
   const inferred = type || (AUDIO_EXTENSIONS.has(extensionOf(safe)) ? "audio" : "image");
   return {
@@ -115,7 +115,34 @@ export function createMember({ filename, originalName, label, type, id } = {}) {
     filename: safe,
     originalName: originalName || safe,
     label: label || stripExtension(originalName || safe) || safe,
-    type: inferred
+    type: inferred,
+    subfolder: subfolder == null ? "" : String(subfolder)
+  };
+}
+
+/**
+ * Display label for a group member. Ordinal follows current member order (first = #1).
+ * Does not use the stored filename as primary text.
+ */
+export function formatMemberOrdinalLabel({ groupLabel, category, index, compact = false } = {}) {
+  const n = Number(index);
+  const ordinal = Number.isFinite(n) && n >= 0 ? n + 1 : 1;
+  const cat = CATEGORY_LABELS[category] || "Asset";
+  const numbered = `${cat} #${ordinal}`;
+  const group = String(groupLabel || "").trim();
+  if (compact || !group) return numbered;
+  return `${group} · ${numbered}`;
+}
+
+export function memberSelectOption(member = {}) {
+  return {
+    value: member.filename,
+    label: formatMemberOrdinalLabel({
+      groupLabel: member.groupLabel,
+      category: member.category,
+      index: member.index
+    }),
+    title: member.originalName || member.filename || ""
   };
 }
 
@@ -226,12 +253,13 @@ export function toPersistedProject(project) {
     library[category] = (normalized.library[category] || []).map(group => ({
       id: group.id,
       label: group.label,
-      members: (group.members || []).map(member => ({
+        members: (group.members || []).map(member => ({
         id: member.id,
         filename: member.filename,
         originalName: member.originalName,
         label: member.label,
-        type: member.type
+        type: member.type,
+        ...(member.subfolder ? { subfolder: member.subfolder } : {})
       }))
     }));
   }
@@ -288,9 +316,9 @@ export function listAllMembers(library = emptyLibrary()) {
   const members = [];
   for (const category of CATEGORIES) {
     for (const group of library[category] || []) {
-      for (const member of group.members || []) {
-        members.push({ category, groupId: group.id, groupLabel: group.label, ...member });
-      }
+      (group.members || []).forEach((member, index) => {
+        members.push({ category, groupId: group.id, groupLabel: group.label, index, ...member });
+      });
     }
   }
   return members;
@@ -487,6 +515,46 @@ export function buildSubmissionFiles({
     if (!out[role]) missingRequired.push(role);
   }
   return { files: out, missingRequired: [...new Set(missingRequired)] };
+}
+
+/**
+ * Reasons the Generate button must stay disabled. Never submits a queue job.
+ */
+export function describeGenerateBlockers({
+  prompt,
+  attachments = [],
+  files = {},
+  library,
+  availability = {},
+  busy = false,
+  submitting = false
+} = {}) {
+  if (busy || submitting) {
+    return { blocked: true, reason: "Generazione in corso", code: "busy" };
+  }
+  if (!String(prompt || "").trim()) {
+    return { blocked: true, reason: "Inserisci un prompt", code: "prompt" };
+  }
+  const activeKeys = (attachments || []).map(field => field.key).filter(Boolean);
+  const built = buildSubmissionFiles({
+    files,
+    library,
+    availability,
+    activeKeys,
+    requiredKeys: activeKeys
+  });
+  if (built.missingRequired.length) {
+    const labels = built.missingRequired.map(key => {
+      const field = (attachments || []).find(item => item.key === key);
+      return field?.label || key;
+    });
+    return {
+      blocked: true,
+      reason: `Mancano o non sono disponibili: ${labels.join(", ")}`,
+      code: "roles"
+    };
+  }
+  return { blocked: false, reason: "", code: null };
 }
 
 export function uniqueProjectId(desiredId, existingIds = []) {
