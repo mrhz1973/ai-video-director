@@ -64,3 +64,5 @@
 - Stopped sending dormant width/height in the queue payload so the display helper can never activate them; `dimensions()` remains an unused generic helper.
 - Added harness unit tests for direct megapixels, legacy compatibility, validation, aspect conditioning, display-resolution rounding/labeling and the preset/workflow contract; validation result: 34/34 Node tests passing plus repository validation.
 - Versioned the harness as v0.4.1. No H3 model, sampler, scheduler, workflow topology or ComfyUI lifecycle behavior was changed.
+- Fixed the standard run handoff: the assistant/director defines prompt and settings, Cursor may start missing local services and fully prepare the harness form, and the user performs the final `Genera` click manually in the normal browser session.
+- Documented that Cursor preparation must not submit `/api/queue`, press `Genera`, or silently turn preparation into execution; if ComfyUI or the harness is already running, Cursor must leave the existing process alone unless a real restart need exists.
