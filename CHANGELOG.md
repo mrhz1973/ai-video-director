@@ -51,3 +51,16 @@
 - Added controlled evaluation of stronger or higher-quality compatible H3 model/checkpoint variants while preserving the current known-good baseline and documenting quality, speed, memory/stability and regression results.
 - Added future Save/Update Project, workflow/model registry and optional Director prompt-create/validate work to the roadmap while preserving manual prompt passthrough.
 - Updated START_HERE and HANDOFF so future chats must read the roadmap before proposing H3 runtime/model/prompt changes.
+- Replaced the user-facing `Preview / Final` quality selector with a direct `Megapixel` numeric control; the visible value is now the exact value bound to the ComfyUI workflow.
+- Verified the real constraints from ComfyUI `/object_info` → `ResolutionSelector.megapixels`: min 0.1, max 16.0, step 0.1. The harness default is 0.3; the node's own 1.0 default is intentionally not used.
+- Confirmed a real `megapixels` binding on node `115` for all four modes (T2VA, I2VA, FL2VA, Ref2VA); no mode needed a faked binding.
+- Made explicit `megapixels` the generation source of truth. Legacy `quality: "Preview"` -> 0.3 and `quality: "Final"` -> 0.4 remain accepted only for old clients and old `.local.json` projects, with explicit megapixels always winning.
+- Added backend rejection (HTTP 400) for empty, `NaN`, non-finite, zero, negative or out-of-range megapixel values; the harness never silently normalizes a user value.
+- Added a read-only resolution hint beside the megapixel field showing approximate `WxH` plus a familiar class, recomputed live when megapixels or aspect ratio changes.
+- Mirrored the real `ResolutionSelector` arithmetic in the hint (1024² pixels per megapixel, rounded to the workflow's `multiple` of 32), so 0.4 MP at 16:9 displays 864×480 rather than a generic estimate.
+- Labeled familiar classes informationally only: `~480p`, `~720p HD`, `~1080p Full HD`, `~1440p QHD`, `~2160p 4K UHD`. 2560×1440 is labeled QHD and never exact `2K` (true DCI 2K is 2048×1080). Non-16:9 ratios show shape labels, and `21:9` reuses the height ladder with an `Ultrawide` suffix.
+- Guaranteed the resolution label never modifies megapixels, aspect ratio, bindings, the generated workflow or submission state.
+- Migrated the tracked preset contract from `options.qualities` to validated `options.megapixels` metadata (`default`, `min`, `max`, `step`, `multiple`) while preserving existing node IDs and bindings.
+- Stopped sending dormant width/height in the queue payload so the display helper can never activate them; `dimensions()` remains an unused generic helper.
+- Added harness unit tests for direct megapixels, legacy compatibility, validation, aspect conditioning, display-resolution rounding/labeling and the preset/workflow contract; validation result: 34/34 Node tests passing plus repository validation.
+- Versioned the harness as v0.4.1. No H3 model, sampler, scheduler, workflow topology or ComfyUI lifecycle behavior was changed.

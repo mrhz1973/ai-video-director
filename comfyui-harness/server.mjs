@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cloneAndBind, dimensions, resolutionSettings, collectOutputs } from "./lib/workflow.mjs";
+import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } from "./lib/workflow.mjs";
 import { createLogger } from "./lib/logger.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -135,9 +135,15 @@ const server = http.createServer(async (req, res) => {
       const input = JSON.parse((await body(req)).toString("utf8"));
       logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
       const { preset, workflow } = await loadPreset(input.workflowId);
-      const [width, height] = dimensions(input.aspect, input.quality);
-      const { aspectRatio, megapixels } = resolutionSettings(input.aspect, input.quality);
-      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), width, height, aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
+      let requested;
+      try {
+        requested = selectMegapixels(input);
+      } catch (error) {
+        logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
+        return json(res, 400, { error: error.message });
+      }
+      const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
+      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
       const bound = cloneAndBind(workflow, preset.bindings || {}, values);
       try {
         const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });

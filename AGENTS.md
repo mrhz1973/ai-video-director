@@ -53,7 +53,7 @@ When records conflict, stop and report the conflict before generating or changin
 - The harness does not currently start or stop ComfyUI. ComfyUI process lifecycle is external unless the user explicitly approves a future service-manager feature.
 - The harness passes the manual prompt essentially unchanged to ComfyUI. The MiniMax H3 Director skill is an AI-side authoring/review layer, not a runtime LLM inside the harness.
 - Do not silently rewrite prompts in runtime code.
-- Do not "fix" Base FL2VA being shared by T2VA/I2VA/FL2VA, the separate Ref2VA checkpoint, Preview/Final megapixel behavior, or dormant width/height support without controlled evidence and user approval.
+- Do not "fix" Base FL2VA being shared by T2VA/I2VA/FL2VA, the separate Ref2VA checkpoint, the direct megapixels resolution binding, or dormant width/height support without controlled evidence and user approval.
 - Do not commit private local `*.api.json`, `*.local.json`, config overrides, local paths, uploaded reference filenames or media.
 - Before changing harness runtime code, identify whether a Node restart is required and avoid restarting a live generation without explicit user approval.
 - The accidental parallel branch `agent/minimax-h3-director-comfyui-harness` was abandoned on 2026-08-19; its PR #2 was closed without merge and the branch was deleted. Do not recreate it.

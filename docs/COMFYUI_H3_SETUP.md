@@ -2,7 +2,7 @@
 
 Current architecture/status source of truth: `docs/HARNESS_STATE.md`.
 
-The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, quality, model, steps, duration, aspect ratio, seed, live progress, and output links.
+The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, live progress, and output links.
 
 ## 1. Prepare ComfyUI
 
@@ -59,16 +59,19 @@ The manual prompt is passed essentially unchanged to ComfyUI. The browser trims 
 
 If a future Director runtime is added, keep manual passthrough available and make prompt creation/validation an explicit optional action rather than silently rewriting prompts.
 
-## 5. Quality behavior
+## 5. Megapixels behavior
 
-For the current H3 presets, effective Preview/Final resolution control is through `aspectRatio` plus `megapixels`:
+Resolution control is `aspectRatio` plus `megapixels` on node `115` (`ResolutionSelector`) for all four H3 presets.
 
-- Preview: 0.3 megapixels
-- Final: 0.4 megapixels
+Since v0.4.1 the UI exposes the megapixels value directly instead of a `Preview` / `Final` selector. Real node constraints are min `0.1`, max `16.0`, step `0.1`; the harness default is `0.3`.
 
-The generic width/height calculations in the helper library are not bound by the current H3 presets. They are dormant generic support, not the active resolution path.
+The old labels are still accepted from legacy clients and legacy `.local.json` projects, mapping `Preview` → `0.3` and `Final` → `0.4`. An explicit `megapixels` value always wins.
 
-Preview/Final does not automatically change steps, sampler, seed, duration or model.
+A read-only hint beside the field shows the approximate dimensions and a familiar resolution class, for example `≈ 864×480 · ~480p`. It is display-only and never changes what is submitted. See `docs/HARNESS_STATE.md` for the exact arithmetic.
+
+The generic width/height calculations in the helper library are not bound by the current H3 presets and are no longer sent in the queue payload. They are dormant generic support, not the active resolution path.
+
+Changing megapixels does not automatically change steps, sampler, seed, duration or model.
 
 ## 6. Recovery and current limitations
 

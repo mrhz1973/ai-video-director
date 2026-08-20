@@ -1,6 +1,6 @@
 # MiniMax H3 harness — verified state
 
-Last verified: 2026-08-19
+Last verified: 2026-08-20
 Status: operational local Node.js harness; activated, browser-smoke-tested, and merged to `main`
 Canonical repository branch: `main`
 Merged pull request: #1 (merged 2026-08-19)
@@ -9,14 +9,14 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.4.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.4.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, private reusable projects, workflow selection, quality, model, steps, duration, aspect ratio, seed, dynamic attachments, live progress, active-job recovery and output links.
+The harness already supports prompt input, private reusable projects, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, live progress, active-job recovery and output links.
 
 ## Critical architecture decision: the harness does not start ComfyUI
 
@@ -108,16 +108,55 @@ Current sampler choices are inherited from the source workflows:
 
 This sampler difference is not documented here as an official MiniMax requirement. Do not change it merely for naming consistency; change only after controlled testing or stronger evidence.
 
-## Quality and resolution
+## Megapixels and resolution
 
-For the current workflows, the effective `Preview` / `Final` difference is implemented through `aspectRatio` plus `megapixels`:
+Since v0.4.1 the user-facing `Preview` / `Final` control no longer exists. The UI exposes a direct `Megapixel` numeric field, and that exact value is the generation source of truth bound to the workflow.
 
-- Preview: `0.3` megapixels
-- Final: `0.4` megapixels
+Resolution conditioning is still `aspectRatio` plus `megapixels` on node `115` (`ResolutionSelector`) in all four modes.
 
-The existing generic `dimensions()` helper also calculates width/height values, but the current presets do not bind `width` or `height`; those values are dormant for the active H3 workflows.
+Real constraints, read from ComfyUI `/object_info` → `ResolutionSelector.megapixels` (`FLOAT`):
 
-This is intentional generic support, not an operational resolution bug.
+- min `0.1`
+- max `16.0`
+- step `0.1`
+
+The harness operational default is `0.3`. The ComfyUI node's own default (`1.0`) is deliberately not used.
+
+Historical equivalents are kept only as compatibility mapping:
+
+- `Preview` → `0.3` megapixels
+- `Final` → `0.4` megapixels
+
+Backend priority order is explicit `megapixels`, then legacy `quality`, then the `0.3` default. Invalid values (empty, `NaN`, non-finite, zero, negative, outside `0.1`–`16`) are rejected with HTTP 400 before submission; the harness never silently normalizes a user value.
+
+Tracked presets advertise the contract as `options.megapixels` (`default`, `min`, `max`, `step`, `multiple`). The legacy `options.qualities` metadata was removed.
+
+### Read-only resolution hint
+
+Next to the `Megapixel` field the UI shows an informational hint, for example `≈ 864×480 · ~480p`.
+
+It is recomputed whenever megapixels or aspect ratio changes and mirrors the real `ResolutionSelector` arithmetic so the displayed dimensions match what the node will produce:
+
+```
+total_pixels = megapixels × 1024 × 1024
+scale        = sqrt(total_pixels / (W × H))
+width        = round(W × scale / multiple) × multiple
+height       = round(H × scale / multiple) × multiple
+```
+
+`multiple` is `32` because that is the value of the `multiple` widget on node `115` in every active H3 workflow. Note that ComfyUI uses 1024² pixels per megapixel, not 1,000,000, so the hint uses the same base.
+
+Familiar labels are applied only when a standard class is within 25% of the computed height: `~360p`, `~480p`, `~720p HD`, `~1080p Full HD`, `~1440p QHD`, `~2160p 4K UHD`, `~4320p 8K UHD`. 2560×1440 is labeled `~1440p QHD` and never exact `2K`; true DCI 2K is 2048×1080 and is not part of this ladder.
+
+`21:9` reuses the height ladder with an `Ultrawide` suffix. `1:1`, `4:3`, `3:4` and `9:16` show only a shape label (`Square`, `Standard`, `Portrait Standard`, `Portrait`) so the UI never implies an exact broadcast raster.
+
+The hint is informational only. It never modifies megapixels, aspect ratio, bindings, the generated workflow, or submits anything.
+
+### Dormant width/height
+
+The generic `dimensions()` helper still exists but is no longer called by the generation path, and `width`/`height` are no longer sent in the queue payload. The active presets bind neither input because node `115` feeds those values directly inside the graph.
+
+This remains intentional dormant generic support, not an operational resolution bug. Do not activate it from the display helper.
 
 ## Projects and reference persistence
 
@@ -172,9 +211,10 @@ Activation verified on 2026-08-19: the Node harness was restarted with an empty 
 
 ## Current completeness
 
-At v0.4.0:
+At v0.4.1:
 
 - H3 workflow launching: working;
+- direct megapixels control with read-only resolution hint: implemented;
 - attachments: working;
 - output retrieval: basic but working;
 - progress/recovery normal path: working;

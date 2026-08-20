@@ -100,12 +100,14 @@ T2VA/I2VA/FL2VA intentionally use the same H3 Base FL2VA checkpoint. Ref2VA inte
 
 The Base-family sampler currently comes from the source graphs as `res_multistep`; Ref2VA currently uses `er_sde`. This difference is inherited from the source workflows and is not recorded as an official MiniMax requirement.
 
-Current quality behavior:
+Current resolution behavior (harness v0.4.1):
 
-- Preview -> 0.3 megapixels
-- Final -> 0.4 megapixels
+- the UI exposes a direct `Megapixel` numeric field, not `Preview` / `Final`;
+- real ComfyUI `ResolutionSelector` constraints are min 0.1, max 16.0, step 0.1; harness default 0.3;
+- legacy `Preview` -> 0.3 and `Final` -> 0.4 are accepted only for old clients and old `.local.json` projects;
+- a read-only `≈ WxH · class` hint sits beside the field and never changes what is submitted.
 
-Current presets bind `aspectRatio` and `megapixels`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.
+Current presets bind `aspectRatio` and `megapixels` on node `115`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.
 
 ## Workflow source of truth
 
