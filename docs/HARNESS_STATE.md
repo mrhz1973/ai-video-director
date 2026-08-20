@@ -9,14 +9,14 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.4.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.5.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, private reusable projects, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery and output links.
+The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery and output links.
 
 ## Progress and terminal monitor (Issue #7)
 
@@ -185,20 +185,54 @@ The generic `dimensions()` helper still exists but is no longer called by the ge
 
 This remains intentional dormant generic support, not an operational resolution bug. Do not activate it from the display helper.
 
-## Projects and reference persistence
+## Projects and categorized asset library (Issue #5)
 
-Private projects live in `comfyui-harness/projects/*.local.json` and are ignored by Git.
+Private projects live in `comfyui-harness/projects/*.local.json` and are ignored by Git. Absolute project-directory paths are never returned to the browser.
 
-Current project support is read/reuse only from the UI. There is no Save Project API yet. Existing local project files were created outside the UI.
+Since v0.5.0 the UI supports local project CRUD:
 
-A project can restore:
+- **Nuovo** — unsaved draft (warns if dirty);
+- **Salva** — create or update the selected project;
+- **Salva come** — create a distinct project from the current editor state;
+- **Elimina** — confirmation required; deletes only the `.local.json` definition (never ComfyUI input media);
+- editable project label;
+- visible dirty state: `Modifiche non salvate`.
 
-- workflow id;
-- prompt;
-- generation settings;
-- previously uploaded ComfyUI input filenames keyed by attachment role.
+REST-like routes (loopback only):
 
-Stored reference filenames remain valid across harness, ComfyUI and Windows restarts only while the referenced files remain in the active ComfyUI `input` directory. They become stale if those files are deleted, renamed, moved or belong to another ComfyUI installation.
+- `GET/POST /api/projects`
+- `GET/PUT/DELETE /api/projects/:id`
+- `POST /api/projects/:id/duplicate`
+- `GET /api/asset-status?filename=...`
+
+Project ids are sanitized; path traversal and absolute paths are rejected. Writes are atomic under the configured `projectDirectory` only. Malformed `.local.json` files are skipped on list and do not crash the server.
+
+### schemaVersion and legacy compatibility
+
+Persisted projects use `schemaVersion: 1`. Legacy files without `schemaVersion` are treated as v0 and **normalized in memory** on load. Loading alone does not rewrite disk files.
+
+### Asset library ≠ workflow bindings
+
+The project holds a categorized **asset library** separate from workflow submission:
+
+- `elements` — named groups of image members (e.g. multiple views of one character);
+- `locations` — named groups of place views;
+- `objects` — named groups of prop/detail views;
+- `audio` — named groups of audio references.
+
+Each group has a stable id, editable label, and ordered members. Each member stores ComfyUI input filename tokens plus labels — never media bytes/base64.
+
+`files` (or equivalent role map) remains the **explicit** workflow slot assignment (`firstImage`, `lastImage`, Ref2VA slots, audio roles declared by the active preset). Drag/drop into the library never auto-assigns roles, never changes workflow, and never calls `/api/queue` or ComfyUI `/prompt`.
+
+The full binding map is retained across workflow switches. Switching I2VA → T2VA → I2VA must not erase `firstImage`. Only the active preset's attachment keys are rendered and submitted; inactive bindings stay persisted but are filtered out of the queue payload. Saved `settings.model` is restored after the preset rebuilds the model list; if unavailable, the UI falls back to the preset default with an explicit warning.
+
+### Stale / missing references
+
+`GET /api/asset-status` probes ComfyUI `/view` read-only. Members/roles classify as available / missing / error. Missing required roles block Generate with a clear error. Removing a group/member clears role assignments that pointed at those filenames but does **not** delete ComfyUI input files.
+
+Thumbnails use the existing `/api/view` proxy. Audio uses non-image cards (filename/status).
+
+Saving persists label, workflow, prompt, generation settings, library groups/members/order, and explicit role assignments. It does **not** persist job id, progress, terminal logs, queue state, or session `clientId`.
 
 ## Recovery behavior
 
@@ -238,23 +272,22 @@ Activation verified on 2026-08-19: the Node harness was restarted with an empty 
 
 ## Current completeness
 
-At v0.4.2:
+At v0.5.0:
 
 - H3 workflow launching: working;
 - direct megapixels control with read-only resolution hint: implemented;
 - graphical ComfyUI progress monitor + event feed + terminal log panel: implemented (Issue #7);
+- project CRUD + categorized multi-asset library + explicit role binding + stale detection: implemented (Issue #5);
 - attachments: working;
 - output retrieval: basic but working;
 - progress/recovery normal path: working;
-- private project reuse: working;
+- private project reuse and save: working;
 - Director skill: AI-side only, not integrated into runtime;
 - automatic prompt generation: not implemented;
-- Save Project UI/API: not implemented;
 - persistent harness logging: implemented and activated (`comfyui-harness/logs/harness.log`, Git-ignored);
 - automatic ComfyUI launch: intentionally not implemented;
 - multi-job management: not implemented;
-- workflow migration/schema versioning: not implemented;
-- proactive validation of previously uploaded asset existence: not implemented;
+- workflow migration/schema versioning for graphs: not implemented;
 - polling recovery fallback: implemented and browser-smoke-tested (4-second read-only history polling; WebSocket/SSE remains primary).
 
 ## Future architecture, if approved
@@ -264,7 +297,7 @@ The original builder suggested keeping four explicit layers if the system is exp
 1. optional local service manager for ComfyUI health/start/stop/logs, disabled by default;
 2. versioned workflow registry with source hashes, node versions and binding validation;
 3. optional Director runtime with separate prompt creation/validation action and manual passthrough preserved;
-4. application persistence: Save Project, asset validation, job registry, output gallery and multi-job handling.
+4. application persistence extensions: job registry, output gallery, multi-job handling, and optional ComfyUI media cleanup.
 
 These are design ideas, not implemented requirements.
 

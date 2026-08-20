@@ -13,13 +13,13 @@ Before any generation is submitted, the user must be able to review the effectiv
 
 For routine use:
 
-1. prepare the prompt, workflow, model, megapixels, duration, aspect ratio, steps, seed and references;
+1. prepare the prompt, workflow, model, megapixels, duration, aspect ratio, steps, seed, project library assets and **explicit** workflow role assignments;
 2. verify that the ComfyUI queue is empty or that any existing job is understood;
 3. show the prepared state to the user;
 4. stop before submission;
 5. the user performs the final `Genera` action manually in the normal browser session.
 
-Do not infer generation approval merely because a previous preparation task succeeded.
+Project CRUD, drag/drop into the asset library, and role-assignment UI must never call `/api/queue`, press `Genera`, or start ComfyUI `/prompt`.
 
 ## Standard operating split: Director / Cursor / user
 

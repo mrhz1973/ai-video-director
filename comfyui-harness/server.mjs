@@ -1,10 +1,12 @@
 import http from "node:http";
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } from "./lib/workflow.mjs";
 import { createLogger } from "./lib/logger.mjs";
+import { createProjectStore } from "./lib/project-store.mjs";
+import { isValidProjectId } from "./lib/projects.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(root, "config.json");
@@ -13,11 +15,23 @@ const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
 const projectDir = path.resolve(root, config.projectDirectory || "./projects");
+const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 
 const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); };
 const body = async req => { const chunks=[]; for await (const c of req) chunks.push(c); return Buffer.concat(chunks); };
 const shortId = value => value ? String(value).slice(0, 8) : undefined;
+const readJsonBody = async req => {
+  const text = (await body(req)).toString("utf8");
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const error = new Error("Malformed JSON body");
+    error.status = 400;
+    throw error;
+  }
+};
 
 async function checkComfyReachable() {
   try {
@@ -37,10 +51,25 @@ async function presets() {
 }
 
 async function projects() {
-  await mkdir(projectDir, { recursive: true });
-  const files = (await readdir(projectDir)).filter(x => x.endsWith(".local.json"));
-  const result = await Promise.all(files.map(file => readFile(path.join(projectDir, file), "utf8").then(JSON.parse)));
-  return result.sort((a, b) => String(a.label).localeCompare(String(b.label), "it"));
+  return projectStore.list();
+}
+
+async function assetStatuses(filenames = []) {
+  const unique = [...new Set(filenames.filter(Boolean).map(String))];
+  const statuses = {};
+  await Promise.all(unique.map(async filename => {
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      statuses[filename] = "error";
+      return;
+    }
+    try {
+      const upstream = await fetch(`${comfy}/view?${new URLSearchParams({ filename, type: "input" })}`, { method: "GET" });
+      statuses[filename] = upstream.ok ? "available" : upstream.status === 404 ? "missing" : "error";
+    } catch {
+      statuses[filename] = "error";
+    }
+  }));
+  return statuses;
 }
 
 async function loadPreset(id) {
@@ -54,6 +83,51 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { version: packageInfo.version, comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets(), projects: await projects() });
+    if (req.method === "GET" && url.pathname === "/api/projects") return json(res, 200, await projects());
+    if (req.method === "POST" && url.pathname === "/api/projects") {
+      const input = await readJsonBody(req);
+      if (!input.label || !String(input.label).trim()) return json(res, 400, { error: "Project label required" });
+      const created = await projectStore.create(input);
+      logger.info("project_create", { project_id: created.id });
+      return json(res, 201, created);
+    }
+    {
+      const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)(?:\/(duplicate))?$/);
+      if (projectMatch) {
+        const projectId = decodeURIComponent(projectMatch[1]);
+        const action = projectMatch[2];
+        if (!isValidProjectId(projectId)) return json(res, 400, { error: "Invalid project id" });
+        try {
+          if (req.method === "GET" && !action) return json(res, 200, await projectStore.read(projectId));
+          if (req.method === "PUT" && !action) {
+            const input = await readJsonBody(req);
+            const updated = await projectStore.update(projectId, input);
+            logger.info("project_update", { project_id: projectId });
+            return json(res, 200, updated);
+          }
+          if (req.method === "POST" && action === "duplicate") {
+            const input = await readJsonBody(req);
+            if (!input.label || !String(input.label).trim()) return json(res, 400, { error: "New project label required" });
+            const duplicated = await projectStore.duplicate(projectId, { label: input.label, newId: input.id });
+            logger.info("project_duplicate", { project_id: projectId, new_id: duplicated.id });
+            return json(res, 201, duplicated);
+          }
+          if (req.method === "DELETE" && !action) {
+            await projectStore.remove(projectId);
+            logger.info("project_delete", { project_id: projectId });
+            return json(res, 200, { ok: true, id: projectId });
+          }
+        } catch (error) {
+          return json(res, error.status || 500, { error: error.message });
+        }
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/asset-status") {
+      const filenames = url.searchParams.getAll("filename").concat(
+        (url.searchParams.get("filenames") || "").split(",").map(s => s.trim()).filter(Boolean)
+      );
+      return json(res, 200, { statuses: await assetStatuses(filenames) });
+    }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {
         const upstream = await fetch(`${comfy}/queue`);
@@ -215,8 +289,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
     const relative = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    const target = path.resolve(root, "public", relative);
-    if (!target.startsWith(path.resolve(root, "public")) || !existsSync(target)) return json(res, 404, { error: "Not found" });
+    const publicRoot = path.resolve(root, "public");
+    const libRoot = path.resolve(root, "lib");
+    let target;
+    if (relative.startsWith("lib/")) {
+      target = path.resolve(root, relative);
+      if (!target.startsWith(libRoot) || !existsSync(target) || !target.endsWith(".mjs")) return json(res, 404, { error: "Not found" });
+    } else {
+      target = path.resolve(publicRoot, relative);
+      if (!target.startsWith(publicRoot) || !existsSync(target)) return json(res, 404, { error: "Not found" });
+    }
     const staticContentType = filePath => {
       if (filePath.endsWith(".css")) return "text/css";
       if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "text/javascript";

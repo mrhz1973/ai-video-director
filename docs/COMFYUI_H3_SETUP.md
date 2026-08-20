@@ -2,7 +2,7 @@
 
 Current architecture/status source of truth: `docs/HARNESS_STATE.md`.
 
-The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, reusable private projects, mode-specific attachments, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, and output links.
+The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, local project CRUD, a categorized asset library (Elements / Locations / Objects / Audio), mode-specific workflow role assignment, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, and output links.
 
 ## 1. Prepare ComfyUI
 
@@ -45,9 +45,9 @@ npm start
 
 Open `http://127.0.0.1:8787`.
 
-Private reusable project definitions live in `comfyui-harness/projects/*.local.json`. They may remember the prompt, settings, and ComfyUI input filenames, but are ignored by Git and are available only through the local loopback service.
+Private reusable project definitions live in `comfyui-harness/projects/*.local.json`. Since v0.5.0 the UI can create/update/duplicate/delete them locally (Issue #5). They may remember the prompt, settings, categorized asset library groups, and explicit ComfyUI role filenames, but are ignored by Git and available only through the local loopback service.
 
-The current UI can read/reuse these projects but does not yet provide a Save Project API/UI.
+Legacy projects without `schemaVersion` still load. The asset library is separate from workflow inputs: dropping files never auto-assigns roles and never starts generation. Missing ComfyUI input files are marked visibly and block required roles on Generate. Removing an asset from a project does not delete the ComfyUI input file.
 
 ## 4. Request lifecycle
 

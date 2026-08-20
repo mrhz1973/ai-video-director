@@ -70,3 +70,8 @@
 - Documented that displayed percentages are current-node progress only, never timer-faked whole-job completion; job completion remains history/`executing null` authoritative.
 - Documented native Windows console as an external `run_nvidia_gpu.bat` launch concern; harness remains not a ComfyUI service manager.
 - Versioned the harness as v0.4.2. Validation: 44/44 Node tests plus repository validation.
+- Implemented Issue #5: local project CRUD (Nuovo / Salva / Salva come / Elimina), dirty-state tracking, and a categorized multi-asset library (`elements` / `locations` / `objects` / `audio`) where each library item is a named group of ordered members.
+- Kept asset library distinct from workflow bindings: drag/drop never auto-assigns roles, never changes workflow, and never submits generation; the active preset remains the source of truth for slots.
+- Added legacy `.local.json` in-memory normalization to `schemaVersion: 1` without rewriting on load; stale/missing ComfyUI inputs are classified via `/api/asset-status` and block required roles on Generate.
+- Removing a group/member clears role assignments but does not delete ComfyUI input files.
+- Versioned the harness as v0.5.0. Validation: 56/56 Node tests plus repository validation.

@@ -83,7 +83,7 @@ Known package version: 0.4.0
 - ComfyUI default endpoint: `http://127.0.0.1:8188`.
 - The harness does not launch, stop or own the ComfyUI process lifecycle.
 - ComfyUI must be started externally before using the harness.
-- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the v0.4.2 graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7).
+- The harness talks to ComfyUI through HTTP/WebSocket and bridges progress to the browser, including the graphical current-node progress monitor and optional ComfyUI terminal log panel (Issue #7), plus v0.5.0 project CRUD and categorized asset library (Issue #5).
 - Manual prompt text is passed essentially unchanged to ComfyUI; the H3 Director skill is not executed inside the harness runtime.
 - `config.example.json` is the valid runtime fallback when no private `config.json` override exists.
 
@@ -100,12 +100,13 @@ T2VA/I2VA/FL2VA intentionally use the same H3 Base FL2VA checkpoint. Ref2VA inte
 
 The Base-family sampler currently comes from the source graphs as `res_multistep`; Ref2VA currently uses `er_sde`. This difference is inherited from the source workflows and is not recorded as an official MiniMax requirement.
 
-Current resolution behavior (harness v0.4.2):
+Current resolution behavior (harness v0.5.0):
 
 - the UI exposes a direct `Megapixel` numeric field, not `Preview` / `Final`;
 - real ComfyUI `ResolutionSelector` constraints are min 0.1, max 16.0, step 0.1; harness default 0.3;
 - legacy `Preview` -> 0.3 and `Final` -> 0.4 are accepted only for old clients and old `.local.json` projects;
 - a read-only `≈ WxH · class` hint sits beside the field and never changes what is submitted.
+- local projects support Nuovo/Salva/Salva come/Elimina, dirty state, and a categorized Elements/Locations/Objects/Audio library of multi-file groups with explicit workflow role binding (Issue #5).
 
 Current presets bind `aspectRatio` and `megapixels` on node `115`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.
 
@@ -125,11 +126,11 @@ For Ref2VA:
 ## Current limitations that are not bugs
 
 - No runtime LLM / automatic Director prompt generation.
-- No Save Project API/UI; private project files are read/reused only.
 - No automatic ComfyUI startup by the harness.
 - No multi-job management.
 - Recovery is primarily single-running-job plus WebSocket/SSE, with read-only 4-second history polling as fallback.
 - Persistent harness logging is implemented and activated at `comfyui-harness/logs/harness.log` (Git-ignored).
+- Project asset removal does not delete ComfyUI input media in this version.
 - Previously uploaded reference filenames remain valid only while their files remain in the active ComfyUI input directory.
 
 The 2026-08-19 activation and browser smoke test passed, including correct `.mjs` JavaScript MIME serving and successful `recovery.mjs` import.
@@ -145,7 +146,7 @@ Key goals:
 3. improve H3 prompt quality systematically and preserve successful prompt strategies/experiment results in GitHub;
 4. evaluate stronger or higher-quality compatible H3 models/checkpoints while preserving the current known-good baseline;
 5. compare models/settings/prompts with controlled A/B experiments instead of changing many variables at once;
-6. add Save/Update Project behavior for private local projects;
+6. extend project/asset features (optional media cleanup, richer audio metadata) without breaking local-only privacy;
 7. improve workflow/model registry metadata and validation;
 8. consider an optional Director prompt-create/validate action later while keeping manual prompt passthrough.
 
