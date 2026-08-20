@@ -10,6 +10,7 @@ import {
   parseQueueCounts,
   progressFromMessage,
   resolveJobStartMs,
+  resolveObserverClientId,
   stripAnsi,
   summarizeMonitor
 } from "../public/monitor.mjs";
@@ -78,32 +79,41 @@ test("elapsed time helper formats and marks approximate starts", () => {
   assert.equal(formatElapsed(3661000), "01:01:01");
   assert.equal(formatElapsed(5000, { approximate: true }), "≈ 00:00:05");
   assert.equal(formatElapsed(null), "non disponibile");
-  const resolved = resolveJobStartMs({
+
+  const exact = resolveJobStartMs({
     createdAt: 1_700_000_000_000,
     firstSeenAt: 1_700_000_100_000,
     now: 1_700_000_160_000
   });
-  assert.equal(resolved.approximate, false);
-  assert.equal(resolved.elapsedMs, 160_000);
+  assert.equal(exact.approximate, false);
+  assert.equal(exact.source, "create_time");
+  assert.equal(exact.elapsedMs, 160_000);
+  assert.equal(formatElapsed(exact.elapsedMs, { approximate: exact.approximate }), "00:02:40");
+
   const localOnly = resolveJobStartMs({ firstSeenAt: 1_700_000_000_000, now: 1_700_000_004_000 });
   assert.equal(localOnly.approximate, true);
+  assert.equal(localOnly.source, "local");
   assert.equal(localOnly.elapsedMs, 4_000);
-});
+  assert.equal(formatElapsed(localOnly.elapsedMs, { approximate: localOnly.approximate }), "≈ 00:00:04");
 
-test("queue count parsing", () => {
-  assert.deepEqual(parseQueueCounts({ queue_running: [[1], [2]], queue_pending: [[3]] }), { running: 2, pending: 1 });
-  assert.deepEqual(parseQueueCounts({}), { running: 0, pending: 0 });
-});
-
-test("log/event formatting strips ansi and merges terminal entries", () => {
-  assert.equal(stripAnsi("\u001b[32m[INFO]\u001b[0m hello"), "[INFO] hello");
-  const merged = mergeTerminalEntries([], [{ t: "2026-08-20T11:00:00", m: "\u001b[32mok\u001b[0m" }]);
-  assert.equal(merged[0].m, "ok");
-  let state = applyMonitorEvent(initialMonitorState(), {
-    type: "logs",
-    data: { entries: [{ t: "t1", m: "line1" }] }
+  const persistedLocal = resolveJobStartMs({
+    storedStartedAt: 1_700_000_000_000,
+    firstSeenAt: 1_700_000_002_000,
+    now: 1_700_000_010_000
   });
-  assert.equal(state.terminal[0].m, "line1");
+  assert.equal(persistedLocal.approximate, true);
+  assert.ok(["session", "local"].includes(persistedLocal.source));
+  assert.equal(formatElapsed(persistedLocal.elapsedMs, { approximate: persistedLocal.approximate }), "≈ 00:00:10");
+});
+
+test("recovering an external job never steals the active websocket clientId", () => {
+  const local = "local-observer-uuid";
+  const active = "foreign-job-client-uuid";
+  const resolved = resolveObserverClientId({ localClientId: local, activeClientId: active });
+  assert.equal(resolved.clientId, local);
+  assert.equal(resolved.reusedActiveClientId, false);
+  assert.equal(resolved.ignoredActiveClientId, active);
+  assert.notEqual(resolved.clientId, active);
 });
 
 test("progress_state uses the running node and never invents a percent without max", () => {
@@ -120,4 +130,48 @@ test("progress_state uses the running node and never invents a percent without m
   assert.equal(result.kind, "indeterminate");
   assert.equal(result.displayNode, "SaveVideo");
   assert.equal(result.percent, null);
+});
+
+test("finished-only progress_state does not show active-node numeric 100%", () => {
+  const result = progressFromMessage({
+    type: "progress_state",
+    data: {
+      prompt_id: "p",
+      nodes: {
+        "128": { state: "finished", value: 20, max: 20, node_id: "128", display_node_id: "BasicScheduler" }
+      }
+    }
+  });
+  assert.equal(result.kind, "indeterminate");
+  assert.equal(result.percent, null);
+  assert.equal(result.value, null);
+  assert.equal(result.nodeId, null);
+  const summary = summarizeMonitor(applyMonitorEvent(initialMonitorState({ phase: "running" }), {
+    type: "progress_state",
+    data: {
+      prompt_id: "p",
+      nodes: {
+        "128": { state: "finished", value: 20, max: 20, node_id: "128", display_node_id: "BasicScheduler" }
+      }
+    }
+  }));
+  assert.notEqual(summary.barMode, "numeric");
+  assert.equal(summary.percent, null);
+  assert.doesNotMatch(summary.summary, /100%/);
+});
+
+test("queue count parsing", () => {
+  assert.deepEqual(parseQueueCounts({ queue_running: [[1], [2]], queue_pending: [[3]] }), { running: 2, pending: 1 });
+  assert.deepEqual(parseQueueCounts({}), { running: 0, pending: 0 });
+});
+
+test("log/event formatting strips ansi and merges terminal entries", () => {
+  assert.equal(stripAnsi("\u001b[32m[INFO]\u001b[0m hello"), "[INFO] hello");
+  const merged = mergeTerminalEntries([], [{ t: "2026-08-20T11:00:00", m: "\u001b[32mok\u001b[0m" }]);
+  assert.equal(merged[0].m, "ok");
+  let state = applyMonitorEvent(initialMonitorState(), {
+    type: "logs",
+    data: { entries: [{ t: "t1", m: "line1" }] }
+  });
+  assert.equal(state.terminal[0].m, "line1");
 });

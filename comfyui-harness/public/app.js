@@ -9,6 +9,7 @@ import {
   initialMonitorState,
   mergeTerminalEntries,
   resolveJobStartMs,
+  resolveObserverClientId,
   summarizeMonitor
 } from "./monitor.mjs";
 
@@ -138,7 +139,7 @@ function updateElapsed() {
     firstSeenAt: jobFirstSeenAt,
     now: Date.now()
   });
-  $("monitorElapsed").textContent = formatElapsed(resolved.elapsedMs, { approximate: resolved.approximate || resolved.source === "local" });
+  $("monitorElapsed").textContent = formatElapsed(resolved.elapsedMs, { approximate: resolved.approximate });
 }
 
 function renderMonitor() {
@@ -342,18 +343,22 @@ async function recoverActive() {
       queuePending: Number(active.pending || 0)
     };
     if (active.active) {
-      if (active.clientId) clientId = active.clientId;
+      const observer = resolveObserverClientId({ localClientId: clientId, activeClientId: active.clientId });
+      clientId = observer.clientId;
       sessionStorage.setItem("h3ClientId", clientId);
       rememberJob(active.promptId, { createdAt: active.createdAt });
       monitorState = applyMonitorEvent(monitorState, {
         type: "executing",
         data: { node: "?", display_node: "Job recuperato", prompt_id: active.promptId }
       });
+      const note = observer.ignoredActiveClientId && observer.ignoredActiveClientId !== clientId
+        ? `Job rilevato · ${promptIdPrefix(active.promptId)} · osservazione indipendente`
+        : `Job rilevato · ${promptIdPrefix(active.promptId)}`;
       monitorState = {
         ...monitorState,
         events: [...monitorState.events, {
           t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
-          m: `Job rilevato · ${promptIdPrefix(active.promptId)}`,
+          m: note,
           at: Date.now()
         }]
       };

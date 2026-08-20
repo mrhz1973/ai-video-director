@@ -28,7 +28,9 @@ Since v0.4.2 the harness UI includes a prominent render monitor driven only by r
 
 Displayed percentage is **current-node numeric progress** (`value/max`), labeled as such. It is never a timer-based estimate and is never claimed to be whole-job completion. When a node is running without a usable `max`, the UI shows an indeterminate `Elaborazione…` state. Job completion remains authoritative from `executing` with `node: null` and/or history outputs.
 
-Elapsed wall-clock time uses ComfyUI `create_time` when recovered via `/api/active`, otherwise a local first-seen timestamp (marked approximate). There is no ETA.
+Elapsed wall-clock time uses ComfyUI `create_time` when recovered via `/api/active` (exact). If only a local first-seen timestamp is available — including values persisted in `sessionStorage` across refresh — the UI shows an approximate `≈ HH:MM:SS`. There is no ETA.
+
+Recovering an already-running external job preserves the harness page's own WebSocket/SSE `clientId`. The recovered `promptId` is used for filtering/history/output; the foreign job `clientId` is never adopted, so a second tab cannot steal the original ComfyUI socket.
 
 Queue running/pending counts are refreshed conservatively from the existing `/api/active` queue read (about every 8s while relevant).
 

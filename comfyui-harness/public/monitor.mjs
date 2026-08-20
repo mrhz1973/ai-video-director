@@ -32,9 +32,7 @@ export function progressFromMessage(message = {}) {
   }
   if (message.type === "progress_state") {
     const nodes = Object.values(message.data?.nodes || {});
-    const active = nodes.filter(node => node.state === "running").at(-1)
-      || nodes.filter(node => node.state === "finished").at(-1)
-      || null;
+    const active = nodes.filter(node => node.state === "running").at(-1) || null;
     if (!active) {
       return {
         kind: "indeterminate",
@@ -190,23 +188,36 @@ export function formatElapsed(ms, { approximate = false } = {}) {
 }
 
 export function resolveJobStartMs({ createdAt, storedStartedAt, firstSeenAt, now = Date.now() } = {}) {
-  const candidates = [];
+  // Only ComfyUI create_time is authoritative/exact.
   if (Number.isFinite(Number(createdAt)) && Number(createdAt) > 0) {
     let ts = Number(createdAt);
-    // ComfyUI create_time is typically epoch ms; tolerate seconds.
     if (ts < 1e12) ts *= 1000;
-    candidates.push({ ms: ts, approximate: false, source: "create_time" });
+    return { ms: ts, approximate: false, source: "create_time", elapsedMs: Math.max(0, now - ts) };
   }
+
+  // Local first-seen timestamps (including values persisted across refresh) stay approximate.
+  const localCandidates = [];
   if (Number.isFinite(Number(storedStartedAt)) && Number(storedStartedAt) > 0) {
-    candidates.push({ ms: Number(storedStartedAt), approximate: false, source: "session" });
+    localCandidates.push({ ms: Number(storedStartedAt), approximate: true, source: "session" });
   }
   if (Number.isFinite(Number(firstSeenAt)) && Number(firstSeenAt) > 0) {
-    candidates.push({ ms: Number(firstSeenAt), approximate: true, source: "local" });
+    localCandidates.push({ ms: Number(firstSeenAt), approximate: true, source: "local" });
   }
-  if (!candidates.length) return { ms: null, approximate: true, source: "unknown", elapsedMs: null };
-  candidates.sort((a, b) => a.ms - b.ms);
-  const chosen = candidates[0];
+  if (!localCandidates.length) return { ms: null, approximate: true, source: "unknown", elapsedMs: null };
+  localCandidates.sort((a, b) => a.ms - b.ms);
+  const chosen = localCandidates[0];
   return { ...chosen, elapsedMs: Math.max(0, now - chosen.ms) };
+}
+
+// Recovery/inspection must never adopt another live client's WebSocket identity.
+export function resolveObserverClientId({ localClientId, activeClientId } = {}) {
+  const local = localClientId ? String(localClientId) : "";
+  if (!local) throw new Error("localClientId required for observer websocket");
+  return {
+    clientId: local,
+    reusedActiveClientId: false,
+    ignoredActiveClientId: activeClientId ? String(activeClientId) : null
+  };
 }
 
 export function parseQueueCounts(queue = {}) {
