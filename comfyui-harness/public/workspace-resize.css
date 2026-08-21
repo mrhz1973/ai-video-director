@@ -1,0 +1,40 @@
+@media (min-width: 801px) {
+  .workspace {
+    height: 72vh;
+    min-height: 440px;
+    max-height: calc(100vh - 16px);
+    align-self: start;
+    position: sticky;
+    top: 0;
+    overflow: auto;
+    resize: vertical;
+    scrollbar-gutter: stable;
+  }
+
+  .workspace::after {
+    content: "↕ ridimensiona";
+    position: sticky;
+    bottom: 0;
+    display: block;
+    width: max-content;
+    margin: 4px 0 0 auto;
+    padding: 3px 6px;
+    border-radius: 6px 0 0 0;
+    background: rgba(11, 13, 16, 0.84);
+    color: #7f8b97;
+    font-size: 10px;
+    line-height: 1;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .workspace {
+    height: auto !important;
+    min-height: 70vh;
+    max-height: none;
+    position: static;
+    overflow: visible;
+    resize: none;
+  }
+}
