@@ -56,6 +56,8 @@ For viewports wider than 800px the Director uses a two-pane layout:
 
 - **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`) → collapsed-by-default Attività/Output drawer (`#activityDrawer` / `#log`).
 - **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height.
+- **Asset labels:** `member.label` is the primary human-facing name in Asset cards and role selects (`Group / Member label`). Physical filenames remain secondary/tooltip identity and are never renamed by label edits.
+- **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual Salva / Salva come remain. Recovery/autosave never submit Generate, Batch, or GPU Power.
 - **Sidebar width:** existing `#sidebarResizeHandle` and `h3SidebarWidth:v1` remain (default about 460px). Whole-workspace native `resize: vertical` is removed; desktop `main` uses the viewport height instead of a 72vh resizable box.
 - Generate no longer copies the prompt into Activity. Activity is for project notices, errors, warnings and output links — not a chat transcript.
 

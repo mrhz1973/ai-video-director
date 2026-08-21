@@ -32,7 +32,11 @@ import {
   uniqueProjectId,
   describeGenerateBlockers,
   formatMemberOrdinalLabel,
-  memberSelectOption
+  formatMemberPrimaryLabel,
+  formatRoleOptionLabel,
+  humanizeFilenameLabel,
+  memberSelectOption,
+  renameMemberLabel
 } from "../lib/projects.mjs";
 import { lookupAvailability } from "../lib/asset-ref.mjs";
 import { createProjectStore } from "../lib/project-store.mjs";
@@ -387,9 +391,10 @@ test("ordinal labels number members in group order without using the raw filenam
 
   const option = memberSelectOption(el[0]);
   assert.equal(option.value, longName);
-  assert.equal(option.label, "Martino · Elements #1");
-  assert.doesNotMatch(option.label, /super-long-private-reference-file-name/);
-  assert.equal(option.title, longName);
+  assert.equal(option.label, "Martino / super long private reference file name do not show");
+  assert.doesNotMatch(option.label, /Elements #1/);
+  assert.match(option.title, /super-long-private-reference-file-name/);
+  assert.match(option.title, /Elements #1/);
 
   library = reorderMembers(library, "elements", "g-el", 0, 2);
   const after = listAllMembers(library).filter(m => m.category === "elements");
@@ -539,4 +544,46 @@ test("E: Generate is not blocked for a valid nested-subfolder assignment", () =>
   });
   assert.equal(built.files.firstImage, "face.png");
   assert.deepEqual(built.missingRequired, []);
+});
+
+test("humanizeFilenameLabel and primary member label prefer readable member.label", () => {
+  assert.equal(
+    humanizeFilenameLabel("Martino_CapannaRadio_FIRSTFRAME_16x9.png"),
+    "Martino CapannaRadio FIRSTFRAME 16x9"
+  );
+  const member = createMember({
+    filename: "Martino_CapannaRadio_FIRSTFRAME_16x9.png",
+    originalName: "Martino_CapannaRadio_FIRSTFRAME_16x9.png"
+  });
+  assert.equal(member.label, "Martino CapannaRadio FIRSTFRAME 16x9");
+  assert.equal(formatMemberPrimaryLabel(member), "Martino CapannaRadio FIRSTFRAME 16x9");
+  assert.equal(
+    formatRoleOptionLabel({ groupLabel: "Capanna Radio", memberLabel: "Martino — First Frame 16:9" }),
+    "Capanna Radio / Martino — First Frame 16:9"
+  );
+});
+
+test("renameMemberLabel updates display text without renaming physical file identity", () => {
+  let library = addGroup(emptyLibrary(), "elements", createGroup({
+    id: "g1",
+    label: "Capanna Radio",
+    members: [createMember({
+      id: "m1",
+      filename: "Martino_CapannaRadio_FIRSTFRAME_16x9.png",
+      originalName: "Martino_CapannaRadio_FIRSTFRAME_16x9.png",
+      subfolder: "characters/martino"
+    })]
+  }));
+  const before = library.elements[0].members[0];
+  library = renameMemberLabel(library, "elements", "g1", "m1", "Martino — First Frame 16:9");
+  const after = library.elements[0].members[0];
+  assert.equal(after.label, "Martino — First Frame 16:9");
+  assert.equal(after.filename, before.filename);
+  assert.equal(after.originalName, before.originalName);
+  assert.equal(after.subfolder, before.subfolder);
+  assert.equal(after.id, before.id);
+  const option = memberSelectOption({ ...after, groupLabel: "Capanna Radio", category: "elements", index: 0 });
+  assert.equal(option.label, "Capanna Radio / Martino — First Frame 16:9");
+  assert.equal(option.value, before.filename);
+  assert.match(option.title, /Martino_CapannaRadio_FIRSTFRAME_16x9\.png/);
 });

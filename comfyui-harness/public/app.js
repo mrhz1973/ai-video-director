@@ -32,6 +32,8 @@ import {
   filterFilesForActivePreset,
   findMemberByFilename,
   formatMemberOrdinalLabel,
+  formatMemberPrimaryLabel,
+  humanizeFilenameLabel,
   isProjectDirty,
   listAllMembers,
   memberSelectOption,
@@ -41,10 +43,21 @@ import {
   removeGroup,
   removeMember,
   renameGroup,
+  renameMemberLabel,
   reorderMembers,
   restoreModelSelection,
   roleAcceptKind
 } from "/lib/projects.mjs";
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  SAVE_STATUS,
+  buildRecoverySnapshot,
+  clearRecoveryDraft,
+  createAutosaveController,
+  formatSaveStatusLabel,
+  readRecoveryDraft,
+  writeRecoveryDraft
+} from "./autosave.mjs";
 
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
@@ -74,6 +87,10 @@ let draft = {
 };
 let activeCategory = "elements";
 let targetGroupId = null;
+let saveUiState = SAVE_STATUS.LOCAL_DRAFT;
+let autosaveController = null;
+let applyingRecovery = false;
+let persistenceReady = false;
 
 const add = (text, kind = "system") => {
   const el = document.createElement("div");
@@ -82,6 +99,107 @@ const add = (text, kind = "system") => {
   $("log").append(el);
   el.scrollIntoView();
 };
+
+function clockLabel(date = new Date()) {
+  return date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+}
+
+function setSaveStatus(state, { clock = "" } = {}) {
+  saveUiState = state;
+  const node = $("projectSaveStatus");
+  if (node) {
+    node.dataset.state = state;
+    node.textContent = formatSaveStatusLabel(state, { clockLabel: clock });
+    node.hidden = false;
+  }
+  const legacy = $("projectDirty");
+  if (legacy) legacy.hidden = true;
+}
+
+function captureRecoverySnapshot() {
+  const state = currentEditorState();
+  return buildRecoverySnapshot({
+    id: draft.id,
+    label: state.label,
+    saved: draft.saved,
+    workflowId: state.workflowId,
+    prompt: state.prompt,
+    model: state.settings?.model || $("model")?.value || "",
+    megapixels: state.settings?.megapixels ?? $("megapixels")?.value,
+    aspect: state.settings?.aspect || $("aspect")?.value || "",
+    steps: state.settings?.steps ?? $("steps")?.value,
+    duration: state.settings?.duration ?? $("duration")?.value,
+    seed: state.settings?.seed ?? $("seed")?.value,
+    library: state.library,
+    files: state.files
+  });
+}
+
+function persistRecoveryIfNeeded() {
+  if (applyingRecovery || !persistenceReady) return;
+  if (draft.saved && draft.id) {
+    clearRecoveryDraft();
+    return;
+  }
+  writeRecoveryDraft(captureRecoverySnapshot());
+}
+
+function ensureAutosaveController() {
+  if (autosaveController) return autosaveController;
+  autosaveController = createAutosaveController({
+    debounceMs: AUTOSAVE_DEBOUNCE_MS,
+    latestPayload: () => payloadFromEditor(),
+    saveFn: async payload => {
+      if (!(draft.saved && draft.id)) return;
+      const response = await fetch(`/api/projects/${encodeURIComponent(draft.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...payload, id: draft.id })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Autosave fallito");
+      draft.label = data.label || draft.label;
+      draft.library = normalizeProject(data).library;
+      draft.files = { ...(data.files || {}) };
+      markBaselineFromDraft();
+      clearRecoveryDraft();
+      refreshProjectSelect(draft.id);
+    }
+  });
+  autosaveController.onChange(({ status, lastError }) => {
+    if (!(draft.saved && draft.id)) return;
+    if (status === SAVE_STATUS.SAVED) setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
+    else if (status === SAVE_STATUS.SAVING) setSaveStatus(SAVE_STATUS.SAVING);
+    else if (status === SAVE_STATUS.DIRTY) setSaveStatus(SAVE_STATUS.DIRTY);
+    else if (status === SAVE_STATUS.ERROR) {
+      setSaveStatus(SAVE_STATUS.ERROR);
+      if (lastError?.message) add(`Errore salvataggio: ${lastError.message}`, "system");
+      persistRecoveryIfNeeded();
+    }
+  });
+  return autosaveController;
+}
+
+function noteEditorChange() {
+  const dirty = isProjectDirty(draft.baseline, projectEditorSnapshot(currentEditorState()));
+  const legacy = $("projectDirty");
+  if (legacy) legacy.hidden = true;
+
+  if (draft.saved && draft.id) {
+    if (dirty) {
+      setSaveStatus(SAVE_STATUS.DIRTY);
+      if (persistenceReady) ensureAutosaveController().markDirty();
+    } else if (saveUiState !== SAVE_STATUS.SAVING) {
+      setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
+    }
+    if (persistenceReady) clearRecoveryDraft();
+  } else {
+    setSaveStatus(saveUiState === SAVE_STATUS.RECOVERED && !dirty ? SAVE_STATUS.RECOVERED : SAVE_STATUS.LOCAL_DRAFT);
+    persistRecoveryIfNeeded();
+  }
+  updateGenerateButton();
+  return dirty;
+}
 
 const setBusy = nextBusy => {
   busy = Boolean(nextBusy);
@@ -497,10 +615,7 @@ function markBaselineFromDraft() {
 }
 
 function updateDirtyFlag() {
-  const dirty = isProjectDirty(draft.baseline, projectEditorSnapshot(currentEditorState()));
-  $("projectDirty").hidden = !dirty;
-  updateGenerateButton();
-  return dirty;
+  return noteEditorChange();
 }
 
 function viewUrl(filename, subfolder = "") {
@@ -651,6 +766,10 @@ function renderMemberCard(group, member, index) {
   const card = document.createElement("div");
   card.className = `member-card${member.type === "audio" || activeCategory === "audio" ? " audio-card" : ""}${status === "missing" || status === "error" ? " missing" : ""}`;
 
+  const primary = formatMemberPrimaryLabel(member);
+  const ordinal = formatMemberOrdinalLabel({ groupLabel: group.label, category: activeCategory, index });
+  const filename = member.filename || member.originalName || "";
+
   if (activeCategory === "audio" || member.type === "audio") {
     const icon = document.createElement("div");
     icon.className = "audio-icon";
@@ -658,15 +777,15 @@ function renderMemberCard(group, member, index) {
     card.append(icon);
   } else if (status === "available") {
     const img = document.createElement("img");
-    img.alt = formatMemberOrdinalLabel({ groupLabel: group.label, category: activeCategory, index });
-    img.title = member.originalName || member.filename;
+    img.alt = primary;
+    img.title = `${filename} · ${ordinal}`;
     img.decoding = "async";
     img.src = viewUrl(member.filename, member.subfolder);
     img.onerror = () => {
       const ph = document.createElement("div");
       ph.className = "member-thumb";
       ph.textContent = "?";
-      ph.title = member.originalName || member.filename;
+      ph.title = filename;
       img.replaceWith(ph);
     };
     card.append(img);
@@ -679,12 +798,39 @@ function renderMemberCard(group, member, index) {
 
   const meta = document.createElement("div");
   meta.className = "meta";
-  const title = document.createElement("strong");
-  title.textContent = formatMemberOrdinalLabel({ groupLabel: group.label, category: activeCategory, index });
-  title.title = member.originalName || member.filename;
-  const sub = document.createElement("span");
-  sub.textContent = `${statusLabel(status)} · ${member.originalName || member.filename}`;
-  meta.append(title, sub);
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.className = "member-label-input";
+  labelInput.value = primary;
+  labelInput.title = `Etichetta visuale · ${ordinal}`;
+  labelInput.onchange = () => {
+    const before = {
+      filename: member.filename,
+      originalName: member.originalName,
+      subfolder: member.subfolder || "",
+      id: member.id
+    };
+    draft.library = renameMemberLabel(draft.library, activeCategory, group.id, member.id, labelInput.value);
+    const after = findMemberByFilename(draft.library, before.filename)?.member;
+    if (!after
+      || after.filename !== before.filename
+      || after.originalName !== before.originalName
+      || (after.subfolder || "") !== before.subfolder
+      || after.id !== before.id) {
+      add("Errore: rinomina etichetta ha alterato l'identità file.", "system");
+    }
+    updateDirtyFlag();
+    renderLibrary();
+    renderRoleFields();
+  };
+  const fileLine = document.createElement("span");
+  fileLine.className = "member-filename";
+  fileLine.textContent = filename;
+  fileLine.title = ordinal;
+  const statusLine = document.createElement("span");
+  statusLine.className = `member-status status-${status || "unknown"}`;
+  statusLine.textContent = `● ${statusLabel(status)}`;
+  meta.append(labelInput, fileLine, statusLine);
 
   const actions = document.createElement("div");
   actions.className = "member-actions";
@@ -712,6 +858,7 @@ function renderMemberCard(group, member, index) {
   remove.type = "button";
   remove.textContent = "Rimuovi";
   remove.onclick = () => {
+    if (!confirm(`Rimuovere "${primary}" dal progetto? Il file ComfyUI non verrà cancellato.`)) return;
     const result = removeMember(draft.library, activeCategory, group.id, member.id);
     draft.library = result.library;
     if (result.removedFilename) draft.files = clearRolesForFilenames(draft.files, [result.removedFilename]);
@@ -902,12 +1049,15 @@ async function loadProjectById(id) {
   selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false });
   await refreshAvailability();
   markBaselineFromDraft();
+  clearRecoveryDraft();
+  ensureAutosaveController().reset(SAVE_STATUS.SAVED);
+  setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
   renderLibrary();
   renderRoleFields();
   add(`Progetto caricato: ${normalized.label}`);
 }
 
-function resetDraft({ keepForm = false } = {}) {
+function resetDraft({ keepForm = false, clearRecovery = true } = {}) {
   draft = {
     id: "",
     label: "",
@@ -924,6 +1074,39 @@ function resetDraft({ keepForm = false } = {}) {
   }
   selectPreset({ preserveLibrary: true, clearProjectSelection: true });
   markBaselineFromDraft();
+  if (clearRecovery) clearRecoveryDraft();
+  autosaveController?.reset(SAVE_STATUS.LOCAL_DRAFT);
+  setSaveStatus(SAVE_STATUS.LOCAL_DRAFT);
+}
+
+function applyRecoverySnapshot(snapshot) {
+  if (!snapshot?.project) return false;
+  applyingRecovery = true;
+  try {
+    const normalized = normalizeProject(snapshot.project);
+    draft.id = "";
+    draft.label = normalized.label || "";
+    draft.saved = false;
+    draft.library = normalized.library;
+    draft.files = { ...(normalized.files || {}) };
+    $("project").value = "";
+    $("projectLabel").value = draft.label;
+    if (normalized.workflowId) $("workflow").value = normalized.workflowId;
+    $("prompt").value = normalized.prompt || "";
+    const savedModel = normalized.settings?.model;
+    for (const [key, value] of Object.entries(normalized.settings || {})) {
+      if (key === "model") continue;
+      if ($(key)) $(key).value = value;
+    }
+    const restoredMp = megapixelsFromSettings(normalized.settings || {});
+    if (restoredMp !== undefined) $("megapixels").value = restoredMp;
+    selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false, clearProjectSelection: true });
+    markBaselineFromDraft();
+    setSaveStatus(SAVE_STATUS.RECOVERED);
+    return true;
+  } finally {
+    applyingRecovery = false;
+  }
 }
 
 function refreshProjectSelect(selectedId = "") {
@@ -988,6 +1171,9 @@ async function saveProject({ asNew = false } = {}) {
   refreshProjectSelect(data.id);
   $("projectLabel").value = data.label;
   markBaselineFromDraft();
+  clearRecoveryDraft();
+  ensureAutosaveController().reset(SAVE_STATUS.SAVED);
+  setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
   add(`Progetto salvato: ${data.label}`);
 }
 
@@ -1026,7 +1212,7 @@ async function ingestFiles(fileList, { groupId = null } = {}) {
 }
 
 function stripName(name) {
-  return String(name || "Gruppo").replace(/\.[^.]+$/, "");
+  return humanizeFilenameLabel(name) || String(name || "Gruppo").replace(/\.[^.]+$/, "");
 }
 
 function wireDropTarget(el, onFiles) {
@@ -1100,7 +1286,7 @@ $("assetFileInput").onchange = async () => {
 
 $("projectNew").onclick = () => {
   if (updateDirtyFlag() && !confirm("Modifiche non salvate. Creare un nuovo progetto?")) return;
-  resetDraft();
+  resetDraft({ clearRecovery: true });
   add("Nuovo progetto (non salvato).");
 };
 $("projectSave").onclick = async () => {
@@ -1127,7 +1313,7 @@ $("projectDelete").onclick = async () => {
   if (!response.ok) return add(data.error || "Eliminazione fallita");
   config.projects = await (await fetch("/api/projects")).json();
   refreshProjectSelect();
-  resetDraft();
+  resetDraft({ clearRecovery: true });
   add("Progetto eliminato (solo definizione locale).");
 };
 
@@ -1136,6 +1322,21 @@ setCategory("elements");
 markBaselineFromDraft();
 updateGenerateButton();
 renderMonitor();
+
+const recovery = readRecoveryDraft();
+if (recovery && !$("project").value) {
+  if (applyRecoverySnapshot(recovery)) {
+    await refreshAvailability();
+    renderLibrary();
+    renderRoleFields();
+    updateDirtyFlag();
+    add("Bozza recuperata");
+  }
+} else {
+  setSaveStatus(draft.saved ? SAVE_STATUS.SAVED : SAVE_STATUS.LOCAL_DRAFT);
+}
+persistenceReady = true;
+
 await recoverActive();
 sessionStorage.setItem("h3ClientId", clientId);
 connect();
