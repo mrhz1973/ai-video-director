@@ -15,4 +15,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Validate structure and public-data policy
         run: python3 scripts/validate_project.py
+      - name: Validate harness output manager syntax
+        run: |
+          node --check comfyui-harness/public/output-naming.mjs
+          node --check comfyui-harness/public/output-ui.mjs
+      - name: Run full harness test suite
+        working-directory: comfyui-harness
+        run: npm test
 
