@@ -64,8 +64,8 @@ export function buildOutputTokens({
     duration: sanitizeOutputSegment(duration, { fallback: "NA" }),
     steps: sanitizeOutputSegment(steps, { fallback: "NA" }),
     seed: sanitizeOutputSegment(seed, { fallback: "NA", maxLength: 32 }),
-    aspect: sanitizeOutputSegment(aspect, { fallback: "NA", maxLength: 16 }).replace(/:/g, "x"),
-    variant: sanitizeOutputSegment(variant, { fallback: "v", maxLength: 32 })
+    aspect: sanitizeOutputSegment(String(aspect || "").replace(/:/g, "x"), { fallback: "NA", maxLength: 16 }),
+    variant: sanitizeOutputSegment(variant, { fallback: "", maxLength: 32 })
   };
 }
 
@@ -81,7 +81,9 @@ export function resolveOutputBaseName(template, tokens = {}, { counter = 1, coun
   const source = String(template || DEFAULT_OUTPUT_TEMPLATE);
   let rendered = renderCounterToken(source, counter, counterDigits);
   rendered = rendered.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => {
-    const value = Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : key;
+    if (!Object.prototype.hasOwnProperty.call(tokens, key)) return sanitizeOutputSegment(key, { fallback: key });
+    const value = tokens[key];
+    if (value === "" || value === null || value === undefined) return "";
     return sanitizeOutputSegment(value, { fallback: key });
   });
   rendered = rendered
