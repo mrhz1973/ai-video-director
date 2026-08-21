@@ -104,6 +104,16 @@
           <span class="gpu-power-btn-watts">170 W</span>
         </button>
       </div>
+      <p id="gpuPowerHelper" class="gpu-power-helper" hidden></p>
+      <button type="button" id="gpuPowerHelperHelp" class="gpu-power-helper-help" hidden>Configura controllo GPU</button>
+      <div id="gpuPowerHelperInstructions" class="gpu-power-helper-instructions" hidden>
+        <p>Installazione una tantum (nessuna elevazione automatica):</p>
+        <ol>
+          <li>Apri PowerShell come Amministratore.</li>
+          <li>Esegui <code>scripts\install_gpu_power_tasks.ps1</code> dalla cartella del repository.</li>
+          <li>Torna qui e aggiorna lo stato GPU.</li>
+        </ol>
+      </div>
       <p id="gpuPowerMessage" class="gpu-power-message" hidden></p>
     </section>
 

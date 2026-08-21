@@ -20,6 +20,7 @@ jobs:
           node --check comfyui-harness/public/output-naming.mjs
           node --check comfyui-harness/public/output-ui.mjs
           node --check comfyui-harness/lib/gpu-power.mjs
+          node --check comfyui-harness/lib/gpu-power-helper.mjs
           node --check comfyui-harness/public/gpu-power-ui.mjs
       - name: Run full harness test suite
         working-directory: comfyui-harness

@@ -33,6 +33,38 @@ function setButtonsEnabled(enabled) {
   }
 }
 
+const HELPER_LABELS = {
+  ready: "Helper GPU: pronto",
+  "not-installed": "Helper GPU: da installare",
+  partial: "Helper GPU: installazione incompleta",
+  invalid: "Helper GPU: configurazione non valida",
+  unsupported: "Helper GPU: non supportato su questo sistema"
+};
+
+const HELPER_ERROR_MESSAGES = {
+  "gpu-helper-not-installed": "Controllo GPU pronto, ma l'helper amministrativo non è ancora installato.",
+  "gpu-helper-partial": "Installazione helper GPU incompleta. Nessun comando è stato eseguito.",
+  "gpu-helper-invalid": "Configurazione helper GPU non valida. Nessun comando è stato eseguito.",
+  "gpu-helper-unsupported": "Helper GPU non supportato su questo sistema.",
+  "helper-verify-timeout": "Il task helper è partito ma il limite GPU non è stato confermato."
+};
+
+function renderHelper(helper) {
+  const line = $("gpuPowerHelper");
+  const help = $("gpuPowerHelperHelp");
+  if (!line) return;
+  const state = helper?.state || null;
+  if (!state) {
+    line.hidden = true;
+    if (help) help.hidden = true;
+    return;
+  }
+  line.hidden = false;
+  line.dataset.state = state;
+  line.textContent = HELPER_LABELS[state] || `Helper GPU: ${state}`;
+  if (help) help.hidden = state === "ready" || state === "unsupported";
+}
+
 function renderStatus(status) {
   lastStatus = status;
   const panel = $("gpuPowerSection");
@@ -41,6 +73,8 @@ function renderStatus(status) {
   const unavailable = $("gpuPowerUnavailable");
   const controls = $("gpuPowerControls");
   if (!panel || !primary || !secondary || !unavailable || !controls) return;
+
+  renderHelper(status?.helper);
 
   const modes = Array.isArray(status?.modes) ? status.modes : [];
   for (const btn of controls.querySelectorAll("[data-gpu-power-mode]")) {
@@ -101,6 +135,11 @@ async function applyMode(mode) {
       body: JSON.stringify({ mode })
     });
     const data = await response.json().catch(() => ({}));
+    if (HELPER_ERROR_MESSAGES[data.code]) {
+      setMessage(HELPER_ERROR_MESSAGES[data.code], "error");
+      await refreshStatus({ quiet: true });
+      return;
+    }
     if (response.status === 403 || data.code === "permission-denied") {
       setMessage("Permessi amministratore necessari per cambiare il limite.", "error");
       await refreshStatus({ quiet: true });
@@ -126,6 +165,12 @@ function initGpuPowerUi() {
   const section = $("gpuPowerSection");
   if (!section) return;
   section.addEventListener("click", event => {
+    const helpBtn = event.target.closest("#gpuPowerHelperHelp");
+    if (helpBtn) {
+      const instructions = $("gpuPowerHelperInstructions");
+      if (instructions) instructions.hidden = !instructions.hidden;
+      return;
+    }
     const btn = event.target.closest("[data-gpu-power-mode]");
     if (!btn || btn.disabled) return;
     const mode = btn.getAttribute("data-gpu-power-mode");

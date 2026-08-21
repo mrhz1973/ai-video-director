@@ -26,9 +26,13 @@ import { resolveConfigPath } from "./lib/config-path.mjs";
 import {
   GpuPowerError,
   gpuPowerPublicPayload,
-  readGpuPowerStatus,
-  setGpuPowerMode
+  readGpuPowerStatus
 } from "./lib/gpu-power.mjs";
+import {
+  applyGpuPowerMode,
+  gpuHelperPublicPayload,
+  readGpuHelperState
+} from "./lib/gpu-power-helper.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -163,8 +167,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { statuses: await assetStatuses(parseAssetStatusDescriptors(url.searchParams)) });
     }
     if (req.method === "GET" && url.pathname === "/api/gpu-power") {
-      const status = await readGpuPowerStatus();
-      return json(res, 200, gpuPowerPublicPayload(status));
+      const [status, helper] = await Promise.all([readGpuPowerStatus(), readGpuHelperState()]);
+      return json(res, 200, { ...gpuPowerPublicPayload(status), helper: gpuHelperPublicPayload(helper) });
     }
     if (req.method === "POST" && url.pathname === "/api/gpu-power") {
       let input;
@@ -181,12 +185,13 @@ const server = http.createServer(async (req, res) => {
         return json(res, 400, { error: "Invalid GPU power mode.", code: "invalid-mode" });
       }
       try {
-        const result = await setGpuPowerMode(input.mode);
+        const result = await applyGpuPowerMode(input.mode);
         logger.info("gpu_power_set", { mode: input.mode, watts: result.requested.watts });
         return json(res, 200, {
           ok: true,
           requested: result.requested,
-          ...gpuPowerPublicPayload(result.status)
+          ...gpuPowerPublicPayload(result.status),
+          ...(result.helper ? { helper: result.helper } : {})
         });
       } catch (error) {
         if (error instanceof GpuPowerError) {

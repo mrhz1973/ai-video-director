@@ -99,6 +99,59 @@
   color: #e2a0a0;
 }
 
+.gpu-power-helper {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #9eabb8;
+}
+
+.gpu-power-helper[data-state="ready"] {
+  color: #8ed3b2;
+}
+
+.gpu-power-helper[data-state="invalid"],
+.gpu-power-helper[data-state="partial"] {
+  color: #e2a0a0;
+}
+
+.gpu-power-helper[data-state="not-installed"] {
+  color: #f1c58e;
+}
+
+.gpu-power-helper-help {
+  margin: 6px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  color: #7ea8d8;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.gpu-power-helper-instructions {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #343b45;
+  border-radius: 8px;
+  background: #15191e;
+  font-size: 11px;
+  color: #9eabb8;
+}
+
+.gpu-power-helper-instructions p {
+  margin: 0 0 4px;
+}
+
+.gpu-power-helper-instructions ol {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.gpu-power-helper-instructions code {
+  color: #f1c58e;
+}
+
 @media (max-width: 900px) {
   .gpu-power-controls {
     grid-template-columns: 1fr;
