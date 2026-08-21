@@ -96,6 +96,31 @@ export function validateBatchDraft({
   return { valid: errors.length === 0, errors, perItem };
 }
 
+/**
+ * Sequentially submit already-preflighted items. Stops at the first failure,
+ * never retries, and truthfully marks every remaining item as not submitted.
+ */
+export async function submitBatchSequentially(items = [], submit) {
+  if (typeof submit !== "function") throw new Error("submit callback required");
+  const accepted = [];
+  let failure = null;
+  for (let index = 0; index < items.length; index += 1) {
+    try {
+      const result = await submit(items[index], index);
+      if (!result?.prompt_id) throw new Error("Submission returned no prompt_id");
+      accepted.push({ index, prompt_id: result.prompt_id, result });
+    } catch (error) {
+      failure = { index, error: error instanceof Error ? error.message : String(error) };
+      break;
+    }
+  }
+  const acceptedIndexes = new Set(accepted.map(item => item.index));
+  const notSubmitted = items
+    .map((_, index) => index)
+    .filter(index => !acceptedIndexes.has(index) && (!failure || index >= failure.index));
+  return { complete: !failure && accepted.length === items.length, accepted, failure, notSubmitted };
+}
+
 export function summarizeBatchJobs(jobs = []) {
   const summary = { total: jobs.length, completed: 0, running: 0, pending: 0, failed: 0, interrupted: 0, notSubmitted: 0 };
   for (const job of jobs) {
