@@ -1,0 +1,159 @@
+.gpu-power-section {
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #252a31;
+}
+
+.gpu-power-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #9eabb8;
+}
+
+.gpu-power-primary {
+  margin: 0;
+  font-size: 13px;
+  color: #edf1f4;
+  line-height: 1.35;
+}
+
+.gpu-power-secondary {
+  margin: 4px 0 10px;
+  font-size: 11px;
+  color: #7f8b97;
+}
+
+.gpu-power-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gpu-power-btn {
+  margin: 0;
+  width: 100%;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1px solid #343b45;
+  background: #15191e;
+  color: #edf1f4;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+}
+
+.gpu-power-btn:hover:not(:disabled) {
+  border-color: #e7a55b;
+}
+
+.gpu-power-btn.active {
+  border-color: #e7a55b;
+  background: #1c2229;
+  color: #f1c58e;
+}
+
+.gpu-power-btn:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.gpu-power-btn-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+.gpu-power-btn-watts {
+  font-size: 12px;
+  color: #9eabb8;
+}
+
+.gpu-power-btn.active .gpu-power-btn-watts {
+  color: #f1c58e;
+}
+
+.gpu-power-message {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #9eabb8;
+}
+
+.gpu-power-message[data-kind="error"] {
+  color: #e2a0a0;
+}
+
+.gpu-power-message[data-kind="ok"] {
+  color: #8ed3b2;
+}
+
+.gpu-power-message[data-kind="pending"] {
+  color: #f1c58e;
+}
+
+.gpu-power-unavailable {
+  margin: 0;
+  font-size: 12px;
+  color: #e2a0a0;
+}
+
+.gpu-power-helper {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #9eabb8;
+}
+
+.gpu-power-helper[data-state="ready"] {
+  color: #8ed3b2;
+}
+
+.gpu-power-helper[data-state="invalid"],
+.gpu-power-helper[data-state="partial"] {
+  color: #e2a0a0;
+}
+
+.gpu-power-helper[data-state="not-installed"] {
+  color: #f1c58e;
+}
+
+.gpu-power-helper-help {
+  margin: 6px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  color: #7ea8d8;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.gpu-power-helper-instructions {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #343b45;
+  border-radius: 8px;
+  background: #15191e;
+  font-size: 11px;
+  color: #9eabb8;
+}
+
+.gpu-power-helper-instructions p {
+  margin: 0 0 4px;
+}
+
+.gpu-power-helper-instructions ol {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.gpu-power-helper-instructions code {
+  color: #f1c58e;
+}
+
+@media (max-width: 900px) {
+  .gpu-power-controls {
+    grid-template-columns: 1fr;
+  }
+}

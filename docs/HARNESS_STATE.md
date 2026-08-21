@@ -9,14 +9,52 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.6.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery and output links.
+The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery, output links, a workstation GPU Power panel, and a browser-local Batch generation editor (Issue #14 / v0.8.0).
+
+## GPU Power Modes (Issue #24, v0.7.4 + v0.7.5 helper)
+
+The Generazione sidebar includes a **GPU POWER** panel with three explicit presets only:
+
+| Mode | Watts |
+|------|-------|
+| ECO | 100 |
+| BALANCED | 130 |
+| NORMAL | 170 |
+
+Actual GPU state is always read from `nvidia-smi` (draw, current limit, default/min/max limits) and classified as ECO / BALANCED / NORMAL / CUSTOM (±0.5 W). Browser localStorage and project files are never the authority for the current mode.
+
+API:
+
+- `GET /api/gpu-power` — read-only status plus the three allowed modes
+- `POST /api/gpu-power` — body `{ "mode": "eco"|"balanced"|"normal" }` only
+
+Writes use `child_process.execFile` with a fixed argument array (`nvidia-smi -i 0 -pl <preset>`). No shell, no privilege escalation, no stored credentials. If Windows denies the write, the harness returns HTTP 403 and keeps Director usable; the UI shows that administrator privileges are required.
+
+GPU Power is **global workstation state**. It is not part of workflow payloads, project saves, Batch jobs, output naming, or Generate. Changing workflow/model/project does not change the GPU power limit; the user must press a power button explicitly.
+
+### Windows Scheduled Task helper (v0.7.5) — security model
+
+On Windows a normal user cannot run `nvidia-smi -pl` (real-GPU smoke of v0.7.4 confirmed HTTP 403). v0.7.5 adds an **optional, one-time-installed** privileged helper so the harness itself stays non-elevated:
+
+- Three immutable on-demand Scheduled Tasks: `\AI Video Director\GPU Power\ECO|BALANCED|NORMAL`. Each task's action is a **direct** `nvidia-smi.exe -i 0 -pl 100|130|170` call — never `cmd.exe`, `powershell.exe`, `node.exe`, or any repo-writable script. No triggers, RunLevel Highest, InteractiveToken principal, no stored credentials.
+- Installation is strictly manual: an Administrator runs `scripts/install_gpu_power_tasks.ps1` once (one normal UAC). The installer takes no parameters — executable path (trusted system/NVIDIA locations only), GPU index, wattages and task names are hard-coded. `scripts/uninstall_gpu_power_tasks.ps1` removes exactly those three tasks, idempotently. The harness, UI and Node code never install, modify, delete or elevate anything.
+- Before every run, `lib/gpu-power-helper.mjs` exports the task definition (`schtasks /Query /TN <fixed> /XML`, `execFile`, no shell) and validates it strictly: exact task name, command basename `nvidia-smi.exe`, argv exactly `-i 0 -pl <expected>`, single Exec action, RunLevel `HighestAvailable`, `InteractiveToken`, no triggers. Any mismatch → state `invalid`, fail closed, nothing executed.
+- Helper states: `ready` / `not-installed` / `partial` / `invalid` / `unsupported` (non-Windows). `GET /api/gpu-power` exposes only `helper.type/available/state`.
+- A mode click performs at most **one** `schtasks /Run /TN <fixed>`; the browser still sends only `{ "mode": ... }` and can never influence task name, watts, executable or argv. HTTP 200 is returned only after `nvidia-smi` read-back confirms the expected limit (±0.5 W, poll ≤5 s); otherwise `helper-verify-timeout` (504) with no retry. `nvidia-smi` remains the sole authority for the current limit.
+- When the helper is not `ready` on Windows, `POST /api/gpu-power` returns HTTP 409 (`gpu-helper-not-installed` / `gpu-helper-partial` / `gpu-helper-invalid`) and does **not** fall back to the direct setter, avoiding a 403 loop. Read-only status keeps working regardless. The UI shows a `Helper GPU` status line and "Configura controllo GPU" instructions (open PowerShell as Administrator, run the installer, refresh) — no endpoint can start elevation.
+
+## Batch generation (Issue #14, v0.8.0)
+
+Browser-local Batch editor for 2–8 jobs (default prepare count 4) with seed auto-increment, copy/move/remove, per-job overrides, sequential queueing through the ordinary `/api/queue` route, first-failure stop, no retries, runtime restore, draft persistence, Output Manager integration, queue-empty and safe-fit validation, and a block on direct video attachments. There is no special server-side Batch submit endpoint.
+
+**Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 
 ## Progress and terminal monitor (Issue #7)
 

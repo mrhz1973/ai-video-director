@@ -23,6 +23,16 @@ import {
   sendJson
 } from "./lib/http-response.mjs";
 import { resolveConfigPath } from "./lib/config-path.mjs";
+import {
+  GpuPowerError,
+  gpuPowerPublicPayload,
+  readGpuPowerStatus
+} from "./lib/gpu-power.mjs";
+import {
+  applyGpuPowerMode,
+  gpuHelperPublicPayload,
+  readGpuHelperState
+} from "./lib/gpu-power-helper.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -155,6 +165,42 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/asset-status") {
       return json(res, 200, { statuses: await assetStatuses(parseAssetStatusDescriptors(url.searchParams)) });
+    }
+    if (req.method === "GET" && url.pathname === "/api/gpu-power") {
+      const [status, helper] = await Promise.all([readGpuPowerStatus(), readGpuHelperState()]);
+      return json(res, 200, { ...gpuPowerPublicPayload(status), helper: gpuHelperPublicPayload(helper) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/gpu-power") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      if (input == null || typeof input !== "object" || Array.isArray(input)) {
+        return json(res, 400, { error: "Invalid GPU power body.", code: "invalid-mode" });
+      }
+      const keys = Object.keys(input);
+      if (keys.length !== 1 || keys[0] !== "mode" || typeof input.mode !== "string") {
+        return json(res, 400, { error: "Invalid GPU power mode.", code: "invalid-mode" });
+      }
+      try {
+        const result = await applyGpuPowerMode(input.mode);
+        logger.info("gpu_power_set", { mode: input.mode, watts: result.requested.watts });
+        return json(res, 200, {
+          ok: true,
+          requested: result.requested,
+          ...gpuPowerPublicPayload(result.status),
+          ...(result.helper ? { helper: result.helper } : {})
+        });
+      } catch (error) {
+        if (error instanceof GpuPowerError) {
+          logger.error("gpu_power_set_failed", { mode: input.mode, code: error.code, reason: error.message });
+          return json(res, error.status || 500, { error: error.message, code: error.code });
+        }
+        logger.error("gpu_power_set_failed", { mode: input.mode, reason: error.message });
+        return json(res, 500, { error: error.message, code: "gpu-power-error" });
+      }
     }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {
