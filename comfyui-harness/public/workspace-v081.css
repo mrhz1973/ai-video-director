@@ -1,0 +1,334 @@
+/* v0.8.1 desktop workspace rebalance: left canvas + inspector tabs */
+
+@media (min-width: 801px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  main {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  .workspace {
+    height: 100vh;
+    max-height: 100vh;
+    min-height: 0;
+    overflow: auto;
+    resize: none;
+    position: relative;
+    top: auto;
+    align-self: stretch;
+    scrollbar-gutter: stable;
+  }
+
+  aside.inspector,
+  .inspector {
+    height: 100vh;
+    max-height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 20px;
+  }
+}
+
+.workspace .composer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+#prompt {
+  resize: none;
+  min-height: 140px;
+  height: 260px;
+  width: 100%;
+}
+
+.panel-resize-handle {
+  height: 10px;
+  margin: 0 0 8px;
+  cursor: ns-resize;
+  touch-action: none;
+  position: relative;
+  outline: none;
+  flex: 0 0 auto;
+}
+
+.panel-resize-handle::before {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #343b45;
+  transition: background .15s ease, left .15s ease, right .15s ease;
+}
+
+.panel-resize-handle:hover::before,
+.panel-resize-handle:focus-visible::before,
+body.panel-height-resizing .panel-resize-handle:focus-visible::before {
+  background: #e7a55b;
+  left: 12%;
+  right: 12%;
+}
+
+body.panel-height-resizing {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.quick-generation {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #2c343d;
+  border-radius: 12px;
+  background: #12161a;
+}
+
+@media (min-width: 1100px) {
+  .quick-generation {
+    grid-template-columns: 1.4fr 1.4fr;
+  }
+
+  .quick-generation label:nth-child(3),
+  .quick-generation label:nth-child(4),
+  .quick-generation label:nth-child(5),
+  .quick-generation label:nth-child(6),
+  .quick-generation label:nth-child(7) {
+    /* second row: MP Aspect Steps Duration Seed */
+  }
+
+  .quick-generation {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .quick-generation label:nth-child(1),
+  .quick-generation label:nth-child(2) {
+    grid-column: span 1;
+  }
+
+  /* Prefer Workflow | Model full width on first row when enough space */
+  .quick-generation {
+    grid-template-areas:
+      "workflow workflow model model model"
+      "mp aspect steps duration seed";
+  }
+
+  .quick-generation label:nth-child(1) { grid-area: workflow; }
+  .quick-generation label:nth-child(2) { grid-area: model; }
+  .quick-generation label:nth-child(3) { grid-area: mp; }
+  .quick-generation label:nth-child(4) { grid-area: aspect; }
+  .quick-generation label:nth-child(5) { grid-area: steps; }
+  .quick-generation label:nth-child(6) { grid-area: duration; }
+  .quick-generation label:nth-child(7) { grid-area: seed; }
+}
+
+.batch-mount {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.batch-mount .batch-section {
+  margin: 0;
+}
+
+.monitor-shell {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#renderMonitor {
+  flex: 0 0 auto;
+  height: 260px;
+  min-height: 180px;
+  overflow: auto;
+}
+
+.activity-drawer {
+  flex: 0 0 auto;
+  border: 1px solid #2c343d;
+  border-radius: 10px;
+  background: #101418;
+  padding: 0;
+}
+
+.activity-drawer > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 12px;
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #9eabb8;
+  user-select: none;
+}
+
+.activity-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.activity-drawer[open] > summary {
+  border-bottom: 1px solid #252a31;
+  color: #edf1f4;
+}
+
+.activity-drawer .panel-resize-handle {
+  margin: 4px 12px 0;
+}
+
+.activity-log,
+#log.activity-log {
+  max-height: none;
+  height: 180px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow: auto;
+}
+
+.activity-drawer:not([open]) .activity-log,
+.activity-drawer:not([open]) .panel-resize-handle {
+  display: none;
+}
+
+.inspector-header {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+}
+
+.inspector-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.gpu-power-compact {
+  margin: 0;
+  padding: 10px;
+}
+
+.gpu-power-compact h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.gpu-power-compact .gpu-power-primary {
+  font-size: 12px;
+  margin: 0 0 4px;
+}
+
+.gpu-power-compact .gpu-power-secondary {
+  display: none;
+}
+
+.inspector-tabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.inspector-tab {
+  appearance: none;
+  border: 1px solid #343b45;
+  background: #15191e;
+  color: #9eabb8;
+  border-radius: 8px;
+  padding: 8px 6px;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.inspector-tab.active,
+.inspector-tab[aria-selected="true"] {
+  color: #0b0d10;
+  background: #e7a55b;
+  border-color: #e7a55b;
+}
+
+.inspector-tab:focus-visible {
+  outline: 2px solid #e7a55b;
+  outline-offset: 2px;
+}
+
+.inspector-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.inspector-panel[hidden] {
+  display: none !important;
+}
+
+.inspector .progress {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 800px) {
+  html,
+  body {
+    height: auto;
+    overflow: auto;
+  }
+
+  main {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .workspace {
+    height: auto !important;
+    max-height: none;
+    overflow: visible;
+    resize: none;
+  }
+
+  aside.inspector,
+  .inspector {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .quick-generation {
+    grid-template-areas: none;
+    grid-template-columns: 1fr;
+  }
+
+  .quick-generation label:nth-child(n) {
+    grid-area: auto;
+  }
+
+  #renderMonitor {
+    height: auto;
+    min-height: 180px;
+  }
+}

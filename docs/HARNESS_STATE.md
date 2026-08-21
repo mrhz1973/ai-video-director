@@ -9,18 +9,18 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery, output links, a workstation GPU Power panel, and a browser-local Batch generation editor (Issue #14 / v0.8.0).
+The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery, output links, a workstation GPU Power panel, a browser-local Batch generation editor (Issue #14 / v0.8.0), and the v0.8.1 left-canvas / right-inspector desktop layout.
 
 ## GPU Power Modes (Issue #24, v0.7.4 + v0.7.5 helper)
 
-The Generazione sidebar includes a **GPU POWER** panel with three explicit presets only:
+The Generazione **Inspector** keeps a compact always-visible **GPU POWER** block above its tabs, with three explicit presets only:
 
 | Mode | Watts |
 |------|-------|
@@ -49,6 +49,17 @@ On Windows a normal user cannot run `nvidia-smi -pl` (real-GPU smoke of v0.7.4 c
 - Helper states: `ready` / `not-installed` / `partial` / `invalid` / `unsupported` (non-Windows). `GET /api/gpu-power` exposes only `helper.type/available/state`.
 - A mode click performs at most **one** `schtasks /Run /TN <fixed>`; the browser still sends only `{ "mode": ... }` and can never influence task name, watts, executable or argv. HTTP 200 is returned only after `nvidia-smi` read-back confirms the expected limit (±0.5 W, poll ≤5 s); otherwise `helper-verify-timeout` (504) with no retry. `nvidia-smi` remains the sole authority for the current limit.
 - When the helper is not `ready` on Windows, `POST /api/gpu-power` returns HTTP 409 (`gpu-helper-not-installed` / `gpu-helper-partial` / `gpu-helper-invalid`) and does **not** fall back to the direct setter, avoiding a 403 loop. Read-only status keeps working regardless. The UI shows a `Helper GPU` status line and "Configura controllo GPU" instructions (open PowerShell as Administrator, run the installer, refresh) — no endpoint can start elevation.
+
+## Desktop workspace layout (v0.8.1)
+
+For viewports wider than 800px the Director uses a two-pane layout:
+
+- **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`) → collapsed-by-default Attività/Output drawer (`#activityDrawer` / `#log`).
+- **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height.
+- **Sidebar width:** existing `#sidebarResizeHandle` and `h3SidebarWidth:v1` remain (default about 460px). Whole-workspace native `resize: vertical` is removed; desktop `main` uses the viewport height instead of a 72vh resizable box.
+- Generate no longer copies the prompt into Activity. Activity is for project notices, errors, warnings and output links — not a chat transcript.
+
+At ≤800px the layout remains a usable single column. No Generate, Batch, GPU Power, Output Manager or safe-fit semantics change in v0.8.1.
 
 ## Batch generation (Issue #14, v0.8.0)
 
@@ -274,7 +285,7 @@ Thumbnails request `/api/view` with percent-encoded `filename`, `type=input`, an
 
 Workflow binding `<option>` labels are dynamic ordinals (`Martino · Elements #1`) from current group order. Reorder refreshes labels immediately. The option value and saved project binding remain the ComfyUI filename. `schemaVersion` is unchanged.
 
-The desktop workspace order is header → prompt/Generate → render monitor → log. Generation settings use two columns at viewport ≥1100px and one column below that. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
+The desktop workspace (v0.8.1) order is header → prompt → quick generation controls → Batch → compact monitor → Attività/Output drawer on the left, with Project/Asset/Input/Output inspector tabs on the right and GPU Power always visible above those tabs. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
 
 Aspect-ratio-safe I2VA/FL2VA preprocessing is implemented in harness **v0.6.0** as fail-closed inspection + an external private-workflow patcher (Issue #11 PR B). Pad/Stretch UI modes remain deferred.
 

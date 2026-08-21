@@ -1,18 +1,11 @@
 @media (min-width: 801px) {
   main {
-    grid-template-columns: minmax(0, 1fr) 8px var(--sidebar-width, 520px);
+    grid-template-columns: minmax(0, 1fr) 8px var(--sidebar-width, 460px);
   }
 
   .workspace {
-    height: 72vh;
-    min-height: 440px;
-    max-height: calc(100vh - 16px);
-    align-self: start;
-    position: sticky;
-    top: 0;
-    overflow: auto;
-    resize: vertical;
-    scrollbar-gutter: stable;
+    /* Height/overflow owned by workspace-v081.css — no native whole-workspace resize. */
+    resize: none;
   }
 
   .sidebar-resize-handle {

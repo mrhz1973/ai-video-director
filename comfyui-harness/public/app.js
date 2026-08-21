@@ -1165,7 +1165,6 @@ $("send").onclick = async () => {
     const prompt = $("prompt").value.trim();
     const megapixels = $("megapixels").value;
     if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
-    add(prompt, "user");
     $("progress").textContent = "Controllo allegati…";
     const preset = currentPreset();
     await refreshAvailability();
