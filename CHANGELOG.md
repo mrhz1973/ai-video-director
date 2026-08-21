@@ -86,3 +86,13 @@
 - Hardened `scripts/apply_h3_safe_fit.mjs` to transactional two-phase apply (validate all supplied workflows before any backup/write) and documented `--check` exit codes (`0` safe, `3` needs-apply, `2` unexpected, `1` IO). Partial multi-file apply is impossible. Remains harness v0.6.0. Validation: 115/115 Node tests plus repository validation.
 - Added apply-phase rollback for caught I/O/write failures after a prior workflow in the same `--apply` was committed: restore every modified source to exact original bytes (verified). Failed-run backups may remain as recovery artifacts. Remains v0.6.0. Validation: 117/117 Node tests plus repository validation.
 - Hardened rollback reporting: incomplete restore is `APPLY_FAILED_ROLLBACK_FAILED` (`rollbackComplete=false`, never `rolledBack=true`, never claims originals match). Successful verified rollback remains `APPLY_FAILED_ROLLBACK_OK`. Remains v0.6.0. Validation: 119/119 Node tests plus repository validation.
+
+# 2026-08-21
+
+- Implemented Issue #24: GPU Power Modes (harness **v0.7.4**).
+- Added a compact Generazione-sidebar **GPU POWER** panel with three explicit presets only: **ECO 100 W**, **BALANCED 130 W**, **NORMAL 170 W**.
+- Live GPU state is read from `nvidia-smi` (draw, current/default/min/max limits) and classified as ECO / BALANCED / NORMAL / CUSTOM; browser localStorage is never the authority.
+- Server routes: `GET /api/gpu-power` (read-only) and `POST /api/gpu-power` with body `{ "mode": "eco"|"balanced"|"normal" }` only. Arbitrary wattage, injection strings and unknown modes are rejected before invoking `nvidia-smi`.
+- Power-limit writes use `child_process.execFile` with a fixed argument array (`-i 0 -pl <preset-watts>`). No shell, no UAC, no scheduled tasks, no stored credentials. Privilege denial returns HTTP 403 with a clear Italian UI message.
+- GPU Power is global workstation state: independent of projects, workflows, Generate, Batch and output naming. Generate/Batch never change power mode implicitly.
+- Validation: full harness Node test suite including mocked `nvidia-smi` setter coverage.

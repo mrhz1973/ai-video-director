@@ -9,14 +9,35 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.6.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.7.4, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery and output links.
+The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery, output links, and a workstation GPU Power panel.
+
+## GPU Power Modes (Issue #24, v0.7.4)
+
+The Generazione sidebar includes a **GPU POWER** panel with three explicit presets only:
+
+| Mode | Watts |
+|------|-------|
+| ECO | 100 |
+| BALANCED | 130 |
+| NORMAL | 170 |
+
+Actual GPU state is always read from `nvidia-smi` (draw, current limit, default/min/max limits) and classified as ECO / BALANCED / NORMAL / CUSTOM (±0.5 W). Browser localStorage and project files are never the authority for the current mode.
+
+API:
+
+- `GET /api/gpu-power` — read-only status plus the three allowed modes
+- `POST /api/gpu-power` — body `{ "mode": "eco"|"balanced"|"normal" }` only
+
+Writes use `child_process.execFile` with a fixed argument array (`nvidia-smi -i 0 -pl <preset>`). No shell, no privilege escalation, no stored credentials. If Windows denies the write, the harness returns HTTP 403 and keeps Director usable; the UI shows that administrator privileges are required.
+
+GPU Power is **global workstation state**. It is not part of workflow payloads, project saves, Batch jobs, output naming, or Generate. Changing workflow/model/project does not change the GPU power limit; the user must press a power button explicitly.
 
 ## Progress and terminal monitor (Issue #7)
 
