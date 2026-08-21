@@ -155,7 +155,7 @@ function initSidebarResize() {
   main.insertBefore(handle, aside);
 
   const updateAria = width => {
-    const max = clampSidebarWidth(Number.POSITIVE_INFINITY, window.innerWidth);
+    const max = clampSidebarWidth(MAX_SIDEBAR_WIDTH, window.innerWidth);
     handle.setAttribute("aria-valuemin", String(MIN_SIDEBAR_WIDTH));
     handle.setAttribute("aria-valuemax", String(max));
     handle.setAttribute("aria-valuenow", String(Math.round(width)));
