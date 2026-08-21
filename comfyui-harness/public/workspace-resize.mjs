@@ -34,6 +34,15 @@ export function storedWorkspaceHeight(value, viewportHeight) {
   return clampWorkspaceHeight(numeric, viewportHeight);
 }
 
+export function borderBoxHeightFromResizeEntry(entry, fallbackHeight) {
+  const borderBox = entry?.borderBoxSize;
+  const box = Array.isArray(borderBox) ? borderBox[0] : borderBox;
+  const blockSize = Number(box?.blockSize);
+  if (Number.isFinite(blockSize) && blockSize > 0) return blockSize;
+  const fallback = Number(fallbackHeight);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+}
+
 function readStoredHeight() {
   try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
 }
@@ -68,11 +77,11 @@ function initWorkspaceResize() {
   const observer = new ResizeObserver(entries => {
     if (applying || compact.matches) return;
     const entry = entries[0];
-    const height = entry?.contentRect?.height;
+    const height = borderBoxHeightFromResizeEntry(entry, workspace.getBoundingClientRect().height);
     if (!Number.isFinite(height) || height <= 0) return;
     persistHeight(clampWorkspaceHeight(height, window.innerHeight));
   });
-  observer.observe(workspace);
+  observer.observe(workspace, { box: "border-box" });
 
   window.addEventListener("resize", () => {
     if (compact.matches) return;
