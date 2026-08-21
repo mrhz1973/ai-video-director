@@ -338,68 +338,73 @@ async function queueBatch() {
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
 
+  // Claim the submit lock before the first await. A second click cannot start a
+  // concurrent queue preflight or duplicate the batch while this path is active.
+  submitting = true;
+  updateQueueButton();
+
   try {
     const activeResponse = await fetch("/api/active");
     const active = await activeResponse.json();
     if (!activeResponse.ok) throw new Error(active.error || "Impossibile controllare la queue ComfyUI.");
     if (Number(active.running || 0) || Number(active.pending || 0)) {
-      return setFeedback(`Queue non vuota: ${active.running || 0} running · ${active.pending || 0} pending. Il Batch v1 parte solo da queue vuota.`, "warn");
+      setFeedback(`Queue non vuota: ${active.running || 0} running · ${active.pending || 0} pending. Il Batch v1 parte solo da queue vuota.`, "warn");
+      return;
     }
-  } catch (error) {
-    return setFeedback(error.message || String(error), "error");
-  }
 
-  submitting = true;
-  updateQueueButton();
-  setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
-  const batchId = crypto.randomUUID();
-  const snapshotItems = items.map(item => ({ ...item }));
+    setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
+    const batchId = crypto.randomUUID();
+    const snapshotItems = items.map(item => ({ ...item }));
 
-  const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
-    const response = await fetch("/api/queue", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-h3-batch-id": batchId, "x-h3-batch-index": String(index) },
-      body: JSON.stringify(payloadFor(item, snapshot))
+    const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
+      const response = await fetch("/api/queue", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-h3-batch-id": batchId, "x-h3-batch-index": String(index) },
+        body: JSON.stringify(payloadFor(item, snapshot))
+      });
+      const data = await response.json();
+      if (!response.ok || !data.prompt_id) {
+        throw new Error(data.error || JSON.stringify(data.node_errors || {}) || `Invio Job ${index + 1} fallito`);
+      }
+      return data;
     });
-    const data = await response.json();
-    if (!response.ok || !data.prompt_id) {
-      throw new Error(data.error || JSON.stringify(data.node_errors || {}) || `Invio Job ${index + 1} fallito`);
+
+    const acceptedByIndex = new Map(result.accepted.map(entry => [entry.index, entry.prompt_id]));
+    runtime = {
+      version: 1,
+      batchId,
+      createdAt: Date.now(),
+      workflowId: snapshot.workflowId,
+      workflowLabel: snapshot.workflowLabel,
+      model: snapshot.model,
+      jobs: snapshotItems.map((item, index) => ({
+        index,
+        label: `Job ${index + 1}`,
+        promptId: acceptedByIndex.get(index) || null,
+        state: acceptedByIndex.has(index) ? "pending" : "not-submitted",
+        error: result.failure?.index === index ? result.failure.error : null,
+        item,
+        outputs: [],
+        outputsFetched: false
+      }))
+    };
+    persistRuntime();
+    submitted = result.accepted.length > 0;
+    renderRuntime();
+
+    if (result.complete) {
+      setFeedback(`Batch inviato: ${result.accepted.length}/${snapshotItems.length} job accettati da ComfyUI in ordine.`, "ok");
+    } else {
+      const failedAt = result.failure ? `Job ${result.failure.index + 1}: ${result.failure.error}` : "errore sconosciuto";
+      setFeedback(`Invio parziale: ${result.accepted.length}/${snapshotItems.length} accettati. ${failedAt}. Nessun retry automatico; i job successivi non sono stati inviati.`, "error");
     }
-    return data;
-  });
-
-  const acceptedByIndex = new Map(result.accepted.map(entry => [entry.index, entry.prompt_id]));
-  runtime = {
-    version: 1,
-    batchId,
-    createdAt: Date.now(),
-    workflowId: snapshot.workflowId,
-    workflowLabel: snapshot.workflowLabel,
-    model: snapshot.model,
-    jobs: snapshotItems.map((item, index) => ({
-      index,
-      label: `Job ${index + 1}`,
-      promptId: acceptedByIndex.get(index) || null,
-      state: acceptedByIndex.has(index) ? "pending" : "not-submitted",
-      error: result.failure?.index === index ? result.failure.error : null,
-      item,
-      outputs: [],
-      outputsFetched: false
-    }))
-  };
-  persistRuntime();
-  submitting = false;
-  submitted = result.accepted.length > 0;
-  updateQueueButton();
-  renderRuntime();
-
-  if (result.complete) {
-    setFeedback(`Batch inviato: ${result.accepted.length}/${snapshotItems.length} job accettati da ComfyUI in ordine.`, "ok");
-  } else {
-    const failedAt = result.failure ? `Job ${result.failure.index + 1}: ${result.failure.error}` : "errore sconosciuto";
-    setFeedback(`Invio parziale: ${result.accepted.length}/${snapshotItems.length} accettati. ${failedAt}. Nessun retry automatico; i job successivi non sono stati inviati.`, "error");
+    if (result.accepted.length) startPolling();
+  } catch (error) {
+    setFeedback(error?.message || String(error), "error");
+  } finally {
+    submitting = false;
+    updateQueueButton();
   }
-  if (result.accepted.length) startPolling();
 }
 
 function stateLabel(state) {
