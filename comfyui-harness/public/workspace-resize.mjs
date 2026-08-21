@@ -28,13 +28,14 @@ export function defaultWorkspaceHeight(viewportHeight, {
   return clampWorkspaceHeight(candidate, viewport, { minHeight, margin });
 }
 
+export function storedWorkspaceHeight(value, viewportHeight) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return defaultWorkspaceHeight(viewportHeight);
+  return clampWorkspaceHeight(numeric, viewportHeight);
+}
+
 function readStoredHeight() {
-  try {
-    const value = Number(localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
 }
 
 function persistHeight(value) {
@@ -43,67 +44,46 @@ function persistHeight(value) {
 
 function applyHeight(workspace, value) {
   const height = clampWorkspaceHeight(value, window.innerHeight);
-  workspace.style.setProperty("--workspace-height", `${height}px`);
+  workspace.style.height = `${height}px`;
   return height;
 }
 
 function initWorkspaceResize() {
   const workspace = document.querySelector(".workspace");
-  const handle = document.getElementById("workspaceResizeHandle");
-  if (!workspace || !handle) return;
+  if (!workspace) return;
 
   const compact = window.matchMedia("(max-width: 800px)");
+  let applying = false;
 
   const applyPreference = () => {
     if (compact.matches) {
-      workspace.style.removeProperty("--workspace-height");
+      workspace.style.removeProperty("height");
       return;
     }
-    const stored = readStoredHeight();
-    applyHeight(workspace, stored ?? defaultWorkspaceHeight(window.innerHeight));
+    applying = true;
+    applyHeight(workspace, storedWorkspaceHeight(readStoredHeight(), window.innerHeight));
+    requestAnimationFrame(() => { applying = false; });
   };
 
-  let dragging = false;
-
-  handle.addEventListener("pointerdown", event => {
-    if (compact.matches) return;
-    dragging = true;
-    handle.setPointerCapture?.(event.pointerId);
-    document.body.classList.add("workspace-resizing");
-    event.preventDefault();
+  const observer = new ResizeObserver(entries => {
+    if (applying || compact.matches) return;
+    const entry = entries[0];
+    const height = entry?.contentRect?.height;
+    if (!Number.isFinite(height) || height <= 0) return;
+    persistHeight(clampWorkspaceHeight(height, window.innerHeight));
   });
-
-  handle.addEventListener("pointermove", event => {
-    if (!dragging || compact.matches) return;
-    const top = workspace.getBoundingClientRect().top;
-    applyHeight(workspace, event.clientY - top);
-  });
-
-  const finish = event => {
-    if (!dragging) return;
-    dragging = false;
-    try { handle.releasePointerCapture?.(event.pointerId); } catch { /* ignore */ }
-    document.body.classList.remove("workspace-resizing");
-    persistHeight(workspace.getBoundingClientRect().height);
-  };
-
-  handle.addEventListener("pointerup", finish);
-  handle.addEventListener("pointercancel", finish);
-
-  handle.addEventListener("dblclick", () => {
-    if (compact.matches) return;
-    const height = applyHeight(workspace, defaultWorkspaceHeight(window.innerHeight));
-    persistHeight(height);
-  });
+  observer.observe(workspace);
 
   window.addEventListener("resize", () => {
     if (compact.matches) return;
+    applying = true;
     const height = applyHeight(workspace, workspace.getBoundingClientRect().height);
     persistHeight(height);
+    requestAnimationFrame(() => { applying = false; });
   });
 
   compact.addEventListener?.("change", applyPreference);
   applyPreference();
 }
 
-if (typeof window !== "undefined") initWorkspaceResize();
+if (typeof window !== "undefined" && typeof ResizeObserver !== "undefined") initWorkspaceResize();
