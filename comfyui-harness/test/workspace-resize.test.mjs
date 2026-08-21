@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   borderBoxHeightFromResizeEntry,
   clampSidebarWidth,
@@ -56,4 +58,12 @@ test("stored sidebar width restores valid preference and rejects invalid values"
   assert.equal(storedSidebarWidth("9999", 1600), 760);
   assert.equal(storedSidebarWidth("not-a-number", 1600), 520);
   assert.equal(storedSidebarWidth("0", 900), 472);
+});
+
+test("workspace resize UI uses the native corner without the old text label", () => {
+  const cssPath = fileURLToPath(new URL("../public/workspace-resize.css", import.meta.url));
+  const css = readFileSync(cssPath, "utf8");
+  assert.match(css, /\.workspace\s*\{[\s\S]*?resize:\s*vertical;/);
+  assert.doesNotMatch(css, /↕\s*ridimensiona/i);
+  assert.doesNotMatch(css, /\.workspace::after/);
 });
