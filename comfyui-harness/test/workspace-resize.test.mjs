@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   borderBoxHeightFromResizeEntry,
+  clampSidebarWidth,
   clampWorkspaceHeight,
   defaultWorkspaceHeight,
+  storedSidebarWidth,
   storedWorkspaceHeight
 } from "../public/workspace-resize.mjs";
 
@@ -34,4 +36,24 @@ test("resize persistence falls back to getBoundingClientRect border-box height",
   assert.equal(borderBoxHeightFromResizeEntry({ contentRect: { height: 504 } }, 560), 560);
   assert.equal(borderBoxHeightFromResizeEntry({}, 650), 650);
   assert.equal(borderBoxHeightFromResizeEntry({}, 0), null);
+});
+
+test("right sidebar width defaults wider and clamps to safe desktop bounds", () => {
+  assert.equal(clampSidebarWidth(undefined, 1600), 520);
+  assert.equal(clampSidebarWidth(200, 1600), 360);
+  assert.equal(clampSidebarWidth(620, 1600), 620);
+  assert.equal(clampSidebarWidth(900, 1600), 760);
+});
+
+test("right sidebar leaves room for the left workspace on narrower desktop viewports", () => {
+  assert.equal(clampSidebarWidth(700, 1000), 572);
+  assert.equal(clampSidebarWidth(520, 900), 472);
+  assert.equal(clampSidebarWidth(360, 900), 360);
+});
+
+test("stored sidebar width restores valid preference and rejects invalid values", () => {
+  assert.equal(storedSidebarWidth("650", 1600), 650);
+  assert.equal(storedSidebarWidth("9999", 1600), 760);
+  assert.equal(storedSidebarWidth("not-a-number", 1600), 520);
+  assert.equal(storedSidebarWidth("0", 900), 472);
 });
