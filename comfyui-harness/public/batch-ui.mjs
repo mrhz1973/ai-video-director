@@ -145,8 +145,8 @@ function setFeedback(message, kind = "neutral") {
 
 function createUi() {
   if ($("batchSection")) return;
-  const output = $("outputSection");
-  if (!output?.parentNode) return;
+  const mount = $("batchMount") || $("generationGrid")?.parentNode;
+  if (!mount) return;
 
   const section = document.createElement("section");
   section.className = "batch-section";
@@ -168,7 +168,8 @@ function createUi() {
       <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
       <div id="batchRuntimeList" class="batch-runtime-list"></div>
     </details>`;
-  output.parentNode.insertBefore(section, output);
+  if (mount.id === "batchMount") mount.appendChild(section);
+  else mount.insertBefore(section, $("monitorShell") || $("renderMonitor") || null);
 
   const monitor = $("renderMonitor");
   if (monitor && !$("batchMonitorSummary")) {

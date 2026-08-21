@@ -67,6 +67,20 @@ function stripExtension(name) {
   return String(name || "").replace(/\.[^.]+$/, "");
 }
 
+/** Readable default display label from a filename (no extension). Does not rename the file. */
+export function humanizeFilenameLabel(name = "") {
+  const base = stripExtension(name).trim();
+  if (!base) return "";
+  return base
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function defaultMemberLabelFromFilename(name = "") {
+  return humanizeFilenameLabel(name) || stripExtension(name) || String(name || "").trim() || "Asset";
+}
+
 function extensionOf(name) {
   const lower = String(name || "").toLowerCase();
   const dot = lower.lastIndexOf(".");
@@ -112,11 +126,12 @@ export function assertSafeFilename(filename) {
 export function createMember({ filename, originalName, label, type, id, subfolder } = {}) {
   const safe = assertSafeFilename(filename);
   const inferred = type || (AUDIO_EXTENSIONS.has(extensionOf(safe)) ? "audio" : "image");
+  const sourceName = originalName || safe;
   return {
     id: id || newId("member"),
     filename: safe,
-    originalName: originalName || safe,
-    label: label || stripExtension(originalName || safe) || safe,
+    originalName: sourceName,
+    label: (label && String(label).trim()) || defaultMemberLabelFromFilename(sourceName),
     type: inferred,
     subfolder: (() => {
       const folder = normalizeInputSubfolder(subfolder);
@@ -126,8 +141,29 @@ export function createMember({ filename, originalName, label, type, id, subfolde
 }
 
 /**
+ * Primary human-facing asset name. Prefer stored member.label.
+ * Ordinal/category text is not used as the normal primary label.
+ */
+export function formatMemberPrimaryLabel(member = {}) {
+  const label = String(member.label || "").trim();
+  if (label) return label;
+  return defaultMemberLabelFromFilename(member.originalName || member.filename || "");
+}
+
+/**
+ * Role-select label: "Group / Member label".
+ * Physical filename stays in title/tooltip only.
+ */
+export function formatRoleOptionLabel({ groupLabel, memberLabel, member } = {}) {
+  const group = String(groupLabel || member?.groupLabel || "").trim();
+  const item = String(memberLabel || formatMemberPrimaryLabel(member || {})).trim();
+  if (group && item) return `${group} / ${item}`;
+  return item || group || "Asset";
+}
+
+/**
  * Display label for a group member. Ordinal follows current member order (first = #1).
- * Does not use the stored filename as primary text.
+ * Kept for tooltip / debug detail; not the normal primary UI text.
  */
 export function formatMemberOrdinalLabel({ groupLabel, category, index, compact = false } = {}) {
   const n = Number(index);
@@ -140,14 +176,21 @@ export function formatMemberOrdinalLabel({ groupLabel, category, index, compact 
 }
 
 export function memberSelectOption(member = {}) {
+  const primary = formatRoleOptionLabel({
+    groupLabel: member.groupLabel,
+    memberLabel: formatMemberPrimaryLabel(member),
+    member
+  });
+  const filename = member.filename || "";
+  const ordinal = formatMemberOrdinalLabel({
+    groupLabel: member.groupLabel,
+    category: member.category,
+    index: member.index
+  });
   return {
-    value: member.filename,
-    label: formatMemberOrdinalLabel({
-      groupLabel: member.groupLabel,
-      category: member.category,
-      index: member.index
-    }),
-    title: member.originalName || member.filename || ""
+    value: filename,
+    label: primary,
+    title: [member.originalName || filename, ordinal].filter(Boolean).join(" · ")
   };
 }
 
@@ -361,6 +404,18 @@ export function renameGroup(library, category, groupId, label) {
   const group = (next[category] || []).find(g => g.id === groupId);
   if (!group) return next;
   group.label = String(label || group.label);
+  return next;
+}
+
+/** Rename display label only. Never touches filename / originalName / subfolder / id. */
+export function renameMemberLabel(library, category, groupId, memberId, label) {
+  const next = structuredCloneLibrary(library);
+  const group = (next[category] || []).find(g => g.id === groupId);
+  if (!group) return next;
+  const member = (group.members || []).find(m => m.id === memberId);
+  if (!member) return next;
+  const nextLabel = String(label || "").trim();
+  member.label = nextLabel || formatMemberPrimaryLabel(member);
   return next;
 }
 

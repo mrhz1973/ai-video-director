@@ -89,6 +89,10 @@
 
 # 2026-08-21
 
+- Extended harness **v0.8.1** asset UX and persistence: member.label is the primary asset/role display name (filename secondary), labels are editable without renaming ComfyUI files, unsaved drafts recover via isolated `h3RecoveryDraft:v1`, and already-saved projects autosave through existing `PUT /api/projects/<id>` with 700 ms debounce and single-flight writes.
+- Redesigned the desktop Director workspace for harness **v0.8.1** (layout/UX only): left primary canvas (prompt → quick generation controls → Batch → compact resizable monitor → collapsed Attività/Output drawer) and a right Inspector with sticky GPU Power plus Progetto / Asset / Input / Output tabs.
+- Removed prompt duplication into the activity log on Generate (`add(prompt, "user")`), disabled the native textarea resize corner, removed whole-workspace native vertical resize, and added explicit prompt/monitor resize handles with isolated `h3PromptHeight:v1` / `h3MonitorHeight:v1` keys (sidebar width persistence unchanged).
+- No Generate/Batch/GPU Power/Output Manager/safe-fit API behavior changes.
 - Implemented Issue #24: GPU Power Modes (harness **v0.7.4**).
 - Added a compact Generazione-sidebar **GPU POWER** panel with three explicit presets only: **ECO 100 W**, **BALANCED 130 W**, **NORMAL 170 W**.
 - Live GPU state is read from `nvidia-smi` (draw, current/default/min/max limits) and classified as ECO / BALANCED / NORMAL / CUSTOM; browser localStorage is never the authority.
