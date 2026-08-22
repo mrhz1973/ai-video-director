@@ -19,6 +19,7 @@ test("app wires explicit project load feedback and batch persistence", () => {
   assert.match(app, /LOAD_STATUS\.LOADING/);
   assert.match(app, /shouldCommitLoadGeneration/);
   assert.match(app, /exportBatchDraftForProject/);
+  assert.match(app, /exportBatchDraftForPersistence/);
   assert.match(app, /importBatchDraftFromProject/);
   assert.match(app, /batchDraft:/);
   assert.match(app, /setBatchPersistenceHook/);

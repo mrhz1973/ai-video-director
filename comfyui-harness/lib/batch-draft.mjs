@@ -92,15 +92,23 @@ export function normalizeBatchDraft(raw = null) {
   };
 }
 
-export function serializeBatchDraft({ source, items, updatedAt } = {}) {
+export function serializeBatchDraft({
+  source,
+  items,
+  updatedAt,
+  includeUpdatedAt = false
+} = {}) {
   const normalized = normalizeBatchDraft({ version: BATCH_DRAFT_VERSION, source, items, updatedAt });
   if (!normalized) return null;
-  return {
+  const out = {
     version: normalized.version,
     source: normalized.source,
-    items: normalized.items,
-    updatedAt: updatedAt || normalized.updatedAt || new Date().toISOString()
+    items: normalized.items
   };
+  if (includeUpdatedAt) {
+    out.updatedAt = updatedAt || normalized.updatedAt || new Date().toISOString();
+  }
+  return out;
 }
 
 export function batchDraftIdentity(draft = null) {

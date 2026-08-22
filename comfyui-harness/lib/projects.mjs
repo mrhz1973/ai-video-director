@@ -297,7 +297,7 @@ export function normalizeProject(raw = {}) {
   };
 }
 
-export function toPersistedProject(project) {
+export function toPersistedProject(project, { includeBatchUpdatedAt = true } = {}) {
   const normalized = normalizeProject(project);
   assertValidProjectId(normalized.id);
   const library = emptyLibrary();
@@ -316,7 +316,12 @@ export function toPersistedProject(project) {
     }));
   }
   const batchDraft = normalized.batchDraft
-    ? serializeBatchDraft(normalized.batchDraft)
+    ? serializeBatchDraft({
+      source: normalized.batchDraft.source,
+      items: normalized.batchDraft.items,
+      updatedAt: normalized.batchDraft.updatedAt,
+      includeUpdatedAt: includeBatchUpdatedAt
+    })
     : null;
   if (batchDraft) assertNoExecutionAuthority(batchDraft);
   const out = {
@@ -366,7 +371,7 @@ export function projectEditorSnapshot({
     library,
     files,
     batchDraft
-  }));
+  }, { includeBatchUpdatedAt: false }));
 }
 
 export function isProjectDirty(baselineSnapshot, currentSnapshot) {

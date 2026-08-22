@@ -102,6 +102,7 @@ import {
   bindBatchProjectKey,
   clearBatchEditor,
   exportBatchDraftForProject,
+  exportBatchDraftForPersistence,
   importBatchDraftFromProject,
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
@@ -1640,7 +1641,7 @@ function payloadFromEditor() {
     settings: state.settings,
     library: state.library,
     files: state.files,
-    batchDraft: exportBatchDraftForProject()
+    batchDraft: exportBatchDraftForPersistence()
   };
 }
 

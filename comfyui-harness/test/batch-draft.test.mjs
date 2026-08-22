@@ -109,3 +109,15 @@ test("batchesEqual compares items and source identity", () => {
   });
   assert.equal(batchesEqual(left, changed), false);
 });
+
+test("serializeBatchDraft omits updatedAt unless includeUpdatedAt is true", () => {
+  const semantic = serializeBatchDraft({ source: sampleSource, items: sampleItems(2), includeUpdatedAt: false });
+  const persisted = serializeBatchDraft({
+    source: sampleSource,
+    items: sampleItems(2),
+    updatedAt: "2026-08-22T09:00:00.000Z",
+    includeUpdatedAt: true
+  });
+  assert.equal("updatedAt" in semantic, false);
+  assert.equal(persisted.updatedAt, "2026-08-22T09:00:00.000Z");
+});

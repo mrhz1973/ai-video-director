@@ -96,12 +96,28 @@ export function setBatchLocalLoadSuppressed(value) {
   suppressLocalLoad = Boolean(value);
 }
 
+function batchItemsForExport() {
+  return items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) }));
+}
+
+/** Semantic editor snapshot: excludes volatile persistence metadata such as updatedAt. */
 export function exportBatchDraftForProject() {
   if (!items.length || !source) return null;
   return serializeBatchDraft({
     source,
-    items: items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) })),
-    updatedAt: new Date().toISOString()
+    items: batchItemsForExport(),
+    includeUpdatedAt: false
+  });
+}
+
+/** Server persistence payload: stamps updatedAt only on real save/autosave. */
+export function exportBatchDraftForPersistence() {
+  if (!items.length || !source) return null;
+  return serializeBatchDraft({
+    source,
+    items: batchItemsForExport(),
+    updatedAt: new Date().toISOString(),
+    includeUpdatedAt: true
   });
 }
 

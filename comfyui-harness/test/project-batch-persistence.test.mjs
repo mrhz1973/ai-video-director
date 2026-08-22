@@ -38,7 +38,7 @@ function sampleItems(count = 8) {
 test("saved project persists batchDraft on create and update", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-batch-persist-"));
   const store = createProjectStore(dir);
-  const batchDraft = serializeBatchDraft({ source: sampleSource, items: sampleItems(8) });
+  const batchDraft = serializeBatchDraft({ source: sampleSource, items: sampleItems(8), includeUpdatedAt: true });
   const created = await store.create({
     label: "Batch Persist Demo",
     workflowId: "minimax-h3-i2v",
@@ -55,7 +55,8 @@ test("saved project persists batchDraft on create and update", async () => {
   const updated = await store.update(created.id, {
     batchDraft: serializeBatchDraft({
       source: sampleSource,
-      items: [{ ...sampleItems(1)[0], prompt: "edited prompt" }]
+      items: [{ ...sampleItems(1)[0], prompt: "edited prompt" }],
+      includeUpdatedAt: true
     })
   });
   assert.equal(updated.batchDraft.items[0].prompt, "edited prompt");
@@ -71,7 +72,7 @@ test("clearing batchDraft removes it from persisted project JSON", async () => {
     settings: { model: sampleSource.model },
     files: sampleSource.files,
     library: { elements: [], locations: [], objects: [], audio: [] },
-    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(2) })
+    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(2), includeUpdatedAt: true })
   });
   await store.update(created.id, { batchDraft: null });
   const raw = await readFile(store.filePathFor(created.id), "utf8");
@@ -97,7 +98,7 @@ test("projects without batchDraft load normally (backward compatible)", async ()
 test("cross-profile restore reads identical batch from server project file", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-batch-cross-"));
   const store = createProjectStore(dir);
-  const batchDraft = serializeBatchDraft({ source: sampleSource, items: sampleItems(8) });
+  const batchDraft = serializeBatchDraft({ source: sampleSource, items: sampleItems(8), includeUpdatedAt: true });
   const created = await store.create({
     label: "Cross Browser",
     workflowId: "minimax-h3-i2v",
@@ -127,7 +128,7 @@ test("harness restart restore reads identical batch from disk", async () => {
     settings: { model: sampleSource.model },
     files: sampleSource.files,
     library: { elements: [], locations: [], objects: [], audio: [] },
-    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(8) })
+    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(8), includeUpdatedAt: true })
   });
   const storeB = createProjectStore(dir);
   const restored = normalizeProject(await storeB.read(created.id));
@@ -149,7 +150,7 @@ test("persisted project JSON never stores queue execution authority", async () =
     settings: { model: sampleSource.model },
     files: sampleSource.files,
     library: { elements: [], locations: [], objects: [], audio: [] },
-    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(2) })
+    batchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(2), includeUpdatedAt: true })
   });
   const raw = await readFile(store.filePathFor(created.id), "utf8");
   assert.doesNotMatch(raw, /deferredBatch|queuedNext|submitAll|batchActive|"armed"/);
