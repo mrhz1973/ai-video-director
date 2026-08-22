@@ -87,7 +87,10 @@ import {
   reconstructCompletionFromOutputs
 } from "./completion.mjs";
 import {
-  findLegacyMigrationCandidate
+  BATCH_RESTORE_ORIGIN,
+  assertPersistedBatchMatches,
+  findLegacyMigrationCandidate,
+  resolvePostLoadBatchPersistence
 } from "/lib/batch-draft.mjs";
 import {
   LOAD_STATUS,
@@ -214,7 +217,12 @@ async function restoreProjectBatch(normalized) {
     if (result.restored) {
       setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
     }
-    return result;
+    return {
+      restored: Boolean(result.restored),
+      count: result.count || 0,
+      origin: BATCH_RESTORE_ORIGIN.SERVER,
+      needsPersistence: false
+    };
   }
 
   const candidate = findLegacyMigrationCandidate({
@@ -226,11 +234,16 @@ async function restoreProjectBatch(normalized) {
   });
 
   if (candidate && (candidate.mode === "auto" || candidate.mode === "auto-none")) {
-    const result = importBatchDraftFromProject(candidate.draft, { writeLocalCache: true, notify: true });
+    const result = importBatchDraftFromProject(candidate.draft, { writeLocalCache: true, notify: false });
     if (result.restored) {
       setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
     }
-    return result;
+    return {
+      restored: Boolean(result.restored),
+      count: result.count || 0,
+      origin: BATCH_RESTORE_ORIGIN.LEGACY_AUTO,
+      needsPersistence: Boolean(result.restored)
+    };
   }
 
   if (candidate?.mode === "offer") {
@@ -241,11 +254,28 @@ async function restoreProjectBatch(normalized) {
       btn.textContent = formatLegacyBatchOfferLabel({ count: candidate.jobCount });
     }
     clearBatchEditor({ writeLocalCache: false, notify: false });
-    return { restored: false, count: 0 };
+    return {
+      restored: false,
+      count: 0,
+      origin: BATCH_RESTORE_ORIGIN.LEGACY_OFFER,
+      needsPersistence: false
+    };
   }
 
   clearBatchEditor({ writeLocalCache: false, notify: false });
-  return { restored: false, count: 0 };
+  return {
+    restored: false,
+    count: 0,
+    origin: BATCH_RESTORE_ORIGIN.NONE,
+    needsPersistence: false
+  };
+}
+
+function markBaselineFromServerBatch(serverBatchDraft = null) {
+  draft.baseline = projectEditorSnapshot({
+    ...currentEditorState(),
+    batchDraft: serverBatchDraft || null
+  });
 }
 
 function clockLabel(date = new Date()) {
@@ -306,6 +336,7 @@ function ensureAutosaveController() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Autosave fallito");
+      assertPersistedBatchMatches(payload.batchDraft, data.batchDraft);
       draft.label = data.label || draft.label;
       draft.library = normalizeProject(data).library;
       draft.files = { ...(data.files || {}) };
@@ -1543,12 +1574,25 @@ async function loadProjectById(id) {
       missingAssetCount
     });
 
-    markBaselineFromDraft();
+    // Server project.batchDraft is authoritative for the clean baseline.
+    // A legacy/browser-local Batch must remain dirty until PUT confirms it.
+    const persistence = resolvePostLoadBatchPersistence({
+      serverBatchDraft: normalized.batchDraft,
+      origin: batchResult.origin,
+      restored: batchResult.restored
+    });
+    markBaselineFromServerBatch(persistence.baselineBatchDraft);
     clearRecoveryDraft();
-    ensureAutosaveController().reset(SAVE_STATUS.SAVED);
-    setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
     renderLibrary();
     renderRoleFields();
+
+    if (persistence.needsPersistence) {
+      setSaveStatus(SAVE_STATUS.DIRTY);
+      ensureAutosaveController().markDirty();
+    } else {
+      ensureAutosaveController().reset(SAVE_STATUS.SAVED);
+      setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
+    }
 
     let statusText = formatProjectLoadLabel(audit.status, {
       label: normalized.label,
@@ -1558,6 +1602,9 @@ async function loadProjectById(id) {
     if (audit.status === LOAD_STATUS.WARNING) statusText = audit.summary;
     setProjectLoadStatus(audit.status, statusText, { hidden: false });
     add(`Progetto caricato: ${normalized.label}`);
+    if (persistence.needsPersistence && batchResult.count) {
+      add(`Batch locale ripristinato · ${batchResult.count} job — salvataggio sul progetto in corso…`, "system");
+    }
   } catch (error) {
     if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
     const resolved = resolveLoadStatusFromError(error);
@@ -1678,6 +1725,7 @@ async function saveProject({ asNew = false } = {}) {
   }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Salvataggio fallito");
+  assertPersistedBatchMatches(body.batchDraft, data.batchDraft);
   config.projects = await (await fetch("/api/projects")).json();
   draft.id = data.id;
   draft.label = data.label;
@@ -1807,8 +1855,16 @@ $("projectNew").onclick = () => {
   add("Nuovo progetto (non salvato).");
 };
 $("projectSave").onclick = async () => {
-  try { await saveProject({ asNew: false }); }
-  catch (error) { add(error.message); }
+  try {
+    await saveProject({ asNew: false });
+  } catch (error) {
+    // Fail closed: saveProject only advances the baseline after persistence
+    // verification, so here the editor is still dirty and the local Batch
+    // cache/recovery copies remain intact.
+    setSaveStatus(SAVE_STATUS.ERROR);
+    add(`Errore salvataggio: ${error.message}`, "system");
+    persistRecoveryIfNeeded();
+  }
 };
 $("projectDelete").onclick = async () => {
   if (!draft.id || !draft.saved) {
@@ -1855,14 +1911,18 @@ setBatchPersistenceHook(() => {
 });
 $("batchLegacyRecover")?.addEventListener("click", () => {
   if (!pendingLegacyBatchCandidate?.draft || !draft.saved || !draft.id) return;
+  // Baseline stays as the server project (no Batch) so recovery is dirty until PUT.
+  markBaselineFromServerBatch(null);
   const result = importBatchDraftFromProject(pendingLegacyBatchCandidate.draft, {
     writeLocalCache: true,
-    notify: true
+    notify: false
   });
   hideLegacyBatchRecover();
   if (result.restored) {
     setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
     add(`Batch locale recuperato · ${result.count} job`, "system");
+    setSaveStatus(SAVE_STATUS.DIRTY);
+    if (persistenceReady) ensureAutosaveController().markDirty();
   }
 });
 
