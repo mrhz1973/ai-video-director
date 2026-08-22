@@ -281,6 +281,111 @@ test("execution authority never restored and migration has zero autosubmit seman
   assert.equal(legacyDraftKey("martino-capanna-radio-acting-test"), "h3BatchDraft:v1:martino-capanna-radio-acting-test");
 });
 
+/**
+ * Simulates the manual Save flow of app.js saveProject():
+ * PUT -> verify persisted Batch -> only then advance baseline + SAVED.
+ * On any failure the caller (projectSave click handler) sets ERROR.
+ */
+function createManualSaveHarness({ respondWith }) {
+  const ui = { status: "dirty", log: [] };
+  const state = {
+    baseline: projectEditorSnapshot(editorState(null)),
+    localBatchCache: serializeBatchDraft({
+      source: sampleSource,
+      items: sampleItems(2),
+      includeUpdatedAt: true
+    })
+  };
+  const currentSnapshot = () => projectEditorSnapshot(editorState(serializeBatchDraft({
+    source: sampleSource,
+    items: sampleItems(2),
+    includeUpdatedAt: false
+  })));
+
+  async function saveProjectLike() {
+    const body = {
+      label: "Manual Save",
+      batchDraft: serializeBatchDraft({
+        source: sampleSource,
+        items: sampleItems(2),
+        includeUpdatedAt: true
+      })
+    };
+    const data = await respondWith(body);
+    assertPersistedBatchMatches(body.batchDraft, data.batchDraft);
+    // Persistence confirmed: only now advance baseline and show SAVED.
+    state.baseline = currentSnapshot();
+    ui.status = "saved";
+  }
+
+  async function clickSave() {
+    try {
+      await saveProjectLike();
+    } catch (error) {
+      ui.status = "error";
+      ui.log.push(`Errore salvataggio: ${error.message}`);
+    }
+  }
+
+  return { ui, state, currentSnapshot, clickSave };
+}
+
+test("manual Save: HTTP 200 without Batch -> ERROR, baseline kept, still dirty, local Batch retained", async () => {
+  const harness = createManualSaveHarness({
+    respondWith: async () => ({ label: "Manual Save", batchDraft: null })
+  });
+  const baselineBefore = harness.state.baseline;
+
+  await harness.clickSave();
+
+  assert.equal(harness.ui.status, "error");
+  assert.match(harness.ui.log[0] || "", /Errore salvataggio/);
+  assert.equal(harness.state.baseline, baselineBefore);
+  assert.equal(isProjectDirty(harness.state.baseline, harness.currentSnapshot()), true);
+  assert.equal(harness.state.localBatchCache.items.length, 2);
+  assert.notEqual(harness.ui.status, "saved");
+});
+
+test("manual Save: response with equivalent 2-job Batch -> SAVED, baseline advanced, dirty false", async () => {
+  const harness = createManualSaveHarness({
+    respondWith: async body => ({
+      label: "Manual Save",
+      batchDraft: serializeBatchDraft({
+        source: body.batchDraft.source,
+        items: body.batchDraft.items,
+        updatedAt: "2026-08-22T20:00:00.000Z",
+        includeUpdatedAt: true
+      })
+    })
+  });
+
+  await harness.clickSave();
+
+  assert.equal(harness.ui.status, "saved");
+  assert.equal(harness.ui.log.length, 0);
+  assert.equal(isProjectDirty(harness.state.baseline, harness.currentSnapshot()), false);
+});
+
+test("manual Save wiring: verification precedes baseline advance and click handler fails closed", () => {
+  const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+
+  const saveFn = app.slice(app.indexOf("async function saveProject"), app.indexOf("async function ingestFiles"));
+  const verifyIdx = saveFn.indexOf("assertPersistedBatchMatches");
+  const baselineIdx = saveFn.indexOf("markBaselineFromDraft");
+  const savedIdx = saveFn.indexOf("SAVE_STATUS.SAVED");
+  assert.ok(verifyIdx >= 0, "saveProject must verify persisted Batch");
+  assert.ok(baselineIdx > verifyIdx, "baseline must advance only after verification");
+  assert.ok(savedIdx > verifyIdx, "SAVED must be shown only after verification");
+
+  const handlerStart = app.indexOf('$("projectSave").onclick');
+  assert.ok(handlerStart >= 0);
+  const handler = app.slice(handlerStart, handlerStart + 600);
+  assert.match(handler, /setSaveStatus\(SAVE_STATUS\.ERROR\)/);
+  assert.match(handler, /Errore salvataggio/);
+  assert.match(handler, /persistRecoveryIfNeeded\(\)/);
+  assert.doesNotMatch(handler, /markBaselineFromDraft|SAVE_STATUS\.SAVED/);
+});
+
 test("app.js wires server-authoritative baseline and persist verification", () => {
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.match(app, /assertPersistedBatchMatches/);

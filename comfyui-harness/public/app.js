@@ -1855,8 +1855,16 @@ $("projectNew").onclick = () => {
   add("Nuovo progetto (non salvato).");
 };
 $("projectSave").onclick = async () => {
-  try { await saveProject({ asNew: false }); }
-  catch (error) { add(error.message); }
+  try {
+    await saveProject({ asNew: false });
+  } catch (error) {
+    // Fail closed: saveProject only advances the baseline after persistence
+    // verification, so here the editor is still dirty and the local Batch
+    // cache/recovery copies remain intact.
+    setSaveStatus(SAVE_STATUS.ERROR);
+    add(`Errore salvataggio: ${error.message}`, "system");
+    persistRecoveryIfNeeded();
+  }
 };
 $("projectDelete").onclick = async () => {
   if (!draft.id || !draft.saved) {
