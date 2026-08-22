@@ -1,0 +1,31 @@
+.project-load-status,
+.batch-restore-status {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.project-load-status[data-state="loading"] {
+  color: #8fb4ff;
+}
+
+.project-load-status[data-state="success"] {
+  color: #7fd6a8;
+}
+
+.project-load-status[data-state="warning"] {
+  color: #e8c06a;
+}
+
+.project-load-status[data-state="error"] {
+  color: #f08a8a;
+}
+
+.batch-restore-status {
+  color: #7fd6a8;
+}
+
+#batchLegacyRecover {
+  margin-top: 0.35rem;
+  width: 100%;
+}

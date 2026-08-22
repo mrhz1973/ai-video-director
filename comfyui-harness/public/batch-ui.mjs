@@ -13,6 +13,7 @@ import {
   summarizeBatchJobs,
   validateBatchDraft
 } from "./batch-core.mjs";
+import { normalizeBatchDraft, serializeBatchDraft } from "../lib/batch-draft.mjs";
 import { normalizeDurationSeconds } from "../lib/duration.mjs";
 import { archivePrompt } from "./prompt-history.mjs";
 import { batchJobOutputRows } from "./completion.mjs";
@@ -33,6 +34,8 @@ let submitting = false;
 let submitted = false;
 let runtime = null;
 let pollTimer = null;
+let persistenceHook = null;
+let suppressLocalLoad = false;
 
 function projectKey() {
   return $("project")?.value || "none";
@@ -46,18 +49,104 @@ function safeParse(text, fallback = null) {
   try { return JSON.parse(text); } catch { return fallback; }
 }
 
-function persistDraft() {
-  try {
-    localStorage.setItem(draftKey(), JSON.stringify({ version: 1, source, items }));
-  } catch { /* browser-local best effort */ }
+function draftPayload() {
+  if (!items.length || !source) return null;
+  return {
+    version: 1,
+    source,
+    items: items.map(item => ({
+      ...item,
+      duration: String(normalizeDurationSeconds(item.duration))
+    }))
+  };
 }
 
-function loadDraft() {
+function persistDraft({ notify = true } = {}) {
+  const payload = draftPayload();
+  try {
+    if (payload) localStorage.setItem(draftKey(), JSON.stringify(payload));
+    else localStorage.removeItem(draftKey());
+  } catch { /* browser-local cache only */ }
+  if (notify && persistenceHook) persistenceHook();
+}
+
+function loadDraftFromLocalStorage() {
+  if (suppressLocalLoad) return { restored: false, count: 0, source: "local" };
   const saved = safeParse(localStorage.getItem(draftKey()) || "null");
-  items = Array.isArray(saved?.items) ? saved.items.slice(0, MAX_BATCH_JOBS) : [];
-  source = saved?.source && typeof saved.source === "object" ? saved.source : null;
+  const normalized = normalizeBatchDraft(saved);
+  if (!normalized) {
+    items = [];
+    source = null;
+    submitted = false;
+    renderBatch();
+    return { restored: false, count: 0, source: "local" };
+  }
+  items = normalized.items.map(item => ({ ...item }));
+  source = normalized.source;
   submitted = false;
   renderBatch();
+  return { restored: true, count: items.length, source: "local" };
+}
+
+export function setBatchPersistenceHook(fn) {
+  persistenceHook = typeof fn === "function" ? fn : null;
+}
+
+export function setBatchLocalLoadSuppressed(value) {
+  suppressLocalLoad = Boolean(value);
+}
+
+export function exportBatchDraftForProject() {
+  if (!items.length || !source) return null;
+  return serializeBatchDraft({
+    source,
+    items: items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) })),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+export function importBatchDraftFromProject(draft, { writeLocalCache = true, notify = false } = {}) {
+  const normalized = normalizeBatchDraft(draft);
+  if (!normalized) {
+    items = [];
+    source = null;
+    submitted = false;
+    renderBatch();
+    if (writeLocalCache) persistDraft({ notify });
+    return { restored: false, count: 0 };
+  }
+  items = normalized.items.map(item => ({ ...item }));
+  source = normalized.source;
+  submitted = false;
+  renderBatch();
+  if (writeLocalCache) persistDraft({ notify });
+  return { restored: true, count: items.length };
+}
+
+export function clearBatchEditor({ writeLocalCache = true, notify = true } = {}) {
+  items = [];
+  source = null;
+  submitted = false;
+  renderBatch();
+  if (writeLocalCache) persistDraft({ notify });
+  return { cleared: true };
+}
+
+export function getBatchEditorSummary() {
+  return {
+    count: items.length,
+    hasDraft: Boolean(items.length && source),
+    submitted
+  };
+}
+
+export function bindBatchProjectKey(projectId = "") {
+  // Keep localStorage cache aligned when project id changes after first save.
+  const payload = draftPayload();
+  if (!payload) return;
+  try {
+    localStorage.setItem(`${DRAFT_PREFIX}${projectId || "none"}`, JSON.stringify(payload));
+  } catch { /* ignore */ }
 }
 
 function persistRuntime() {
@@ -140,7 +229,7 @@ function sourceIdentity(value = source) {
 
 function markEdited() {
   submitted = false;
-  persistDraft();
+  persistDraft({ notify: true });
   updateQueueButton();
 }
 
@@ -614,14 +703,23 @@ async function init() {
     return;
   }
 
-  loadDraft();
+  loadDraftFromLocalStorage();
   loadRuntime();
   window.addEventListener("h3-queue-sample", () => updateQueueButton());
   window.addEventListener("h3-deferred-batch-cancel", () => {
     setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
     updateQueueButton();
   });
-  $("project")?.addEventListener("change", () => setTimeout(loadDraft, 0));
+  window.addEventListener("h3-project-batch-restore", event => {
+    const draft = event?.detail?.batchDraft || null;
+    const result = importBatchDraftFromProject(draft, {
+      writeLocalCache: true,
+      notify: Boolean(event?.detail?.notifyPersistence)
+    });
+    if (result.restored) {
+      setFeedback(`Batch ripristinato · ${result.count} job`, "ok");
+    }
+  });
   $("workflow")?.addEventListener("change", () => {
     if (items.length) setFeedback("Workflow cambiato. Premi “Prepara dal draft” per aggiornare il batch prima dell'invio.", "warn");
   });

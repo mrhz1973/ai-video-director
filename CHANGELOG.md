@@ -2,6 +2,15 @@
 
 # 2026-08-22
 
+- Implemented harness **v0.8.3** project load feedback and durable project-bound Batch drafts (Issues #33–#34).
+- Added explicit Progetto inspector status: `⟳ Caricamento…`, `✓ Progetto caricato`, `⚠ Progetto caricato con avvisi`, `✕ Errore caricamento` with stale async load protection.
+- Prepared Batch drafts for saved projects now persist in the project JSON (`batchDraft`) via normal Salva/autosave; browser `h3BatchDraft:v1:*` remains cache/recovery only.
+- Loading a saved project restores Batch jobs across harness restarts and different browser profiles without autosubmitting queued-next, deferred Batch, or `/api/queue`.
+- Legacy v0.8.2 localStorage batches migrate when identity is unambiguous; ambiguous candidates show `Batch locale trovato · N job · Recupera` instead of silent overwrite.
+- Execution authority (queued-next, deferred Batch, submit locks) is never serialized into project files.
+
+## 2026-08-22 — v0.8.2
+
 - Implemented harness **v0.8.2** live-use follow-ups as one coordinated release (Issues #27–#31).
 - Added an explicit queued-next single job (`Metti in coda`, max one pending snapshot) and a deferred Batch handoff (`Metti batch in attesa`) so a prepared job/batch can wait while ComfyUI shows `1 running · 0 pending`, then submit exactly once when the queue becomes empty.
 - Armed execution intent is in-memory only: reload/recovery restore the editable draft but never autosubmit queued-next or deferred Batch Job 1.

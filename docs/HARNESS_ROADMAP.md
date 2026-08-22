@@ -256,7 +256,7 @@ A change is not considered fully integrated if the implementation exists only on
 
 ## Near-term order
 
-v0.8.2 shipped queued-next + deferred Batch handoff, prompt clear/history, integer duration, completion/output access, unified Save, asset group headers, and bottom prompt resizing (Issues #27–#31). Those items are no longer future work.
+v0.8.3 shipped durable project-bound Batch drafts and explicit project load feedback (Issues #33–#34). v0.8.2 shipped queued-next + deferred Batch handoff, prompt clear/history, integer duration, completion/output access, unified Save, asset group headers, and bottom prompt resizing (Issues #27–#31). Those items are no longer future work.
 
 Recommended order after the current video experiment:
 
