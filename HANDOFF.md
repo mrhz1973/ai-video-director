@@ -75,7 +75,7 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.8.6 (draft branch `agent/legacy-batch-persistence-v086`; live 8787 remains 0.8.4 until activation)
+Known package version: 0.8.7 (feature branch `agent/windows-one-click-launcher-v087`; live 8787 remains 0.8.6 until activation)
 
 ## Verified architecture
 

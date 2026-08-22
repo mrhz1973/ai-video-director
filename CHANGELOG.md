@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-23 — v0.8.7
+
+- Windows one-click launcher (Issue #42): added health-gated, idempotent startup for ComfyUI (`8188`) and AI Video Director (`8787`) under `comfyui-harness/scripts/windows/`.
+- Launcher reuses healthy services, starts missing ones exactly once, and fails closed when a port is occupied by an unexpected process (no broad `node.exe`/`python.exe` kills).
+- Local machine config lives in `%LOCALAPPDATA%\AI Video Director\launcher.json` (not committed). Installer creates a Desktop **AI Video Director** shortcut via `WScript.Shell`.
+- Browser opens `http://127.0.0.1:8787/` only after Director `/api/config` health succeeds. Status command is read-only. No generation, queue submission, or project mutation.
+
 ## 2026-08-22 — v0.8.6
 
 - Persistence fix (Issue #40): a legacy/browser-local Batch restored into a saved project is no longer marked `Salvato` until the server confirms the same Batch in `project.batchDraft`.

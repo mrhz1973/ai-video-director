@@ -9,12 +9,24 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.6, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.7, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
+
+### Windows one-click launcher (v0.8.7, Issue #42)
+
+Tracked scripts live in `comfyui-harness/scripts/windows/`:
+
+- `Start-AIVideoDirector.ps1` — health-gated startup for ComfyUI + Director
+- `Get-AIVideoDirectorStatus.ps1` — read-only status
+- `Install-AIVideoDirectorLauncher.ps1` — writes local config + Desktop shortcut (manual post-merge step)
+
+Local machine config (not committed): `%LOCALAPPDATA%\AI Video Director\launcher.json` with `comfyRoot`, timeouts and `openBrowser`.
+
+Startup probes ComfyUI `GET /system_stats` and Director `GET /api/config`, reuses healthy services, starts missing ones exactly once, and **fails closed** if a port is occupied by an unexpected process. The launcher never POSTs `/api/queue`, ComfyUI `/prompt`, or project writes. Browser opens only after Director health succeeds.
 
 The harness already supports prompt input, full local project CRUD, a categorized multi-asset library (Elements / Locations / Objects / Audio), explicit workflow role assignment, workflow selection, direct megapixels with a read-only resolution hint, model, steps, duration, aspect ratio, seed, dynamic attachments, a graphical ComfyUI progress monitor, expandable event/terminal panels, active-job recovery, output links, a workstation GPU Power panel, a browser-local Batch generation editor (Issue #14 / v0.8.0), and the v0.8.1 left-canvas / right-inspector desktop layout.
 
