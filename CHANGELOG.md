@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-22 — v0.8.4
+
+- Hotfix (Issue #36): restored the DOM helper `const $ = id => document.getElementById(id);` in `comfyui-harness/public/app.js`, accidentally removed during the v0.8.3 import changes.
+- The missing helper aborted frontend bootstrap with a ReferenceError: version not rendered, projects dropdown stuck on `Nessun progetto`, empty workflow/model selectors and a permanent `Connessione…` badge while server APIs stayed healthy.
+- Added a frontend bootstrap regression test that fails if any browser entry module uses `$()` without defining the helper, or defines it after first use.
+- No generation, GPU, workflow, project-data or Batch behavior changes.
+
 # 2026-08-22
 
 - Implemented harness **v0.8.3** project load feedback and durable project-bound Batch drafts (Issues #33–#34).

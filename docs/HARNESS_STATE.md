@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.3, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.4, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -84,6 +84,10 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - Loading a saved project shows explicit Progetto status (`Caricamento…` / success / warning / error) and restores prepared Batch jobs without autosubmitting execution intent.
 - Legacy v0.8.2 localStorage batches migrate only when project identity is unambiguous; otherwise the UI offers a non-destructive **Recupera** action.
 - Reload and harness restart never restore queued-next, deferred Batch, or active submit authority from disk.
+
+### Frontend bootstrap hotfix (v0.8.4)
+
+- v0.8.3 accidentally removed the DOM helper `$` from `public/app.js`, aborting frontend initialization (empty selectors, stuck `Connessione…`) while server APIs stayed healthy. v0.8.4 restores the helper and adds a bootstrap regression test that fails whenever a browser entry module uses `$()` without defining it first.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 
