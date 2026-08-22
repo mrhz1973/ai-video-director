@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   BATCH_DRAFT_VERSION,
+  BATCH_RESTORE_ORIGIN,
   assertNoExecutionAuthority,
+  assertPersistedBatchMatches,
   batchesEqual,
   findLegacyMigrationCandidate,
   legacyDraftKey,
   normalizeBatchDraft,
+  resolvePostLoadBatchPersistence,
   scoreLegacyDraftCandidate,
   serializeBatchDraft
 } from "../lib/batch-draft.mjs";
@@ -120,4 +123,27 @@ test("serializeBatchDraft omits updatedAt unless includeUpdatedAt is true", () =
   });
   assert.equal("updatedAt" in semantic, false);
   assert.equal(persisted.updatedAt, "2026-08-22T09:00:00.000Z");
+});
+
+test("resolvePostLoadBatchPersistence marks legacy auto dirty until server Batch exists", () => {
+  const legacy = resolvePostLoadBatchPersistence({
+    serverBatchDraft: null,
+    origin: BATCH_RESTORE_ORIGIN.LEGACY_AUTO,
+    restored: true
+  });
+  assert.equal(legacy.needsPersistence, true);
+  assert.equal(legacy.initialSaveStatus, "dirty");
+  const server = resolvePostLoadBatchPersistence({
+    serverBatchDraft: serializeBatchDraft({ source: sampleSource, items: sampleItems(2) }),
+    origin: BATCH_RESTORE_ORIGIN.SERVER,
+    restored: true
+  });
+  assert.equal(server.needsPersistence, false);
+  assert.equal(server.initialSaveStatus, "saved");
+});
+
+test("assertPersistedBatchMatches rejects omitted Batch in response", () => {
+  const requested = serializeBatchDraft({ source: sampleSource, items: sampleItems(2), includeUpdatedAt: true });
+  assert.throws(() => assertPersistedBatchMatches(requested, null), /Batch non persistito/);
+  assert.equal(assertPersistedBatchMatches(null, null), true);
 });

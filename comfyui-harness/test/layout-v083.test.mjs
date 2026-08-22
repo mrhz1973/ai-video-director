@@ -41,7 +41,7 @@ test("v083 stylesheet styles load states", () => {
   assert.match(css, /data-state="error"/);
 });
 
-test("package version is 0.8.5", () => {
+test("package version is 0.8.6", () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.8.5");
+  assert.equal(pkg.version, "0.8.6");
 });
