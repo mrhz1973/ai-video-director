@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-22 — v0.8.6
+
+- Persistence fix (Issue #40): a legacy/browser-local Batch restored into a saved project is no longer marked `Salvato` until the server confirms the same Batch in `project.batchDraft`.
+- Load baseline uses the server project's Batch (or null). Unambiguous legacy auto-migration imports locally, stays dirty, and autosaves exactly once; only a verified PUT response advances the baseline.
+- Manual Save and autosave reject HTTP responses that omit or mismatch a requested Batch (`Errore salvataggio`); browser-local recovery is retained until confirmation.
+- Execution authority remains non-persistent; no autosubmit after migration.
+
 ## 2026-08-22 — v0.8.5
 
 - UI-only (Issue #38): moved **Cancella prompt** and **Cronologia** from the two full-width rows above the prompt editor to the bottom prompt action row, immediately left of **Genera** (`[ Cancella prompt ] [ Cronologia ] [ Genera ]`).

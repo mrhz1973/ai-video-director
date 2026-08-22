@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.5, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.6, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -92,6 +92,11 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 ### Prompt action row layout (v0.8.5)
 
 - **Cancella prompt** and **Cronologia** now sit on the same bottom row as **Genera**, right-aligned in order clear → history → generate. The old full-width `prompt-toolbar` above the textarea is removed; button IDs and handlers are unchanged.
+
+### Legacy Batch persistence before Salvato (v0.8.6)
+
+- Server `project.batchDraft` is authoritative. A Batch restored from browser-local legacy storage into a saved project stays dirty and autosaves once; `Salvato` requires a verified server response containing the same semantic Batch.
+- Manual Save/autosave fail closed if the request includes a Batch but the response omits or mismatches it. Local `h3BatchDraft:v1:*` recovery is kept until confirmation.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

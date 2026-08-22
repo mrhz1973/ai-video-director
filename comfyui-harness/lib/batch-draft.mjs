@@ -265,3 +265,50 @@ export function batchesEqual(a = null, b = null) {
   return JSON.stringify(left.items) === JSON.stringify(right.items)
     && batchDraftIdentity(left) === batchDraftIdentity(right);
 }
+
+/** Provenance of a Batch restored into the editor during project load. */
+export const BATCH_RESTORE_ORIGIN = Object.freeze({
+  SERVER: "server",
+  LEGACY_AUTO: "legacy-auto",
+  LEGACY_MANUAL: "legacy-manual",
+  LEGACY_OFFER: "legacy-offer",
+  NONE: "none"
+});
+
+/**
+ * Decide post-load baseline/dirty authority.
+ * Server project.batchDraft is authoritative; legacy browser Batch is dirty until confirmed.
+ */
+export function resolvePostLoadBatchPersistence({
+  serverBatchDraft = null,
+  origin = BATCH_RESTORE_ORIGIN.NONE,
+  restored = false
+} = {}) {
+  const needsPersistence = Boolean(
+    restored
+    && (origin === BATCH_RESTORE_ORIGIN.LEGACY_AUTO || origin === BATCH_RESTORE_ORIGIN.LEGACY_MANUAL)
+  );
+  return {
+    baselineBatchDraft: normalizeBatchDraft(serverBatchDraft),
+    needsPersistence,
+    initialSaveStatus: needsPersistence ? "dirty" : "saved"
+  };
+}
+
+/**
+ * When the client payload includes a Batch, the server response must contain
+ * a semantically equivalent Batch before the UI may show Salvato.
+ * Volatile metadata such as updatedAt is ignored via batchesEqual/normalize.
+ */
+export function assertPersistedBatchMatches(requestedBatch = null, returnedBatch = null) {
+  const requested = normalizeBatchDraft(requestedBatch);
+  if (!requested) return true;
+  const returned = normalizeBatchDraft(returnedBatch);
+  if (!returned) {
+    throw new Error("Batch non persistito sul server");
+  }
+  if (!batchesEqual(requested, returned)) {
+    throw new Error("Batch salvato non corrisponde al draft inviato");
+  }
+  return true;
+}
