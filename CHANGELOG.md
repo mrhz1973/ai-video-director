@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-22 — v0.8.5
+
+- UI-only (Issue #38): moved **Cancella prompt** and **Cronologia** from the two full-width rows above the prompt editor to the bottom prompt action row, immediately left of **Genera** (`[ Cancella prompt ] [ Cronologia ] [ Genera ]`).
+- Removed the legacy `prompt-toolbar` rows so the prompt editor recovers vertical space; existing button IDs and JS handlers unchanged.
+- Added layout regression tests for single-instance controls, shared action container, DOM order, and responsive right-aligned wrapping.
+
 ## 2026-08-22 — v0.8.4
 
 - Hotfix (Issue #36): restored the DOM helper `const $ = id => document.getElementById(id);` in `comfyui-harness/public/app.js`, accidentally removed during the v0.8.3 import changes.

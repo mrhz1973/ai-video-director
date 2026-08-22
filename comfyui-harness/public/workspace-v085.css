@@ -1,0 +1,49 @@
+/* v0.8.5: prompt clear/history actions beside Generate */
+
+.composer .attachments {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.composer .composer-meta {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.prompt-actions button {
+  margin-left: 0;
+}
+
+.prompt-actions button.secondary {
+  width: auto;
+  white-space: nowrap;
+}
+
+.prompt-actions #send {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 800px) {
+  .composer .attachments {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prompt-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
