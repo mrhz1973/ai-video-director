@@ -90,12 +90,16 @@ export function createProjectStore(projectDirectory) {
   async function update(id, input) {
     assertValidProjectId(id);
     const current = await read(id);
-    const persisted = toPersistedProject({
+    const merged = {
       ...current,
       ...input,
       id,
       label: input.label ?? current.label
-    });
+    };
+    if (Object.prototype.hasOwnProperty.call(input, "batchDraft") && input.batchDraft == null) {
+      merged.batchDraft = null;
+    }
+    const persisted = toPersistedProject(merged);
     await atomicWrite(filePathFor(id), `${JSON.stringify(persisted, null, 2)}\n`);
     return publicProjectView(persisted);
   }

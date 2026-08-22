@@ -86,8 +86,27 @@ import {
   readLatestOutput,
   reconstructCompletionFromOutputs
 } from "./completion.mjs";
-
-const $ = id => document.getElementById(id);
+import {
+  findLegacyMigrationCandidate
+} from "/lib/batch-draft.mjs";
+import {
+  LOAD_STATUS,
+  auditProjectRestore,
+  formatBatchRestoreLabel,
+  formatLegacyBatchOfferLabel,
+  formatProjectLoadLabel,
+  resolveLoadStatusFromError,
+  shouldCommitLoadGeneration
+} from "/lib/project-load.mjs";
+import {
+  bindBatchProjectKey,
+  clearBatchEditor,
+  exportBatchDraftForProject,
+  exportBatchDraftForPersistence,
+  importBatchDraftFromProject,
+  setBatchLocalLoadSuppressed,
+  setBatchPersistenceHook
+} from "./batch-ui.mjs";
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
 let config, events;
 let currentPrompt = sessionStorage.getItem("h3CurrentPrompt") || undefined;
@@ -133,6 +152,8 @@ let saveUiState = SAVE_STATUS.LOCAL_DRAFT;
 let autosaveController = null;
 let applyingRecovery = false;
 let persistenceReady = false;
+let projectLoadGeneration = 0;
+let pendingLegacyBatchCandidate = null;
 
 const add = (text, kind = "system") => {
   const el = document.createElement("div");
@@ -141,6 +162,90 @@ const add = (text, kind = "system") => {
   $("log").append(el);
   el.scrollIntoView();
 };
+
+function setProjectLoadStatus(state, text, { hidden = false } = {}) {
+  const node = $("projectLoadStatus");
+  if (!node) return;
+  node.dataset.state = state;
+  node.textContent = text;
+  node.hidden = hidden;
+}
+
+function setBatchRestoreStatus(text, { hidden = true } = {}) {
+  const node = $("batchRestoreStatus");
+  if (!node) return;
+  node.textContent = text;
+  node.hidden = hidden;
+}
+
+function hideLegacyBatchRecover() {
+  pendingLegacyBatchCandidate = null;
+  const btn = $("batchLegacyRecover");
+  if (btn) btn.hidden = true;
+}
+
+function editorSnapshotWithBatch() {
+  return projectEditorSnapshot({
+    ...currentEditorState(),
+    batchDraft: exportBatchDraftForProject()
+  });
+}
+
+function collectLegacyBatchEntries() {
+  const entries = [];
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith("h3BatchDraft:v1:")) {
+        entries.push({ key, raw: localStorage.getItem(key) });
+      }
+    }
+  } catch { /* ignore */ }
+  return entries;
+}
+
+async function restoreProjectBatch(normalized) {
+  hideLegacyBatchRecover();
+  setBatchRestoreStatus("", { hidden: true });
+
+  if (normalized.batchDraft) {
+    const result = importBatchDraftFromProject(normalized.batchDraft, { writeLocalCache: true, notify: false });
+    if (result.restored) {
+      setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
+    }
+    return result;
+  }
+
+  const candidate = findLegacyMigrationCandidate({
+    projectId: normalized.id,
+    projectWorkflowId: normalized.workflowId,
+    projectModel: normalized.settings?.model,
+    projectFiles: normalized.files,
+    storageEntries: collectLegacyBatchEntries()
+  });
+
+  if (candidate && (candidate.mode === "auto" || candidate.mode === "auto-none")) {
+    const result = importBatchDraftFromProject(candidate.draft, { writeLocalCache: true, notify: true });
+    if (result.restored) {
+      setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
+    }
+    return result;
+  }
+
+  if (candidate?.mode === "offer") {
+    pendingLegacyBatchCandidate = candidate;
+    const btn = $("batchLegacyRecover");
+    if (btn) {
+      btn.hidden = false;
+      btn.textContent = formatLegacyBatchOfferLabel({ count: candidate.jobCount });
+    }
+    clearBatchEditor({ writeLocalCache: false, notify: false });
+    return { restored: false, count: 0 };
+  }
+
+  clearBatchEditor({ writeLocalCache: false, notify: false });
+  return { restored: false, count: 0 };
+}
 
 function clockLabel(date = new Date()) {
   return date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
@@ -223,7 +328,7 @@ function ensureAutosaveController() {
 }
 
 function noteEditorChange() {
-  const dirty = isProjectDirty(draft.baseline, projectEditorSnapshot(currentEditorState()));
+  const dirty = isProjectDirty(draft.baseline, editorSnapshotWithBatch());
   const legacy = $("projectDirty");
   if (legacy) legacy.hidden = true;
 
@@ -937,7 +1042,7 @@ function currentEditorState() {
 }
 
 function markBaselineFromDraft() {
-  draft.baseline = projectEditorSnapshot(currentEditorState());
+  draft.baseline = editorSnapshotWithBatch();
   updateDirtyFlag();
 }
 
@@ -1361,35 +1466,105 @@ function selectPreset({
 }
 
 async function loadProjectById(id) {
+  const myGeneration = ++projectLoadGeneration;
+  hideLegacyBatchRecover();
+  setBatchRestoreStatus("", { hidden: true });
+
   if (!id) {
+    setProjectLoadStatus(LOAD_STATUS.IDLE, "", { hidden: true });
+    clearBatchEditor({ writeLocalCache: true, notify: false });
     return resetDraft({ keepForm: true });
   }
-  const project = config.projects.find(item => item.id === id) || await (await fetch(`/api/projects/${encodeURIComponent(id)}`)).json();
-  const normalized = normalizeProject(project);
-  draft.id = normalized.id;
-  draft.label = normalized.label;
-  draft.saved = true;
-  draft.library = normalized.library;
-  draft.files = { ...(normalized.files || {}) };
-  $("projectLabel").value = normalized.label;
-  $("workflow").value = normalized.workflowId;
-  $("prompt").value = normalized.prompt || "";
-  const savedModel = normalized.settings?.model;
-  for (const [key, value] of Object.entries(normalized.settings || {})) {
-    if (key === "model") continue;
-    if ($(key)) $(key).value = key === "duration" ? String(normalizeDurationSeconds(value)) : value;
+
+  const selectedLabel = $("project")?.selectedOptions?.[0]?.textContent?.trim()
+    || $("projectLabel")?.value?.trim()
+    || id;
+  setProjectLoadStatus(
+    LOAD_STATUS.LOADING,
+    formatProjectLoadLabel(LOAD_STATUS.LOADING, { label: selectedLabel }),
+    { hidden: false }
+  );
+
+  setBatchLocalLoadSuppressed(true);
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(id)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Progetto non trovato");
+    const project = data;
+
+    if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
+
+    const normalized = normalizeProject(project);
+    draft.id = normalized.id;
+    draft.label = normalized.label;
+    draft.saved = true;
+    draft.library = normalized.library;
+    draft.files = { ...(normalized.files || {}) };
+    $("projectLabel").value = normalized.label;
+    $("workflow").value = normalized.workflowId;
+    $("prompt").value = normalized.prompt || "";
+    const savedModel = normalized.settings?.model;
+    for (const [key, value] of Object.entries(normalized.settings || {})) {
+      if (key === "model") continue;
+      if ($(key)) $(key).value = key === "duration" ? String(normalizeDurationSeconds(value)) : value;
+    }
+    const restoredMp = megapixelsFromSettings(normalized.settings || {});
+    if (restoredMp !== undefined) $("megapixels").value = restoredMp;
+
+    selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false });
+    await refreshAvailability();
+
+    if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
+
+    const preset = currentPreset();
+    const modelResult = restoreModelSelection({
+      availableModels: preset?.options?.models || [],
+      savedModel: normalized.settings?.model,
+      presetDefault: preset?.options?.models?.[0]
+    });
+    if (modelResult.warning) add(modelResult.warning, "system");
+
+    const batchResult = await restoreProjectBatch(normalized);
+    const missingAssetCount = Object.entries(normalized.files || {}).filter(([, filename]) => {
+      if (!filename) return false;
+      const member = findMemberByFilename(normalized.library, filename);
+      const status = lookupAvailability(draft.availability, {
+        filename,
+        subfolder: member?.member?.subfolder || ""
+      });
+      return status === "missing" || status === "error";
+    }).length;
+    const audit = auditProjectRestore({
+      project: normalized,
+      availableModels: preset?.options?.models || [],
+      presetExists: Boolean(preset),
+      batchDraft: normalized.batchDraft || (batchResult.restored ? exportBatchDraftForProject() : null),
+      missingAssetCount
+    });
+
+    markBaselineFromDraft();
+    clearRecoveryDraft();
+    ensureAutosaveController().reset(SAVE_STATUS.SAVED);
+    setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
+    renderLibrary();
+    renderRoleFields();
+
+    let statusText = formatProjectLoadLabel(audit.status, {
+      label: normalized.label,
+      batchCount: batchResult.count || audit.batchCount,
+      batchRestored: batchResult.restored
+    });
+    if (audit.status === LOAD_STATUS.WARNING) statusText = audit.summary;
+    setProjectLoadStatus(audit.status, statusText, { hidden: false });
+    add(`Progetto caricato: ${normalized.label}`);
+  } catch (error) {
+    if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
+    const resolved = resolveLoadStatusFromError(error);
+    setProjectLoadStatus(resolved.status, resolved.summary, { hidden: false });
+    add(resolved.detail, "system");
+  } finally {
+    setBatchLocalLoadSuppressed(false);
   }
-  const restored = megapixelsFromSettings(normalized.settings || {});
-  if (restored !== undefined) $("megapixels").value = restored;
-  selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false });
-  await refreshAvailability();
-  markBaselineFromDraft();
-  clearRecoveryDraft();
-  ensureAutosaveController().reset(SAVE_STATUS.SAVED);
-  setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
-  renderLibrary();
-  renderRoleFields();
-  add(`Progetto caricato: ${normalized.label}`);
 }
 
 function resetDraft({ keepForm = false, clearRecovery = true } = {}) {
@@ -1404,6 +1579,10 @@ function resetDraft({ keepForm = false, clearRecovery = true } = {}) {
   };
   $("project").value = "";
   $("projectLabel").value = "";
+  hideLegacyBatchRecover();
+  setProjectLoadStatus(LOAD_STATUS.IDLE, "", { hidden: true });
+  setBatchRestoreStatus("", { hidden: true });
+  clearBatchEditor({ writeLocalCache: true, notify: false });
   if (!keepForm) {
     $("prompt").value = "";
   }
@@ -1461,7 +1640,8 @@ function payloadFromEditor() {
     prompt: state.prompt,
     settings: state.settings,
     library: state.library,
-    files: state.files
+    files: state.files,
+    batchDraft: exportBatchDraftForPersistence()
   };
 }
 
@@ -1505,6 +1685,7 @@ async function saveProject({ asNew = false } = {}) {
   draft.files = { ...(data.files || {}) };
   refreshProjectSelect(data.id);
   $("projectLabel").value = data.label;
+  bindBatchProjectKey(data.id);
   markBaselineFromDraft();
   clearRecoveryDraft();
   ensureAutosaveController().reset(SAVE_STATUS.SAVED);
@@ -1668,6 +1849,21 @@ if (recovery && !$("project").value) {
   setSaveStatus(draft.saved ? SAVE_STATUS.SAVED : SAVE_STATUS.LOCAL_DRAFT);
 }
 persistenceReady = true;
+setBatchPersistenceHook(() => {
+  if (draft.saved && draft.id) noteEditorChange();
+});
+$("batchLegacyRecover")?.addEventListener("click", () => {
+  if (!pendingLegacyBatchCandidate?.draft || !draft.saved || !draft.id) return;
+  const result = importBatchDraftFromProject(pendingLegacyBatchCandidate.draft, {
+    writeLocalCache: true,
+    notify: true
+  });
+  hideLegacyBatchRecover();
+  if (result.restored) {
+    setBatchRestoreStatus(formatBatchRestoreLabel({ count: result.count, restored: true }), { hidden: false });
+    add(`Batch locale recuperato · ${result.count} job`, "system");
+  }
+});
 
 await recoverActive();
 if (!latestCompletion && currentPrompt) {

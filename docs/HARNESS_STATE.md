@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.3, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -77,6 +77,13 @@ When ComfyUI has exactly one active render (`1 running · 0 pending`):
 - Reload/browser recovery never autosubmits an armed intent. The user must arm again.
 
 Duration controls and labels use integer seconds only (`5s`). Prompt clear/history uses `h3PromptHistory:v1` (cap 30). Completed renders show a monitor completion card with **Apri video**. Asset group cards show **GRUPPO ASSET** / Nome gruppo above members.
+
+### Project load feedback and durable Batch drafts (v0.8.3)
+
+- Saved projects may include an optional `batchDraft` object persisted through normal Salva/autosave (700 ms debounce, single-flight). Browser `h3BatchDraft:v1:*` keys remain cache/recovery only for saved projects.
+- Loading a saved project shows explicit Progetto status (`Caricamento…` / success / warning / error) and restores prepared Batch jobs without autosubmitting execution intent.
+- Legacy v0.8.2 localStorage batches migrate only when project identity is unambiguous; otherwise the UI offers a non-destructive **Recupera** action.
+- Reload and harness restart never restore queued-next, deferred Batch, or active submit authority from disk.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

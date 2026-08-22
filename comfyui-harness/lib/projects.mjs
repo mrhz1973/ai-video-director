@@ -1,6 +1,7 @@
 /** Local project schema, path safety, and categorized asset-library helpers (pure). */
 
 import { lookupAvailability, normalizeInputSubfolder } from "./asset-ref.mjs";
+import { assertNoExecutionAuthority, normalizeBatchDraft, serializeBatchDraft } from "./batch-draft.mjs";
 import { normalizeDurationSeconds } from "./duration.mjs";
 
 export const SCHEMA_VERSION = 1;
@@ -281,6 +282,7 @@ export function normalizeProject(raw = {}) {
   const files = { ...(source.files || {}) };
   const library = normalizeLibrary(source.library, source.assets, files);
   const hadSchema = Number.isFinite(Number(source.schemaVersion));
+  const batchDraft = normalizeBatchDraft(source.batchDraft);
   return {
     schemaVersion: SCHEMA_VERSION,
     id: source.id ? String(source.id) : "",
@@ -290,11 +292,12 @@ export function normalizeProject(raw = {}) {
     settings: normalizeSettings(source.settings || {}),
     library,
     files,
+    batchDraft,
     _legacySchemaVersion: hadSchema && Number(source.schemaVersion) === SCHEMA_VERSION ? SCHEMA_VERSION : 0
   };
 }
 
-export function toPersistedProject(project) {
+export function toPersistedProject(project, { includeBatchUpdatedAt = true } = {}) {
   const normalized = normalizeProject(project);
   assertValidProjectId(normalized.id);
   const library = emptyLibrary();
@@ -312,7 +315,16 @@ export function toPersistedProject(project) {
       }))
     }));
   }
-  return {
+  const batchDraft = normalized.batchDraft
+    ? serializeBatchDraft({
+      source: normalized.batchDraft.source,
+      items: normalized.batchDraft.items,
+      updatedAt: normalized.batchDraft.updatedAt,
+      includeUpdatedAt: includeBatchUpdatedAt
+    })
+    : null;
+  if (batchDraft) assertNoExecutionAuthority(batchDraft);
+  const out = {
     schemaVersion: SCHEMA_VERSION,
     id: normalized.id,
     label: normalized.label,
@@ -322,6 +334,8 @@ export function toPersistedProject(project) {
     library,
     files: { ...(normalized.files || {}) }
   };
+  if (batchDraft) out.batchDraft = batchDraft;
+  return out;
 }
 
 export function publicProjectView(project) {
@@ -334,7 +348,8 @@ export function publicProjectView(project) {
     prompt: normalized.prompt,
     settings: normalized.settings,
     library: normalized.library,
-    files: normalized.files
+    files: normalized.files,
+    ...(normalized.batchDraft ? { batchDraft: normalized.batchDraft } : {})
   };
 }
 
@@ -344,7 +359,8 @@ export function projectEditorSnapshot({
   prompt,
   settings,
   library,
-  files
+  files,
+  batchDraft = null
 } = {}) {
   return JSON.stringify(toPersistedProject({
     id: "snapshot-temp-id",
@@ -353,8 +369,9 @@ export function projectEditorSnapshot({
     prompt,
     settings,
     library,
-    files
-  }));
+    files,
+    batchDraft
+  }, { includeBatchUpdatedAt: false }));
 }
 
 export function isProjectDirty(baselineSnapshot, currentSnapshot) {
