@@ -75,7 +75,7 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.6.0
+Known package version: 0.8.2
 
 ## Verified architecture
 
@@ -106,7 +106,8 @@ Current resolution behavior (harness v0.5.1):
 - real ComfyUI `ResolutionSelector` constraints are min 0.1, max 16.0, step 0.1; harness default 0.3;
 - legacy `Preview` -> 0.3 and `Final` -> 0.4 are accepted only for old clients and old `.local.json` projects;
 - a read-only `≈ WxH · class` hint sits beside the field and never changes what is submitted.
-- local projects support Nuovo/Salva/Salva come/Elimina, dirty state, and a categorized Elements/Locations/Objects/Audio library of multi-file groups with explicit workflow role binding (Issue #5).
+- local projects support Nuovo/Salva/Elimina, dirty state, and a categorized Elements/Locations/Objects/Audio library of multi-file groups with explicit workflow role binding (Issue #5). v0.8.2 removes the separate Salva come control; first Salva creates, later Salva updates the same id.
+- v0.8.2 adds queued-next / deferred Batch handoff, prompt history (`h3PromptHistory:v1`), integer-second duration, a completion card with Apri video, asset group headers, and a clearer bottom prompt resize handle. Armed execution intent is never persisted.
 
 Current presets bind `aspectRatio` and `megapixels` on node `115`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.
 

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="output.css">
   <link rel="stylesheet" href="workspace-resize.css">
   <link rel="stylesheet" href="workspace-v081.css">
+  <link rel="stylesheet" href="workspace-v082.css">
   <link rel="stylesheet" href="gpu-power.css">
   <link rel="stylesheet" href="batch.css">
 </head>
@@ -23,15 +24,26 @@
     </header>
 
     <div class="composer" id="promptComposer">
+      <div class="prompt-toolbar">
+        <button type="button" class="secondary" id="promptClear" title="Cancella solo il testo del prompt">Cancella prompt</button>
+        <button type="button" class="secondary" id="promptHistoryToggle" aria-expanded="false" aria-controls="promptHistoryPanel">Cronologia</button>
+      </div>
       <textarea id="prompt" placeholder="Scrivi o incolla il prompt strutturato H3…"></textarea>
       <div
         id="promptResizeHandle"
-        class="panel-resize-handle"
+        class="panel-resize-handle prompt-resize-handle"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="Ridimensiona l'altezza del prompt"
+        aria-label="Ridimensiona l'altezza del prompt dal bordo inferiore"
         tabindex="0"
-      ></div>
+      ><span class="resize-handle-grip" aria-hidden="true"></span><span class="resize-handle-label">trascina per altezza</span></div>
+      <div id="promptHistoryPanel" class="prompt-history" hidden>
+        <div class="prompt-history-head">
+          <strong>Cronologia prompt</strong>
+          <button type="button" class="secondary" id="promptHistoryClear">Cancella cronologia</button>
+        </div>
+        <div id="promptHistoryList" class="prompt-history-list"></div>
+      </div>
       <div class="attachments">
         <div class="composer-meta">
           <div id="composerHint" class="composer-hint">Libreria asset → input workflow. Assegna i membri esplicitamente. Genera resta manuale.</div>
@@ -48,7 +60,7 @@
       <label>Megapixel<input id="megapixels" type="number" min="0.1" max="16" step="0.1" value="0.3"><small id="resolutionHint" class="hint"></small></label>
       <label>Aspect<select id="aspect"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>21:9</option></select></label>
       <label>Steps<input id="steps" type="number" min="1" value="20"></label>
-      <label>Durata<input id="duration" type="number" min="4" max="15" step="0.1" value="5"></label>
+      <label>Durata (s)<input id="duration" type="number" min="4" max="15" step="1" value="5" inputmode="numeric"></label>
       <label>Seed<input id="seed" type="number" value="1"></label>
     </section>
 
@@ -74,6 +86,8 @@
           <div><span>ComfyUI</span><strong id="monitorConnection" class="status-wait">Connessione…</strong></div>
           <div><span>Queue</span><strong id="monitorQueue">0 running · 0 pending</strong></div>
         </div>
+        <div id="queueWaitCard" class="queue-wait-card" hidden></div>
+        <div id="completionCard" class="completion-card" hidden></div>
         <details class="monitor-details">
           <summary>Eventi ComfyUI</summary>
           <pre id="monitorEvents" class="monitor-feed">Nessun evento.</pre>
@@ -154,13 +168,12 @@
       <div class="inspector-panel" role="tabpanel" id="panel-project" data-inspector-panel="project" aria-labelledby="tab-project">
         <div class="project-block">
           <label>Progetto<select id="project"><option value="">Nessun progetto</option></select></label>
+          <label>Nome progetto<input id="projectLabel" type="text" placeholder="Nome progetto" autocomplete="off"></label>
           <div class="project-actions">
             <button type="button" class="secondary" id="projectNew">Nuovo</button>
             <button type="button" class="secondary" id="projectSave">Salva</button>
-            <button type="button" class="secondary" id="projectSaveAs">Salva come</button>
             <button type="button" class="danger" id="projectDelete">Elimina</button>
           </div>
-          <label>Nome progetto<input id="projectLabel" type="text" placeholder="Nome progetto" autocomplete="off"></label>
           <p id="projectSaveStatus" class="save-status" data-state="local-draft">Bozza locale</p>
           <p id="projectDirty" class="dirty-flag" hidden>Modifiche non salvate</p>
         </div>

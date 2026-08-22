@@ -1,6 +1,7 @@
 /** Local project schema, path safety, and categorized asset-library helpers (pure). */
 
 import { lookupAvailability, normalizeInputSubfolder } from "./asset-ref.mjs";
+import { normalizeDurationSeconds } from "./duration.mjs";
 
 export const SCHEMA_VERSION = 1;
 
@@ -269,7 +270,7 @@ function normalizeSettings(settings = {}) {
   const out = {};
   for (const key of ["megapixels", "steps", "duration", "aspect", "seed", "model", "quality"]) {
     if (settings[key] !== undefined && settings[key] !== null && settings[key] !== "") {
-      out[key] = settings[key];
+      out[key] = key === "duration" ? normalizeDurationSeconds(settings[key]) : settings[key];
     }
   }
   return out;

@@ -5,6 +5,7 @@ import {
   clampBatchCount,
   createBatchItems,
   duplicateBatchItem,
+  formatBatchJobSummary,
   isTerminalBatchState,
   moveBatchItem,
   removeBatchItem,
@@ -12,6 +13,13 @@ import {
   summarizeBatchJobs,
   validateBatchDraft
 } from "./batch-core.mjs";
+import { normalizeDurationSeconds } from "../lib/duration.mjs";
+import { archivePrompt } from "./prompt-history.mjs";
+import { batchJobOutputRows } from "./completion.mjs";
+import {
+  getSharedCoordinator,
+  resolveBatchQueueAction
+} from "./queue-coordinator.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -117,7 +125,7 @@ function collectSourceSnapshot() {
     base: {
       prompt: $("prompt")?.value || "",
       seed: $("seed")?.value || "1",
-      duration: $("duration")?.value || "5",
+      duration: String(normalizeDurationSeconds($("duration")?.value || 5)),
       steps: $("steps")?.value || "20",
       megapixels: $("megapixels")?.value || "0.3",
       aspect: $("aspect")?.value || "16:9"
@@ -235,7 +243,7 @@ function renderBatch() {
     card.className = "batch-job";
     card.open = index === 0;
     const summary = document.createElement("summary");
-    summary.innerHTML = `<strong>Job ${index + 1}</strong><span>seed ${item.seed} · ${item.duration}s · ${item.megapixels}MP</span>`;
+    summary.innerHTML = `<strong>Job ${index + 1}</strong><span>${formatBatchJobSummary(item)}</span>`;
 
     const controls = document.createElement("div");
     controls.className = "batch-job-controls";
@@ -269,7 +277,7 @@ function renderBatch() {
       <label class="wide">Prompt<textarea data-field="prompt"></textarea></label>
       <div class="batch-job-grid">
         <label>Seed<input data-field="seed" type="number"></label>
-        <label>Durata<input data-field="duration" type="number" min="4" max="15" step="0.1"></label>
+        <label>Durata (s)<input data-field="duration" type="number" min="4" max="15" step="1"></label>
         <label>Steps<input data-field="steps" type="number" min="1"></label>
         <label>Megapixel<input data-field="megapixels" type="number" min="0.1" max="16" step="0.1"></label>
         <label>Aspect<select data-field="aspect"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>21:9</option></select></label>
@@ -278,8 +286,9 @@ function renderBatch() {
       const input = body.querySelector(`[data-field="${field}"]`);
       input.value = item[field] ?? "";
       const update = () => {
-        item[field] = input.value;
-        summary.querySelector("span").textContent = `seed ${item.seed} · ${item.duration}s · ${item.megapixels}MP`;
+        item[field] = field === "duration" ? String(normalizeDurationSeconds(input.value)) : input.value;
+        if (field === "duration") input.value = item[field];
+        summary.querySelector("span").textContent = formatBatchJobSummary(item);
         markEdited();
       };
       input.addEventListener("input", update);
@@ -291,11 +300,33 @@ function renderBatch() {
   updateQueueButton();
 }
 
+function lastKnownQueue() {
+  const text = $("monitorQueue")?.textContent || "";
+  const match = text.match(/(\d+)\s+running\s+·\s+(\d+)\s+pending/);
+  return {
+    running: match ? Number(match[1]) : 0,
+    pending: match ? Number(match[2]) : 0
+  };
+}
+
 function updateQueueButton() {
   const button = $("batchQueue");
   if (!button) return;
-  button.disabled = submitting || submitted || items.length < MIN_BATCH_JOBS;
-  button.textContent = submitting ? "Invio batch…" : submitted ? "Batch inviato" : `Queue batch (${items.length || 0})`;
+  const coord = getSharedCoordinator();
+  const queue = lastKnownQueue();
+  const action = resolveBatchQueueAction({
+    submitting,
+    submitted,
+    preparedCount: items.length,
+    running: queue.running,
+    pending: queue.pending,
+    queuedNext: coord?.getQueuedNext?.() || null,
+    deferredBatch: coord?.getDeferredBatch?.() || null,
+    batchActive: Boolean(coord?.snapshot?.().batchActive)
+  });
+  button.disabled = action.disabled;
+  button.textContent = action.label;
+  button.dataset.action = action.action;
 }
 
 function validateCurrentBatch(snapshot) {
@@ -322,40 +353,25 @@ function payloadFor(item, snapshot) {
     megapixels: Number(item.megapixels),
     model: snapshot.model,
     steps: Number(item.steps),
-    duration: Number(item.duration),
+    duration: normalizeDurationSeconds(item.duration),
     aspect: item.aspect,
     seed: Number(item.seed),
     files: { ...(snapshot.files || {}) }
   };
 }
 
-async function queueBatch() {
-  if (submitting || submitted || items.length < MIN_BATCH_JOBS) return;
-  const snapshot = collectSourceSnapshot();
-  if (snapshot.error) return setFeedback(snapshot.error, "error");
-  if (!source || sourceIdentity(snapshot) !== sourceIdentity(source)) {
-    return setFeedback("Il draft comune è cambiato (workflow, modello o asset). Premi “Prepara dal draft” prima di inviare.", "warn");
+async function runSequentialBatch(snapshot) {
+  const coord = getSharedCoordinator();
+  const claimed = coord?.beginActiveBatch?.();
+  if (claimed && !claimed.ok && claimed.reason === "locked") {
+    throw new Error("Un altro invio è già in corso.");
   }
-  const validation = validateCurrentBatch(snapshot);
-  if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
-
-  // Claim the submit lock before the first await. A second click cannot start a
-  // concurrent queue preflight or duplicate the batch while this path is active.
   submitting = true;
   updateQueueButton();
-
   try {
-    const activeResponse = await fetch("/api/active");
-    const active = await activeResponse.json();
-    if (!activeResponse.ok) throw new Error(active.error || "Impossibile controllare la queue ComfyUI.");
-    if (Number(active.running || 0) || Number(active.pending || 0)) {
-      setFeedback(`Queue non vuota: ${active.running || 0} running · ${active.pending || 0} pending. Il Batch v1 parte solo da queue vuota.`, "warn");
-      return;
-    }
-
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
-    const snapshotItems = items.map(item => ({ ...item }));
+    const snapshotItems = items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) }));
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
       const response = await fetch("/api/queue", {
@@ -400,6 +416,72 @@ async function queueBatch() {
       setFeedback(`Invio parziale: ${result.accepted.length}/${snapshotItems.length} accettati. ${failedAt}. Nessun retry automatico; i job successivi non sono stati inviati.`, "error");
     }
     if (result.accepted.length) startPolling();
+    return result;
+  } finally {
+    submitting = false;
+    coord?.endActiveBatch?.();
+    updateQueueButton();
+  }
+}
+
+async function queueBatch() {
+  if (submitting || submitted || items.length < MIN_BATCH_JOBS) return;
+  const snapshot = collectSourceSnapshot();
+  if (snapshot.error) return setFeedback(snapshot.error, "error");
+  if (!source || sourceIdentity(snapshot) !== sourceIdentity(source)) {
+    return setFeedback("Il draft comune è cambiato (workflow, modello o asset). Premi “Prepara dal draft” prima di inviare.", "warn");
+  }
+  const validation = validateCurrentBatch(snapshot);
+  if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
+
+  submitting = true;
+  updateQueueButton();
+  try {
+    const coord = getSharedCoordinator();
+    const activeResponse = await fetch("/api/active");
+    const active = await activeResponse.json();
+    if (!activeResponse.ok) throw new Error(active.error || "Impossibile controllare la queue ComfyUI.");
+    const running = Number(active.running || 0);
+    const pending = Number(active.pending || 0);
+    coord?.markQueue?.({ running, pending });
+
+    const action = resolveBatchQueueAction({
+      submitting: false,
+      submitted,
+      preparedCount: items.length,
+      running,
+      pending,
+      queuedNext: coord?.getQueuedNext?.() || null,
+      deferredBatch: coord?.getDeferredBatch?.() || null,
+      batchActive: Boolean(coord?.snapshot?.().batchActive)
+    });
+
+    if (action.action === "defer") {
+      archivePrompt({
+        prompt: snapshot.base?.prompt || "",
+        projectLabel: $("projectLabel")?.value || "",
+        workflowLabel: snapshot.workflowLabel || ""
+      }, { storage: localStorage });
+      const armed = coord.armDeferredBatch({
+        items: items.map(item => ({ ...item })),
+        snapshot,
+        submitAll: () => runSequentialBatch(snapshot)
+      });
+      if (!armed.ok) throw new Error("Impossibile armare il batch in attesa.");
+      setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");
+      return;
+    }
+
+    if (action.action !== "queue") {
+      throw new Error(action.reason || "Batch non inviabile in questo stato.");
+    }
+
+    archivePrompt({
+      prompt: snapshot.base?.prompt || "",
+      projectLabel: $("projectLabel")?.value || "",
+      workflowLabel: snapshot.workflowLabel || ""
+    }, { storage: localStorage });
+    await runSequentialBatch(snapshot);
   } catch (error) {
     setFeedback(error?.message || String(error), "error");
   } finally {
@@ -444,14 +526,25 @@ function renderRuntime() {
     const details = document.createElement("div");
     details.className = "batch-runtime-details";
     const seed = job.item?.seed ?? "—";
-    details.innerHTML = `<div>prompt_id: <code>${job.promptId || "non inviato"}</code></div><div>seed ${seed} · ${job.item?.duration || "—"}s · ${job.item?.megapixels || "—"}MP · ${job.item?.steps || "—"} steps</div>${job.error ? `<div class="batch-error">${job.error}</div>` : ""}`;
-    for (const output of job.outputs || []) {
-      if (!output?.url) continue;
+    details.innerHTML = `<div>prompt_id: <code>${job.promptId || "non inviato"}</code></div><div>${formatBatchJobSummary(job.item || {})} · ${job.item?.steps || "—"} steps</div>${job.error ? `<div class="batch-error">${job.error}</div>` : ""}`;
+    const rows = batchJobOutputRows(runtime.jobs);
+    const row = rows[job.index] || rows.find(item => item.label === job.label);
+    if (row?.url) {
+      const wrap = document.createElement("div");
+      wrap.className = "batch-job-output";
+      if (row.latest) {
+        const flag = document.createElement("span");
+        flag.className = "latest-output-flag";
+        flag.textContent = "ULTIMO OUTPUT";
+        wrap.append(flag);
+      }
       const link = document.createElement("a");
-      link.href = output.url;
+      link.href = row.url;
       link.target = "_blank";
-      link.textContent = `Apri output: ${output.filename || "render"}`;
-      details.append(link);
+      link.rel = "noopener";
+      link.textContent = "Apri video";
+      wrap.append(link);
+      details.append(wrap);
     }
     row.append(summaryEl, details);
     host.append(row);
@@ -523,6 +616,11 @@ async function init() {
 
   loadDraft();
   loadRuntime();
+  window.addEventListener("h3-queue-sample", () => updateQueueButton());
+  window.addEventListener("h3-deferred-batch-cancel", () => {
+    setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
+    updateQueueButton();
+  });
   $("project")?.addEventListener("change", () => setTimeout(loadDraft, 0));
   $("workflow")?.addEventListener("change", () => {
     if (items.length) setFeedback("Workflow cambiato. Premi “Prepara dal draft” per aggiornare il batch prima dell'invio.", "warn");

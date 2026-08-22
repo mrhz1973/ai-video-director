@@ -1,3 +1,5 @@
+import { formatDurationCompact, normalizeDurationSeconds } from "../lib/duration.mjs";
+
 export const MIN_BATCH_JOBS = 2;
 export const MAX_BATCH_JOBS = 8;
 
@@ -15,7 +17,7 @@ export function createBatchItems(base = {}, count = 4) {
     id: `job-${index + 1}`,
     prompt: String(base.prompt || ""),
     seed: seedIsFinite ? String(Math.trunc(seed) + index) : String(base.seed ?? "1"),
-    duration: String(base.duration ?? "5"),
+    duration: String(normalizeDurationSeconds(base.duration ?? 5)),
     steps: String(base.steps ?? "20"),
     megapixels: String(base.megapixels ?? "0.3"),
     aspect: String(base.aspect || "16:9")
@@ -82,8 +84,12 @@ export function validateBatchDraft({
     if (!Number.isFinite(seed)) itemErrors.push("seed non valido");
     const steps = Number(item.steps);
     if (!Number.isFinite(steps) || steps < 1) itemErrors.push("steps non validi");
-    const duration = Number(item.duration);
-    if (!Number.isFinite(duration) || duration < durationMin || duration > durationMax) itemErrors.push(`durata fuori ${durationMin}–${durationMax}s`);
+    const durationRaw = Number(String(item.duration ?? "").replace(",", "."));
+    if (!Number.isFinite(durationRaw)) itemErrors.push("durata non valida");
+    else {
+      const duration = normalizeDurationSeconds(durationRaw, { min: durationMin, max: durationMax });
+      if (duration < durationMin || duration > durationMax) itemErrors.push(`durata fuori ${durationMin}–${durationMax}s`);
+    }
     const mp = Number(item.megapixels);
     if (!Number.isFinite(mp) || mp < megapixelsMin || mp > megapixelsMax) itemErrors.push(`MP fuori ${megapixelsMin}–${megapixelsMax}`);
     if (!String(item.aspect || "").trim()) itemErrors.push("aspect mancante");
@@ -137,4 +143,8 @@ export function summarizeBatchJobs(jobs = []) {
 
 export function isTerminalBatchState(state) {
   return ["completed", "error", "interrupted", "not-submitted"].includes(String(state || ""));
+}
+
+export function formatBatchJobSummary(item = {}) {
+  return `seed ${item.seed} · ${formatDurationCompact(item.duration)} · ${item.megapixels}MP`;
 }

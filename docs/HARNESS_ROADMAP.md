@@ -1,6 +1,6 @@
 # AI Video Director — H3 harness and prompt roadmap
 
-Updated: 2026-08-20
+Updated: 2026-08-22
 Status: planned direction; not all items are implemented
 Canonical branch: `main`
 
@@ -255,6 +255,8 @@ After an approved implementation or meaningful experiment:
 A change is not considered fully integrated if the implementation exists only on the local machine or only in a chat transcript.
 
 ## Near-term order
+
+v0.8.2 shipped queued-next + deferred Batch handoff, prompt clear/history, integer duration, completion/output access, unified Save, asset group headers, and bottom prompt resizing (Issues #27–#31). Those items are no longer future work.
 
 Recommended order after the current video experiment:
 

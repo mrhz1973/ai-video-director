@@ -140,21 +140,32 @@ function bindVerticalResize({
   });
 }
 
+export function isCustomPromptResizeEnabled(width = typeof window !== "undefined" ? window.innerWidth : 1200) {
+  return Number(width) > 800;
+}
+
 export function initPanelResize() {
   assertPanelKeysIsolated();
 
   const prompt = document.getElementById("prompt");
-  bindVerticalResize({
-    target: prompt,
-    handle: document.getElementById("promptResizeHandle"),
-    storageKey: PROMPT_HEIGHT_KEY,
-    min: PROMPT_MIN,
-    maxVh: PROMPT_MAX_VH,
-    fallback: PROMPT_DEFAULT,
-    apply: height => {
-      if (prompt) prompt.style.height = `${height}px`;
-    }
-  });
+  const promptHandle = document.getElementById("promptResizeHandle");
+  if (isCustomPromptResizeEnabled()) {
+    bindVerticalResize({
+      target: prompt,
+      handle: promptHandle,
+      storageKey: PROMPT_HEIGHT_KEY,
+      min: PROMPT_MIN,
+      maxVh: PROMPT_MAX_VH,
+      fallback: PROMPT_DEFAULT,
+      apply: height => {
+        if (prompt) prompt.style.height = `${height}px`;
+      }
+    });
+  } else if (prompt) {
+    prompt.style.height = "";
+    prompt.style.minHeight = "160px";
+    if (promptHandle) promptHandle.setAttribute("aria-disabled", "true");
+  }
 
   const monitor = document.getElementById("renderMonitor");
   bindVerticalResize({
