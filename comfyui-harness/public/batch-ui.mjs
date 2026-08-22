@@ -527,19 +527,19 @@ function renderRuntime() {
     details.className = "batch-runtime-details";
     const seed = job.item?.seed ?? "—";
     details.innerHTML = `<div>prompt_id: <code>${job.promptId || "non inviato"}</code></div><div>${formatBatchJobSummary(job.item || {})} · ${job.item?.steps || "—"} steps</div>${job.error ? `<div class="batch-error">${job.error}</div>` : ""}`;
-    const rows = batchJobOutputRows(runtime.jobs);
-    const row = rows[job.index] || rows.find(item => item.label === job.label);
-    if (row?.url) {
+    const outputRows = batchJobOutputRows(runtime.jobs);
+    const outputRow = outputRows[job.index] || outputRows.find(item => item.label === job.label);
+    if (outputRow?.url) {
       const wrap = document.createElement("div");
       wrap.className = "batch-job-output";
-      if (row.latest) {
+      if (outputRow.latest) {
         const flag = document.createElement("span");
         flag.className = "latest-output-flag";
         flag.textContent = "ULTIMO OUTPUT";
         wrap.append(flag);
       }
       const link = document.createElement("a");
-      link.href = row.url;
+      link.href = outputRow.url;
       link.target = "_blank";
       link.rel = "noopener";
       link.textContent = "Apri video";
