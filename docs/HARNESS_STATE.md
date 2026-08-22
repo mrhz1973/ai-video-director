@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.4, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.5, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -88,6 +88,10 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 ### Frontend bootstrap hotfix (v0.8.4)
 
 - v0.8.3 accidentally removed the DOM helper `$` from `public/app.js`, aborting frontend initialization (empty selectors, stuck `Connessione…`) while server APIs stayed healthy. v0.8.4 restores the helper and adds a bootstrap regression test that fails whenever a browser entry module uses `$()` without defining it first.
+
+### Prompt action row layout (v0.8.5)
+
+- **Cancella prompt** and **Cronologia** now sit on the same bottom row as **Genera**, right-aligned in order clear → history → generate. The old full-width `prompt-toolbar` above the textarea is removed; button IDs and handlers are unchanged.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

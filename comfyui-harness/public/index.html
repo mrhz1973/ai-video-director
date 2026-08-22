@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="workspace-v081.css">
   <link rel="stylesheet" href="workspace-v082.css">
   <link rel="stylesheet" href="workspace-v083.css">
+  <link rel="stylesheet" href="workspace-v085.css">
   <link rel="stylesheet" href="gpu-power.css">
   <link rel="stylesheet" href="batch.css">
 </head>
@@ -25,10 +26,6 @@
     </header>
 
     <div class="composer" id="promptComposer">
-      <div class="prompt-toolbar">
-        <button type="button" class="secondary" id="promptClear" title="Cancella solo il testo del prompt">Cancella prompt</button>
-        <button type="button" class="secondary" id="promptHistoryToggle" aria-expanded="false" aria-controls="promptHistoryPanel">Cronologia</button>
-      </div>
       <textarea id="prompt" placeholder="Scrivi o incolla il prompt strutturato H3…"></textarea>
       <div
         id="promptResizeHandle"
@@ -51,7 +48,11 @@
           <p id="safeFitWarning" class="safe-fit-warning" hidden></p>
           <p id="generateReason" class="generate-reason" hidden></p>
         </div>
-        <button id="send" type="button">Genera</button>
+        <div class="prompt-actions" aria-label="Azioni prompt">
+          <button type="button" class="secondary" id="promptClear" title="Cancella solo il testo del prompt">Cancella prompt</button>
+          <button type="button" class="secondary" id="promptHistoryToggle" aria-expanded="false" aria-controls="promptHistoryPanel">Cronologia</button>
+          <button id="send" type="button">Genera</button>
+        </div>
       </div>
     </div>
 
