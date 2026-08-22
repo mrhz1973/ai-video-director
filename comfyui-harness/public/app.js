@@ -107,6 +107,7 @@ import {
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
 } from "./batch-ui.mjs";
+const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
 let config, events;
 let currentPrompt = sessionStorage.getItem("h3CurrentPrompt") || undefined;
