@@ -1,5 +1,19 @@
 # Changelog
 
+# 2026-08-22
+
+- Implemented harness **v0.8.2** live-use follow-ups as one coordinated release (Issues #27–#31).
+- Added an explicit queued-next single job (`Metti in coda`, max one pending snapshot) and a deferred Batch handoff (`Metti batch in attesa`) so a prepared job/batch can wait while ComfyUI shows `1 running · 0 pending`, then submit exactly once when the queue becomes empty.
+- Armed execution intent is in-memory only: reload/recovery restore the editable draft but never autosubmit queued-next or deferred Batch Job 1.
+- One submission coordinator owns Generate, queued-next, deferred Batch and active Batch so they cannot race or double-POST `/api/queue`.
+- Added prompt `Cancella prompt` plus bounded local `h3PromptHistory:v1` (30 entries, exact-dedupe). Restore/copy/delete never generate, queue, or write GPU.
+- Normalized all normal duration semantics to whole seconds (`5s`, never `5.0s`) via a shared helper, including project load, recovery, Batch summaries and output tokens.
+- Added a Render Monitor completion card (`✓ LAVORO FINITO`) with `Apri video` for the latest identifiable output, plus per-job Batch output links and an `ULTIMO OUTPUT` marker. `Mostra nella cartella` is omitted (no safe constrained reveal endpoint).
+- Unified project Save: `Nome progetto` sits above Nuovo/Salva/Elimina; `Salva come` is removed. Unsaved Salva POSTs create; existing Salva PUTs the same id. Typing a name does not create a project.
+- Asset groups now show a `GRUPPO ASSET` / Nome gruppo header while keeping member.label primary and filename secondary.
+- Prompt vertical resize uses a clearer bottom handle (`ns-resize`, up=shorter, down=taller) persisted on `h3PromptHeight:v1`, independent of the monitor handle. Custom drag is disabled at ≤800px.
+- No GPU Power writes, no ComfyUI lifecycle changes, and no private workflow JSON or `.pre-safe-fit.bak` mutations.
+
 ## 2026-08-17 — Project memory v2
 
 - Added automatic onboarding through AGENTS.md and START_HERE.md.

@@ -58,6 +58,34 @@ import {
   readRecoveryDraft,
   writeRecoveryDraft
 } from "./autosave.mjs";
+import { normalizeDurationSeconds } from "/lib/duration.mjs";
+import {
+  createQueueCoordinator,
+  getSharedCoordinator,
+  resolveGenerateAction,
+  setSharedCoordinator,
+  shouldRestoreExecutionIntent,
+  summarizeDeferredBatch,
+  summarizeQueuedNext
+} from "./queue-coordinator.mjs";
+import {
+  PROMPT_HISTORY_MAX,
+  archivePrompt,
+  clearPromptHistory,
+  confirmClearPrompt,
+  deletePromptHistoryItem,
+  listPromptHistory,
+  previewPrompt,
+  restorePrompt
+} from "./prompt-history.mjs";
+import {
+  batchJobOutputRows,
+  buildCompletionCard,
+  clearLatestOutput,
+  persistLatestOutput,
+  readLatestOutput,
+  reconstructCompletionFromOutputs
+} from "./completion.mjs";
 
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
@@ -70,6 +98,20 @@ let elapsedTimer;
 let completing = false;
 let busy = false;
 let submitting = false;
+let latestCompletion = null;
+const coordinator = setSharedCoordinator(createQueueCoordinator({
+  async submit(payload) {
+    const response = await fetch("/api/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.prompt_id) throw new Error(data.error || JSON.stringify(data.node_errors) || "Invio fallito");
+    return data;
+  }
+}));
+void shouldRestoreExecutionIntent();
 let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || null;
 let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
 let monitorState = initialMonitorState();
@@ -303,10 +345,228 @@ function renderMonitor() {
   $("monitorConnection").textContent = badge.text;
   $("monitorConnection").className = badge.className;
   $("monitorQueue").textContent = `${summary.queueRunning ?? 0} running · ${summary.queuePending ?? 0} pending`;
+  renderQueueWaitCard();
+  renderCompletionCard();
   const events = monitorState.events || [];
   $("monitorEvents").textContent = events.length ? events.map(item => `[${item.t}] ${item.m}`).join("\n") : "Nessun evento.";
   $("progress").textContent = compactProgressText(summary);
   updateElapsed();
+}
+
+function renderQueueWaitCard() {
+  const host = $("queueWaitCard");
+  if (!host) return;
+  host.replaceChildren();
+  const next = summarizeQueuedNext(coordinator.getQueuedNext());
+  const deferred = summarizeDeferredBatch(coordinator.getDeferredBatch());
+  if (!next && !deferred) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  host.dataset.kind = next ? "next" : "batch";
+  if (next) {
+    const title = document.createElement("strong");
+    title.textContent = `${next.title} · ${next.status}`;
+    const detail = document.createElement("p");
+    detail.textContent = next.detail;
+    const preview = document.createElement("p");
+    preview.textContent = next.preview || "";
+    const actions = document.createElement("div");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Annulla";
+    cancel.onclick = () => {
+      coordinator.cancelQueuedNext();
+      renderQueueWaitCard();
+      updateGenerateButton();
+    };
+    const update = document.createElement("button");
+    update.type = "button";
+    update.className = "secondary";
+    update.textContent = "Aggiorna dal draft";
+    update.onclick = async () => {
+      try {
+        const payload = await prepareQueuePayload();
+        coordinator.updateQueuedNextFromDraft(payload);
+        renderQueueWaitCard();
+      } catch (error) {
+        add(error.message);
+      }
+    };
+    actions.append(cancel, update);
+    host.append(title, detail, preview, actions);
+  } else if (deferred) {
+    const title = document.createElement("strong");
+    title.textContent = `${deferred.title} · ${deferred.status}`;
+    const detail = document.createElement("p");
+    detail.textContent = deferred.detail;
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Annulla attesa";
+    cancel.onclick = () => {
+      coordinator.cancelDeferredBatch();
+      window.dispatchEvent(new CustomEvent("h3-deferred-batch-cancel"));
+      renderQueueWaitCard();
+      updateGenerateButton();
+    };
+    host.append(title, detail, cancel);
+  }
+}
+
+function renderCompletionCard() {
+  const host = $("completionCard");
+  if (!host) return;
+  const card = latestCompletion;
+  if (!card?.url && !card?.filename) {
+    host.hidden = true;
+    host.replaceChildren();
+    return;
+  }
+  host.hidden = false;
+  host.replaceChildren();
+  const title = document.createElement("strong");
+  title.textContent = card.title || "✓ LAVORO FINITO";
+  const file = document.createElement("div");
+  file.className = "completion-file";
+  file.textContent = card.filename || "output";
+  const meta = document.createElement("div");
+  meta.className = "completion-meta";
+  if (card.durationLabel) meta.append(Object.assign(document.createElement("span"), { textContent: card.durationLabel }));
+  if (card.model) meta.append(Object.assign(document.createElement("span"), { textContent: card.model }));
+  if (card.seed !== "" && card.seed != null) meta.append(Object.assign(document.createElement("span"), { textContent: `seed ${card.seed}` }));
+  if (card.completedAt) meta.append(Object.assign(document.createElement("span"), { textContent: new Date(card.completedAt).toLocaleTimeString("it-IT", { hour12: false }) }));
+  const open = document.createElement("a");
+  open.className = "primary";
+  open.href = card.url || "#";
+  open.target = "_blank";
+  open.rel = "noopener";
+  open.textContent = "Apri video";
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "secondary";
+  dismiss.textContent = "Nascondi";
+  dismiss.onclick = () => {
+    latestCompletion = null;
+    clearLatestOutput(sessionStorage);
+    renderCompletionCard();
+  };
+  host.append(title, file, meta, open, dismiss);
+}
+
+function adoptSubmittedJob(data) {
+  jobFirstSeenAt = Date.now();
+  sessionStorage.setItem("h3JobFirstSeenAt", String(jobFirstSeenAt));
+  rememberJob(data.prompt_id);
+  latestCompletion = null;
+  clearLatestOutput(sessionStorage);
+  monitorState = {
+    ...initialMonitorState({
+      phase: "running",
+      promptId: data.prompt_id,
+      connection: monitorState.connection,
+      terminal: monitorState.terminal,
+      title: workflowTitle(),
+      events: [{
+        t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
+        m: `Job inviato · ${promptIdPrefix(data.prompt_id)}`,
+        at: Date.now()
+      }]
+    })
+  };
+  startPolling();
+  renderMonitor();
+}
+
+async function prepareQueuePayload() {
+  const prompt = $("prompt").value.trim();
+  const megapixels = $("megapixels").value;
+  if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
+  const preset = currentPreset();
+  await refreshAvailability();
+  const activeKeys = (preset?.attachments || []).map(field => field.key);
+  for (const input of $("attachmentFields").querySelectorAll("input[type=file]")) {
+    if (input.files[0]) {
+      const uploaded = await upload(input.files[0]);
+      draft.files[input.dataset.key] = uploaded.filename;
+    }
+  }
+  const built = buildSubmissionFiles({
+    files: draft.files,
+    library: draft.library,
+    availability: draft.availability,
+    activeKeys,
+    requiredKeys: activeKeys
+  });
+  if (built.missingRequired.length) {
+    const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
+    throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
+  }
+  return {
+    clientId,
+    workflowId: $("workflow").value,
+    prompt,
+    megapixels: Number(megapixels),
+    model: $("model").value,
+    steps: $("steps").value,
+    duration: normalizeDurationSeconds($("duration").value),
+    aspect: $("aspect").value,
+    seed: $("seed").value,
+    files: filterFilesForActivePreset(built.files, activeKeys)
+  };
+}
+
+function renderPromptHistory() {
+  const host = $("promptHistoryList");
+  if (!host) return;
+  host.replaceChildren();
+  const items = listPromptHistory(localStorage);
+  if (!items.length) {
+    host.textContent = "Nessun prompt archiviato.";
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "prompt-history-item";
+    const preview = document.createElement("p");
+    preview.textContent = previewPrompt(item.prompt);
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = [item.projectLabel, item.workflowLabel, item.savedAt ? new Date(item.savedAt).toLocaleString("it-IT") : ""].filter(Boolean).join(" · ");
+    const actions = document.createElement("div");
+    actions.className = "prompt-history-actions";
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.textContent = "Ripristina";
+    restore.onclick = () => {
+      const found = restorePrompt(item.id, localStorage);
+      if (!found) return;
+      $("prompt").value = found.prompt;
+      updateDirtyFlag();
+      updateGenerateButton();
+      add("Prompt ripristinato dalla cronologia.");
+    };
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "secondary";
+    copy.textContent = "Copia";
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(item.prompt); } catch { /* ignore */ }
+    };
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "secondary";
+    del.textContent = "Elimina voce";
+    del.onclick = () => {
+      deletePromptHistoryItem(item.id, localStorage);
+      renderPromptHistory();
+    };
+    actions.append(restore, copy, del);
+    row.append(preview, meta, actions);
+    host.append(row);
+  }
 }
 
 function pushMonitorMessage(message) {
@@ -337,12 +597,21 @@ async function refreshQueueCounts() {
     const response = await fetch("/api/active");
     if (!response.ok) return;
     const data = await response.json();
+    const running = Number(data.running || 0);
+    const pending = Number(data.pending || 0);
     monitorState = {
       ...monitorState,
-      queueRunning: Number(data.running || 0),
-      queuePending: Number(data.pending || 0)
+      queueRunning: running,
+      queuePending: pending
     };
+    coordinator.markQueue({ running, pending });
+    const transition = await coordinator.observeQueue({ running, pending });
+    if (transition.submitted === "queued-next" && transition.result?.result?.prompt_id) {
+      adoptSubmittedJob(transition.result.result);
+    }
     renderMonitor();
+    updateGenerateButton();
+    window.dispatchEvent(new CustomEvent("h3-queue-sample", { detail: { running, pending } }));
   } catch { /* ignore */ }
 }
 
@@ -394,12 +663,30 @@ async function outputs() {
       const link = document.createElement("a");
       link.href = item.url;
       link.target = "_blank";
+      link.rel = "noopener";
       link.textContent = `Apri output: ${item.filename}`;
       const box = document.createElement("div");
       box.className = "message system";
       box.append(link);
       $("log").append(box);
     }
+    latestCompletion = reconstructCompletionFromOutputs(items, {
+      duration: $("duration")?.value,
+      model: $("model")?.value,
+      seed: $("seed")?.value,
+      promptId: currentPrompt,
+      completedAt: Date.now()
+    }) || buildCompletionCard({
+      filename: items[0]?.filename,
+      url: items[0]?.url,
+      duration: $("duration")?.value,
+      model: $("model")?.value,
+      seed: $("seed")?.value,
+      promptId: currentPrompt,
+      completedAt: Date.now()
+    });
+    persistLatestOutput(latestCompletion, sessionStorage);
+    renderCompletionCard();
   } catch (error) {
     setBusy(false);
     monitorState = { ...monitorState, phase: "error" };
@@ -541,6 +828,38 @@ function selectedAspectLabel() {
   return $("aspect")?.value || "16:9";
 }
 
+function queueSample() {
+  const state = coordinator.snapshot();
+  return {
+    running: Number(monitorState.queueRunning || 0),
+    pending: Number(monitorState.queuePending || 0),
+    queuedNext: state.queuedNext,
+    deferredBatch: state.deferredBatch,
+    batchActive: state.batchActive,
+    lockOwner: state.lockOwner
+  };
+}
+
+function archiveCurrentPrompt(reason) {
+  const prompt = $("prompt")?.value || "";
+  if (!String(prompt).trim()) return;
+  archivePrompt({
+    prompt,
+    projectLabel: $("projectLabel")?.value || "",
+    workflowLabel: currentPreset()?.label || currentPreset()?.id || ""
+  }, { storage: localStorage, max: PROMPT_HISTORY_MAX });
+  void reason;
+}
+
+function applyDurationField(value) {
+  const field = $("duration");
+  if (!field) return;
+  field.min = 4;
+  field.max = 15;
+  field.step = "1";
+  field.value = String(normalizeDurationSeconds(value ?? field.value));
+}
+
 function updateGenerateButton() {
   const send = $("send");
   const reasonEl = $("generateReason");
@@ -551,17 +870,25 @@ function updateGenerateButton() {
     files: draft.files,
     library: draft.library,
     availability: draft.availability,
-    busy,
-    submitting,
+    busy: false,
+    submitting: false,
     safeFitStatus: currentSafeFitStatus()
   });
-  send.disabled = gate.blocked;
-  send.textContent = busy || submitting ? "Generazione…" : "Genera";
-  send.style.opacity = gate.blocked ? ".55" : "1";
-  send.style.cursor = gate.blocked ? "not-allowed" : "pointer";
+  const action = resolveGenerateAction({
+    blocked: gate.blocked,
+    reason: gate.reason,
+    submitting,
+    ...queueSample()
+  });
+  send.disabled = action.disabled;
+  send.textContent = action.label;
+  send.dataset.action = action.action;
+  send.style.opacity = action.disabled ? ".55" : "1";
+  send.style.cursor = action.disabled ? "not-allowed" : "pointer";
   if (reasonEl) {
-    reasonEl.hidden = !gate.blocked || gate.code === "busy";
-    reasonEl.textContent = gate.code === "busy" ? "" : (gate.reason || "");
+    const show = Boolean(action.reason) && action.action === "blocked";
+    reasonEl.hidden = !show;
+    reasonEl.textContent = show ? (action.reason || "") : "";
   }
   const warn = $("safeFitWarning");
   if (warn) {
@@ -713,16 +1040,24 @@ function renderGroupCard(group) {
 
   const head = document.createElement("div");
   head.className = "library-group-head";
+  const nameField = document.createElement("label");
+  nameField.className = "group-name-field";
+  const kicker = document.createElement("p");
+  kicker.className = "group-header-kicker";
+  kicker.textContent = "GRUPPO ASSET";
+  const nameCaption = document.createElement("span");
+  nameCaption.textContent = "Nome gruppo";
   const name = document.createElement("input");
   name.type = "text";
   name.value = group.label;
-  name.title = "Rinomina gruppo";
+  name.title = "Rinomina gruppo (non rinomina i file)";
   name.onchange = () => {
     draft.library = renameGroup(draft.library, activeCategory, group.id, name.value.trim() || group.label);
     updateDirtyFlag();
     renderLibrary();
     renderRoleFields();
   };
+  nameField.append(kicker, nameCaption, name);
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.textContent = "+ file";
@@ -742,7 +1077,7 @@ function renderGroupCard(group) {
     renderLibrary();
     renderRoleFields();
   };
-  head.append(name, addBtn, delBtn);
+  head.append(nameField, addBtn, delBtn);
 
   const list = document.createElement("div");
   list.className = "member-list";
@@ -1042,7 +1377,7 @@ async function loadProjectById(id) {
   const savedModel = normalized.settings?.model;
   for (const [key, value] of Object.entries(normalized.settings || {})) {
     if (key === "model") continue;
-    if ($(key)) $(key).value = value;
+    if ($(key)) $(key).value = key === "duration" ? String(normalizeDurationSeconds(value)) : value;
   }
   const restored = megapixelsFromSettings(normalized.settings || {});
   if (restored !== undefined) $("megapixels").value = restored;
@@ -1096,7 +1431,7 @@ function applyRecoverySnapshot(snapshot) {
     const savedModel = normalized.settings?.model;
     for (const [key, value] of Object.entries(normalized.settings || {})) {
       if (key === "model") continue;
-      if ($(key)) $(key).value = value;
+      if ($(key)) $(key).value = key === "duration" ? String(normalizeDurationSeconds(value)) : value;
     }
     const restoredMp = megapixelsFromSettings(normalized.settings || {});
     if (restoredMp !== undefined) $("megapixels").value = restoredMp;
@@ -1293,15 +1628,6 @@ $("projectSave").onclick = async () => {
   try { await saveProject({ asNew: false }); }
   catch (error) { add(error.message); }
 };
-$("projectSaveAs").onclick = async () => {
-  try {
-    const label = prompt("Nome per la copia:");
-    if (!label) return;
-    $("projectLabel").value = label;
-    if (draft.saved && draft.id) await saveProject({ asNew: true });
-    else await saveProject({ asNew: false });
-  } catch (error) { add(error.message); }
-};
 $("projectDelete").onclick = async () => {
   if (!draft.id || !draft.saved) {
     resetDraft();
@@ -1319,9 +1645,15 @@ $("projectDelete").onclick = async () => {
 
 selectPreset({ preserveLibrary: true, trackDirty: false });
 setCategory("elements");
+applyDurationField($("duration")?.value);
 markBaselineFromDraft();
 updateGenerateButton();
+latestCompletion = readLatestOutput(sessionStorage);
 renderMonitor();
+coordinator.onChange(() => {
+  renderQueueWaitCard();
+  updateGenerateButton();
+});
 
 const recovery = readRecoveryDraft();
 if (recovery && !$("project").value) {
@@ -1338,6 +1670,25 @@ if (recovery && !$("project").value) {
 persistenceReady = true;
 
 await recoverActive();
+if (!latestCompletion && currentPrompt) {
+  try {
+    const history = await (await fetch(`/api/history?promptId=${encodeURIComponent(currentPrompt)}`)).json();
+    if (classifyHistoryState(history, currentPrompt) === "completed") {
+      const out = await (await fetch(`/api/outputs?promptId=${encodeURIComponent(currentPrompt)}`)).json();
+      if (Array.isArray(out) && out.length) {
+        latestCompletion = reconstructCompletionFromOutputs(out, {
+          duration: $("duration")?.value,
+          model: $("model")?.value,
+          seed: $("seed")?.value,
+          promptId: currentPrompt,
+          completedAt: Date.now()
+        });
+        persistLatestOutput(latestCompletion, sessionStorage);
+        renderCompletionCard();
+      }
+    }
+  } catch { /* no fake completion */ }
+}
 sessionStorage.setItem("h3ClientId", clientId);
 connect();
 await refreshComfyLogs();
@@ -1345,86 +1696,46 @@ logTimer = setInterval(refreshComfyLogs, LOG_POLL_MS);
 startQueuePolling();
 
 $("send").onclick = async () => {
-  if (submitting || busy) return;
   const gate = describeGenerateBlockers({
     prompt: $("prompt").value,
     attachments: currentPreset()?.attachments || [],
     files: draft.files,
     library: draft.library,
     availability: draft.availability,
-    busy,
-    submitting,
+    busy: false,
+    submitting: false,
     safeFitStatus: currentSafeFitStatus()
   });
-  if (gate.blocked) {
+  const action = resolveGenerateAction({
+    blocked: gate.blocked,
+    reason: gate.reason,
+    submitting,
+    ...queueSample()
+  });
+  if (action.disabled) {
     updateGenerateButton();
     return;
   }
   submitting = true;
-  setBusy(true);
+  updateGenerateButton();
   try {
-    const prompt = $("prompt").value.trim();
-    const megapixels = $("megapixels").value;
-    if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
-    $("progress").textContent = "Controllo allegati…";
-    const preset = currentPreset();
-    await refreshAvailability();
-    const activeKeys = (preset?.attachments || []).map(field => field.key);
-    const requiredKeys = activeKeys;
-    for (const input of $("attachmentFields").querySelectorAll("input[type=file]")) {
-      if (input.files[0]) {
-        $("progress").textContent = `Caricamento · ${input.closest("label").firstChild.textContent.trim()}`;
-        const uploaded = await upload(input.files[0]);
-        draft.files[input.dataset.key] = uploaded.filename;
-      }
+    $("progress").textContent = action.action === "queue-next" ? "Preparazione prossimo job…" : "Controllo allegati…";
+    const payload = await prepareQueuePayload();
+    archiveCurrentPrompt(action.action);
+    if (action.action === "queue-next") {
+      const armed = coordinator.armQueuedNext(payload);
+      if (!armed.ok) throw new Error(armed.reason === "already-armed" ? "Un prossimo job è già in coda." : "Impossibile mettere in coda il job.");
+      renderQueueWaitCard();
+      add("Prossimo job in attesa. Nessuna generazione inviata.");
+      return;
     }
-    const built = buildSubmissionFiles({
-      files: draft.files,
-      library: draft.library,
-      availability: draft.availability,
-      activeKeys,
-      requiredKeys
-    });
-    if (built.missingRequired.length) {
-      const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
-      throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
-    }
-    const files = filterFilesForActivePreset(built.files, activeKeys);
+    setBusy(true);
+    latestCompletion = null;
+    clearLatestOutput(sessionStorage);
     $("progress").textContent = "In coda…";
-    const payload = {
-      clientId,
-      workflowId: $("workflow").value,
-      prompt,
-      megapixels: Number(megapixels),
-      model: $("model").value,
-      steps: $("steps").value,
-      duration: $("duration").value,
-      aspect: $("aspect").value,
-      seed: $("seed").value,
-      files
-    };
-    const response = await fetch("/api/queue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok || !data.prompt_id) throw new Error(data.error || JSON.stringify(data.node_errors) || "Invio fallito");
-    jobFirstSeenAt = Date.now();
-    sessionStorage.setItem("h3JobFirstSeenAt", String(jobFirstSeenAt));
-    rememberJob(data.prompt_id);
-    monitorState = {
-      ...initialMonitorState({
-        phase: "running",
-        promptId: data.prompt_id,
-        connection: monitorState.connection,
-        terminal: monitorState.terminal,
-        title: workflowTitle(),
-        events: [{
-          t: new Date().toLocaleTimeString("it-IT", { hour12: false }),
-          m: `Job inviato · ${promptIdPrefix(data.prompt_id)}`,
-          at: Date.now()
-        }]
-      })
-    };
-    startPolling();
-    renderMonitor();
+    const result = await coordinator.tryImmediateGenerate(payload);
+    if (!result.ok) throw new Error(result.reason === "locked" ? "Invio già in corso." : "Invio non disponibile.");
+    adoptSubmittedJob(result.result);
   } catch (error) {
     stopPolling();
     setBusy(false);
@@ -1436,3 +1747,32 @@ $("send").onclick = async () => {
     updateGenerateButton();
   }
 };
+
+$("promptClear").onclick = () => {
+  const decision = confirmClearPrompt({
+    prompt: $("prompt").value,
+    confirmFn: () => confirm("Cancellare il prompt corrente? Potrai ripristinarlo dalla cronologia.")
+  });
+  if (!decision.cleared) return;
+  archiveCurrentPrompt("clear");
+  $("prompt").value = "";
+  updateDirtyFlag();
+  updateGenerateButton();
+  renderPromptHistory();
+};
+
+$("promptHistoryToggle").onclick = () => {
+  const panel = $("promptHistoryPanel");
+  const open = panel.hidden;
+  panel.hidden = !open;
+  $("promptHistoryToggle").setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) renderPromptHistory();
+};
+
+$("promptHistoryClear").onclick = () => {
+  if (!confirm("Cancellare tutta la cronologia prompt locale?")) return;
+  clearPromptHistory(localStorage, { confirm: true });
+  renderPromptHistory();
+};
+
+$("duration").onchange = () => applyDurationField($("duration").value);

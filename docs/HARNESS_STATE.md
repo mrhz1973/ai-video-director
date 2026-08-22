@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.1, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -57,7 +57,7 @@ For viewports wider than 800px the Director uses a two-pane layout:
 - **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`) → collapsed-by-default Attività/Output drawer (`#activityDrawer` / `#log`).
 - **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height.
 - **Asset labels:** `member.label` is the primary human-facing name in Asset cards and role selects (`Group / Member label`). Physical filenames remain secondary/tooltip identity and are never renamed by label edits.
-- **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual Salva / Salva come remain. Recovery/autosave never submit Generate, Batch, or GPU Power.
+- **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual **Salva** creates a new project (`POST /api/projects`) or updates the current id (`PUT /api/projects/<id>`). There is no separate Salva come. Recovery/autosave never submit Generate, Batch, or GPU Power. Armed queued-next / deferred-Batch intent is session/in-memory only and is never written to the recovery draft, saved projects, or prompt history.
 - **Sidebar width:** existing `#sidebarResizeHandle` and `h3SidebarWidth:v1` remain (default about 460px). Whole-workspace native `resize: vertical` is removed; desktop `main` uses the viewport height instead of a 72vh resizable box.
 - Generate no longer copies the prompt into Activity. Activity is for project notices, errors, warnings and output links — not a chat transcript.
 
@@ -66,6 +66,17 @@ At ≤800px the layout remains a usable single column. No Generate, Batch, GPU P
 ## Batch generation (Issue #14, v0.8.0)
 
 Browser-local Batch editor for 2–8 jobs (default prepare count 4) with seed auto-increment, copy/move/remove, per-job overrides, sequential queueing through the ordinary `/api/queue` route, first-failure stop, no retries, runtime restore, draft persistence, Output Manager integration, queue-empty and safe-fit validation, and a block on direct video attachments. There is no special server-side Batch submit endpoint.
+
+### Queued-next and deferred Batch (v0.8.2)
+
+When ComfyUI has exactly one active render (`1 running · 0 pending`):
+
+- **Genera** becomes **Metti in coda** and may arm at most one pending single-job snapshot (explicit user action). The snapshot does not follow later editor edits unless the user presses **Aggiorna dal draft**. **Annulla** drops it.
+- A prepared Batch (2–8 jobs) may be armed with **Metti batch in attesa** (`IN ATTESA DELLA CODA`) instead of being refused. Batch Job 1 is not submitted until the queue is empty.
+- When the observed queue becomes `0 running · 0 pending`, the coordinator submits the armed queued-next job **or** Batch Job 1 exactly once, then existing sequential Batch behavior continues.
+- Reload/browser recovery never autosubmits an armed intent. The user must arm again.
+
+Duration controls and labels use integer seconds only (`5s`). Prompt clear/history uses `h3PromptHistory:v1` (cap 30). Completed renders show a monitor completion card with **Apri video**. Asset group cards show **GRUPPO ASSET** / Nome gruppo above members.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 
@@ -245,8 +256,7 @@ Private projects live in `comfyui-harness/projects/*.local.json` and are ignored
 Since v0.5.0 the UI supports local project CRUD:
 
 - **Nuovo** — unsaved draft (warns if dirty);
-- **Salva** — create or update the selected project;
-- **Salva come** — create a distinct project from the current editor state;
+- **Salva** — create a new unsaved project (`POST`) or update the current project (`PUT`); a distinct copy starts with **Nuovo**;
 - **Elimina** — confirmation required; deletes only the `.local.json` definition (never ComfyUI input media);
 - editable project label;
 - visible dirty state: `Modifiche non salvate`.

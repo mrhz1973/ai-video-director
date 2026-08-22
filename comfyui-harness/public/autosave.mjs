@@ -22,7 +22,9 @@ export const RESERVED_BROWSER_KEYS = Object.freeze([
   "h3ClientId",
   "h3CurrentPrompt",
   "h3JobCreatedAt",
-  "h3JobFirstSeenAt"
+  "h3JobFirstSeenAt",
+  "h3PromptHistory:v1",
+  "h3LatestOutput:v1"
 ]);
 
 export const SAVE_STATUS = Object.freeze({

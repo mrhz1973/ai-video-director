@@ -1,3 +1,5 @@
+import { normalizeDurationSeconds } from "../lib/duration.mjs";
+
 export const DEFAULT_OUTPUT_TEMPLATE = "{project}_{scene}_{workflow}_{model}_{mp}MP_{duration}s_{steps}st_seed{seed}_{counter:04}";
 
 const INVALID_FILENAME_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
@@ -61,7 +63,10 @@ export function buildOutputTokens({
     workflow: shortWorkflowName(workflow, workflowLabel),
     model: shortModelName(model),
     mp: sanitizeOutputSegment(formatMegapixels(megapixels), { fallback: "NA" }),
-    duration: sanitizeOutputSegment(duration, { fallback: "NA" }),
+    duration: sanitizeOutputSegment(
+      duration === "" || duration == null ? "NA" : String(normalizeDurationSeconds(duration)),
+      { fallback: "NA" }
+    ),
     steps: sanitizeOutputSegment(steps, { fallback: "NA" }),
     seed: sanitizeOutputSegment(seed, { fallback: "NA", maxLength: 32 }),
     aspect: sanitizeOutputSegment(String(aspect || "").replace(/:/g, "x"), { fallback: "NA", maxLength: 16 }),
