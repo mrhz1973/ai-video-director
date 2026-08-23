@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.10.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.11.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -136,6 +136,12 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - **Salva come…** in the Progetto inspector duplicates the current editor snapshot into a **new** project (`POST /api/projects`). Fail-closed: editor identity does not change until persistence succeeds. Copies workflow, model, prompt, settings, asset library, file references, and full `batchDraft` (per-job prompts, seeds, durations, MP/aspect/steps, sparse `item.files`, job order). Does **not** copy runtime execution authority (`h3BatchRuntime:v1`, queued-next, deferred Batch, ComfyUI prompt IDs, session gallery runtime).
 - Batch editor adds **Impostazioni globali batch** (Megapixel / Aspect / Steps) with mixed-value (`Misti`) detection. Only **Applica a tutti gli N job** mutates prepared items — and only `item.megapixels`, `item.aspect`, `item.steps`. Prompts, seeds, durations, `item.files`, and order are preserved without `Prepara dal draft` rebuild.
 - **Espandi tutti / Comprimi tutti** toggle editable job card `<details>` open state only (UI session; not in project JSON; does not mark dirty or autosave).
+
+### Explicit Single Render vs Batch (v0.11.0, Issue #53)
+
+- **Genera singolo** submits exactly one render from the current editor state and current Input bindings. It never reads Numero job, never prepares/submits/mutates Batch items, and never creates a synthetic one-job `batchDraft`.
+- **Batch — opzionale** remains separate. Only **Avvia batch (N)** (or **Metti batch in attesa** when the queue is busy) starts Batch execution. A prepared Batch may coexist unchanged while the user runs Single Render.
+- Single completed output still enters **CLIP SESSIONE** with `source = "single"`.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

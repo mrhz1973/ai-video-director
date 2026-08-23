@@ -75,9 +75,14 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.10.0 (feature branch `feature/project-duplicate-batch-globals-v0100`; live 8787 remains on the previously activated build until the user authorizes restart)
+Known package version: 0.11.0 (feature branch `feature/explicit-single-render-v0110`; live 8787 remains on the previously activated build until the user authorizes restart)
 
-## Current harness UX focus (v0.10.0)
+## Current harness UX focus (v0.11.0)
+
+- **Genera singolo** creates exactly one clip from current editor controls (Issue #53). Numero job is Batch-only; prepared Batch is optional and unchanged by Single Render.
+- Batch execution is explicit via **Avvia batch (N)** only.
+
+## Prior harness UX (v0.10.0)
 
 - **Salva come…** duplicates the current editor into a new project (Issue #50). Source project is unchanged; switch happens only after POST success.
 - Batch **Impostazioni globali** (MP / aspect / steps) with explicit **Applica a tutti gli N job**; per-job prompt, seed, duration, and `item.files` stay independent.

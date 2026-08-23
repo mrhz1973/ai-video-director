@@ -32,6 +32,7 @@ import {
   getSharedCoordinator,
   resolveBatchQueueAction
 } from "./queue-coordinator.mjs";
+import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -505,8 +506,8 @@ function createUi() {
   section.id = "batchSection";
   section.innerHTML = `
     <details id="batchDetails">
-      <summary><span>Batch</span><span id="batchBadge" class="batch-badge">nessun job</span></summary>
-      <p class="batch-help">2–8 render in coda con un solo click. Workflow e modello restano comuni; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job.</p>
+      <summary><span>${BATCH_OPTIONAL_HEADING}</span><span id="batchBadge" class="batch-badge">nessun job</span></summary>
+      <p class="batch-help">Usa questa sezione solo per preparare più render. <strong>Genera singolo</strong> crea sempre una sola clip e non modifica i job preparati qui sotto. Workflow e modello restano comuni; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job.</p>
       <div class="batch-prepare-row">
         <label>Numero job<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
         <button type="button" class="secondary" id="batchPrepare">Prepara dal draft</button>
@@ -533,7 +534,7 @@ function createUi() {
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
         <button type="button" class="secondary" id="batchReset">Reset</button>
-        <button type="button" id="batchQueue">Queue batch</button>
+        <button type="button" id="batchQueue">Avvia batch</button>
       </div>
       <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
       <div id="batchRuntimeList" class="batch-runtime-list"></div>

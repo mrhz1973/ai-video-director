@@ -44,14 +44,14 @@
       </div>
       <div class="attachments">
         <div class="composer-meta">
-          <div id="composerHint" class="composer-hint">Libreria asset → input workflow. Assegna i membri esplicitamente. Genera resta manuale.</div>
+          <div id="composerHint" class="composer-hint">Libreria asset → input workflow. Assegna i membri esplicitamente. <strong>Genera singolo</strong> crea una sola clip con prompt e impostazioni correnti; non modifica il Batch.</div>
           <p id="safeFitWarning" class="safe-fit-warning" hidden></p>
           <p id="generateReason" class="generate-reason" hidden></p>
         </div>
         <div class="prompt-actions" aria-label="Azioni prompt">
           <button type="button" class="secondary" id="promptClear" title="Cancella solo il testo del prompt">Cancella prompt</button>
           <button type="button" class="secondary" id="promptHistoryToggle" aria-expanded="false" aria-controls="promptHistoryPanel">Cronologia</button>
-          <button id="send" type="button">Genera</button>
+          <button id="send" type="button" title="Genera una sola clip con prompt, input e impostazioni correnti. Non modifica il Batch.">Genera singolo</button>
         </div>
       </div>
     </div>
