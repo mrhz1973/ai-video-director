@@ -28,12 +28,17 @@ import {
   waitForHealth
 } from "../lib/windows-launcher.mjs";
 import {
+  buildPortInspectionPowerShell,
+  encodePowerShellCommand,
   inspectPort,
   normalizePortInspection,
-  parsePortQueryRows
+  parsePortQueryRows,
+  queryPortStateWindows,
+  resolvePortInspectionPowerShellExecutable
 } from "../lib/windows-port-inspect.mjs";
 import { runStart, runStatus, assertServiceDecision } from "../scripts/windows/launcher-cli.mjs";
 import { execFile } from "node:child_process";
+import { createServer } from "node:net";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -70,7 +75,7 @@ function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
 }
 
-function directorConfig(version = "0.8.7") {
+function directorConfig(version = "0.8.8") {
   return new Response(JSON.stringify({ version, presets: [{ id: "minimax-h3-i2v" }] }), { status: 200 });
 }
 
@@ -443,8 +448,8 @@ test("probe helpers recognize healthy ComfyUI and Director responses", async () 
     fetchFn: async () => comfyStats()
   });
   assert.equal(comfy.healthy, true);
-  const director = await probeDirectorHealth("http://127.0.0.1:8787", "0.8.7", {
-    fetchFn: async () => directorConfig("0.8.7")
+  const director = await probeDirectorHealth("http://127.0.0.1:8787", "0.8.8", {
+    fetchFn: async () => directorConfig("0.8.8")
   });
   assert.equal(director.healthy, true);
 });
@@ -738,6 +743,327 @@ test("launcher-lib.ps1 is dot-source safe", async () => {
   const lib = await readFile(path.join(scriptsDir, "launcher-lib.ps1"), "utf8");
   assert.doesNotMatch(lib, /Export-ModuleMember/);
 });
+
+test("buildPortInspectionPowerShell produces valid block-oriented script", () => {
+  const script = buildPortInspectionPowerShell(54321);
+  assert.match(script, /\$port = 54321/);
+  assert.match(script, /if \(-not \$conn\) \{/);
+  assert.doesNotMatch(script, /\{;/);
+  assert.doesNotMatch(script, /@\{;/);
+  assert.doesNotMatch(script, /join\("; "\)/);
+});
+
+test("encodePowerShellCommand produces UTF-16LE Base64 for -EncodedCommand", () => {
+  const source = "Write-Output 'ok'";
+  const encoded = encodePowerShellCommand(source);
+  const decoded = Buffer.from(encoded, "base64").toString("utf16le");
+  assert.equal(decoded, source);
+});
+
+test("port inspection source does not use fragile semicolon-joined blocks", async () => {
+  const source = await readFile(path.join(harnessRoot, "lib", "windows-port-inspect.mjs"), "utf8");
+  assert.doesNotMatch(source, /\.join\("; "\)/);
+  assert.match(source, /-EncodedCommand/);
+  assert.match(source, /buildPortInspectionPowerShell/);
+});
+
+test("installer shortcut includes -PauseOnError", async () => {
+  const lib = await readFile(path.join(scriptsDir, "launcher-lib.ps1"), "utf8");
+  assert.match(lib, /-PauseOnError/);
+  const start = await readFile(path.join(scriptsDir, "Start-AIVideoDirector.ps1"), "utf8");
+  assert.match(start, /\[switch\]\$PauseOnError/);
+  assert.match(start, /Wait-LauncherErrorPause/);
+  const status = await readFile(path.join(scriptsDir, "Get-AIVideoDirectorStatus.ps1"), "utf8");
+  assert.doesNotMatch(status, /PauseOnError/);
+});
+
+test("Start script preserves noninteractive path without PauseOnError", async () => {
+  const start = await readFile(path.join(scriptsDir, "Start-AIVideoDirector.ps1"), "utf8");
+  assert.match(start, /if \(\$PauseOnError\)/);
+  assert.match(start, /\[ERROR\].*\$_.Exception\.Message/);
+  assert.doesNotMatch(start, /-NoExit/);
+});
+
+test("queryPortStateWindows honors explicit powershellExecutable override", async () => {
+  const fakeShell = "X:\\Fake\\powershell.exe";
+  let receivedShell = null;
+  let receivedArgs = null;
+  await queryPortStateWindows(49152, {
+    powershellExecutable: fakeShell,
+    execFileFn: async (shell, args) => {
+      receivedShell = shell;
+      receivedArgs = args;
+      return {
+        stdout: JSON.stringify({
+          listening: false,
+          inspectionOk: true,
+          processInfo: null
+        })
+      };
+    }
+  });
+  assert.equal(receivedShell, fakeShell);
+  assert.notEqual(receivedShell.toLowerCase(), `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`.toLowerCase());
+  assert.ok(receivedArgs.includes("-EncodedCommand"));
+});
+
+test("resolvePortInspectionPowerShellExecutable prefers override then SystemRoot", () => {
+  assert.equal(
+    resolvePortInspectionPowerShellExecutable({ powershellExecutable: "X:\\Fake\\powershell.exe" }),
+    "X:\\Fake\\powershell.exe"
+  );
+  if (process.env.SystemRoot) {
+    assert.equal(
+      resolvePortInspectionPowerShellExecutable({}),
+      `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    );
+  }
+});
+
+async function parsePowerShellScript(script) {
+  if (script.includes("'@")) {
+    throw new Error("script cannot contain a PowerShell here-string terminator");
+  }
+  const shell = process.env.SystemRoot
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : "powershell.exe";
+  const parser = [
+    "$errors = $null",
+    "$tokens = $null",
+    "$source = @'",
+    script,
+    "'@",
+    "[void][System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)",
+    "if ($errors.Count -gt 0) {",
+    "  $errors | ForEach-Object { Write-Output $_.Message }",
+    "  exit 1",
+    "}",
+    "exit 0"
+  ].join("\n");
+  const encodedParser = encodePowerShellCommand(parser);
+  const { stdout, stderr } = await execFileAsync(shell, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-EncodedCommand",
+    encodedParser
+  ], { windowsHide: true });
+  return { stdout: String(stdout), stderr: String(stderr) };
+}
+
+async function runPowerShellFunction(functionName, setupLines = []) {
+  const shell = process.env.SystemRoot
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : "powershell.exe";
+  const script = [
+    `$lib = '${scriptsDir.replace(/\\/g, "\\\\")}\\launcher-lib.ps1'`,
+    ". $lib",
+    ...setupLines,
+    `$result = ${functionName}`,
+    'Write-Output ("SELECTED=" + $result)'
+  ].join("\n");
+  const { stdout, stderr } = await execFileAsync(shell, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-EncodedCommand",
+    encodePowerShellCommand(script)
+  ], { windowsHide: true });
+  const match = String(stdout).match(/^SELECTED=(.*)$/m);
+  return { stdout: match ? match[1].trim() : String(stdout).trim(), stderr: String(stderr) };
+}
+
+if (process.platform === "win32") {
+  test("generated port inspection PowerShell parses without ParserError", async () => {
+    const script = buildPortInspectionPowerShell(49152);
+    const result = await parsePowerShellScript(script);
+    assert.equal(result.stdout.trim(), "");
+    assert.equal(result.stderr.trim(), "");
+  });
+
+  test("real Windows temporary TCP listener is detected by queryPortStateWindows", async () => {
+    const server = createServer();
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : null;
+    assert.ok(port);
+    assert.notEqual(port, 8188);
+    assert.notEqual(port, 8787);
+    assert.notEqual(port, 8788);
+    try {
+      const raw = await queryPortStateWindows(port);
+      assert.equal(raw.inspectionOk, true);
+      assert.equal(raw.listening, true);
+      if (raw.processInfo?.pid != null) {
+        assert.ok(Number(raw.processInfo.pid) > 0);
+      }
+      const wrapped = await inspectPort(port);
+      assert.equal(wrapped.inspectionOk, true);
+      assert.equal(wrapped.listening, true);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  test("real Windows inspection reports absent port as listening=false inspectionOk=true", async () => {
+    const server = createServer();
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    const usedPort = typeof address === "object" && address ? address.port : null;
+    assert.ok(usedPort);
+    await new Promise(resolve => server.close(resolve));
+    const freePort = usedPort;
+    const raw = await queryPortStateWindows(freePort);
+    assert.equal(raw.inspectionOk, true);
+    assert.equal(raw.listening, false);
+    assert.equal(raw.processInfo, null);
+  });
+
+  test("Get-PowerShellLauncherExecutable rejects WindowsApps alias and uses concrete shell", async () => {
+    const ps51 = `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    const result = await runPowerShellFunction("Get-PowerShellLauncherExecutable");
+    assert.equal(result.stdout.toLowerCase(), ps51.toLowerCase());
+    assert.doesNotMatch(result.stdout, /WindowsApps/i);
+  });
+
+  test("Get-PowerShellLauncherExecutable prefers concrete PS7 when fixture path exists", async () => {
+    const shell = process.env.SystemRoot
+      ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+      : "powershell.exe";
+    const script = [
+      `$lib = '${scriptsDir.replace(/\\/g, "\\\\")}\\launcher-lib.ps1'`,
+      ". $lib",
+      "$tempRoot = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('ps7-fixture-' + [guid]::NewGuid().ToString())) -Force",
+      "$ps7Dir = Join-Path $tempRoot.FullName 'PowerShell\\7'",
+      "New-Item -ItemType Directory -Path $ps7Dir -Force | Out-Null",
+      "$fakePs7 = Join-Path $ps7Dir 'pwsh.exe'",
+      "Set-Content -LiteralPath $fakePs7 -Value 'fake' -NoNewline",
+      "$savedProgramFiles = $env:ProgramFiles",
+      "$env:ProgramFiles = $tempRoot.FullName",
+      "try {",
+      "  $selected = Get-PowerShellLauncherExecutable",
+      "  Write-Output $selected",
+      "} finally {",
+      "  $env:ProgramFiles = $savedProgramFiles",
+      "  Remove-Item -LiteralPath $tempRoot.FullName -Recurse -Force",
+      "}"
+    ].join("\n");
+    const { stdout } = await execFileAsync(shell, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodePowerShellCommand(script)
+    ], { windowsHide: true });
+    assert.match(stdout.trim(), /PowerShell\\7\\pwsh\.exe$/i);
+    assert.doesNotMatch(stdout, /WindowsApps/i);
+  });
+
+  test("Get-PowerShellLauncherExecutable throws when no usable shell exists", async () => {
+    const shell = process.env.SystemRoot
+      ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+      : "powershell.exe";
+    const script = [
+      `$lib = '${scriptsDir.replace(/\\/g, "\\\\")}\\launcher-lib.ps1'`,
+      ". $lib",
+      "function Test-ConcretePowerShellExecutable { param([string]$Path) return $false }",
+      "try {",
+      "  Get-PowerShellLauncherExecutable | Out-Null",
+      "  exit 2",
+      "} catch {",
+      "  Write-Output ('ERROR=' + $_.Exception.Message)",
+      "  exit 0",
+      "}"
+    ].join("\n");
+    const { stdout } = await execFileAsync(shell, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodePowerShellCommand(script)
+    ], { windowsHide: true });
+    const match = String(stdout).match(/^ERROR=(.*)$/m);
+    assert.ok(match);
+    assert.match(match[1], /No usable PowerShell executable/i);
+  });
+
+  test("production port inspection script executes via Windows PowerShell 5.1", async () => {
+    const server = createServer();
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : null;
+    assert.ok(port);
+    const shell = `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    const source = buildPortInspectionPowerShell(port);
+    const encoded = encodePowerShellCommand(source);
+    try {
+      const { stdout } = await execFileAsync(shell, [
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        encoded
+      ], { windowsHide: true });
+      const parsed = JSON.parse(String(stdout).trim());
+      assert.equal(parsed.inspectionOk, true);
+      assert.equal(parsed.listening, true);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  test("Start-AIVideoDirector.ps1 displays simulated PowerShell-layer error without pausing", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "h3-start-script-"));
+    const libSource = await readFile(path.join(scriptsDir, "launcher-lib.ps1"), "utf8");
+    const startSource = await readFile(path.join(scriptsDir, "Start-AIVideoDirector.ps1"), "utf8");
+    const throwingLib = libSource.replace(
+      /function Invoke-LauncherCli \{[\s\S]*?\n\}\r?\n\r?\nfunction Wait-LauncherErrorPause/,
+      [
+        "function Invoke-LauncherCli {",
+        "    param(",
+        "        [Parameter(Mandatory = $true)][ValidateSet('start', 'status')][string]$Command,",
+        "        [string]$HarnessRoot = (Get-HarnessRoot),",
+        "        [string]$ConfigPath = (Get-LauncherConfigPath)",
+        "    )",
+        "    throw 'SIMULATED LAUNCHER FAILURE'",
+        "}",
+        "",
+        "function Wait-LauncherErrorPause"
+      ].join("\n")
+    );
+    await writeFile(path.join(tempDir, "launcher-lib.ps1"), throwingLib, "utf8");
+    await writeFile(path.join(tempDir, "Start-AIVideoDirector.ps1"), startSource, "utf8");
+    const shell = `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    const startScript = path.join(tempDir, "Start-AIVideoDirector.ps1");
+    let proc;
+    try {
+      proc = await new Promise((resolve, reject) => {
+        execFile(shell, [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          startScript
+        ], { windowsHide: true }, (error, stdout, stderr) => {
+          resolve({ error, stdout: String(stdout), stderr: String(stderr) });
+        });
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+    assert.ok(proc.error, "expected non-zero exit");
+    assert.notEqual(proc.error.code, 0);
+    const combined = `${proc.stdout}\n${proc.stderr}`;
+    assert.match(combined, /SIMULATED LAUNCHER FAILURE/);
+    assert.match(combined, /\[ERROR\]/);
+    assert.doesNotMatch(combined, /Press Enter to close this window/i);
+  });
+}
 
 if (process.platform === "win32") {
   test("PowerShell 7 helper runtime smoke", async () => {

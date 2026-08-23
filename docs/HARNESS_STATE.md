@@ -9,14 +9,14 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.7, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.8, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-### Windows one-click launcher (v0.8.7, Issue #42)
+### Windows one-click launcher (v0.8.8, Issues #42/#44)
 
 Tracked scripts live in `comfyui-harness/scripts/windows/`:
 
