@@ -111,6 +111,12 @@ import {
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
 } from "./batch-ui.mjs";
+import { showAppNotice } from "./notify.mjs";
+import {
+  buildSessionOutputRecords,
+  notifySessionOutputsChanged,
+  upsertSessionOutputs
+} from "./session-outputs.mjs";
 const $ = id => document.getElementById(id);
 let clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
 let config, events;
@@ -161,11 +167,12 @@ let projectLoadGeneration = 0;
 let pendingLegacyBatchCandidate = null;
 
 const add = (text, kind = "system") => {
-  const el = document.createElement("div");
-  el.className = `message ${kind}`;
-  el.textContent = text;
-  $("log").append(el);
-  el.scrollIntoView();
+  const message = String(text || "");
+  if (!message) return;
+  const isError = kind === "error" || /^errore\b/i.test(message);
+  showAppNotice(message, {
+    kind: isError ? "error" : kind === "warn" ? "warn" : "info"
+  });
 };
 
 function setProjectLoadStatus(state, text, { hidden = false } = {}) {
@@ -797,17 +804,17 @@ async function outputs() {
     setBusy(false);
     rememberJob();
     renderMonitor();
-    for (const item of items) {
-      const link = document.createElement("a");
-      link.href = item.url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = `Apri output: ${item.filename}`;
-      const box = document.createElement("div");
-      box.className = "message system";
-      box.append(link);
-      $("log").append(box);
-    }
+    upsertSessionOutputs(sessionStorage, buildSessionOutputRecords(items, {
+      promptId: currentPrompt,
+      source: "single",
+      workflowId: $("workflow")?.value || "",
+      workflowLabel: currentPreset()?.label || $("workflow")?.value || "",
+      model: $("model")?.value || "",
+      seed: $("seed")?.value ?? "",
+      duration: $("duration")?.value ?? null,
+      completedAt: Date.now()
+    }));
+    notifySessionOutputsChanged();
     latestCompletion = reconstructCompletionFromOutputs(items, {
       duration: $("duration")?.value,
       model: $("model")?.value,
@@ -829,7 +836,7 @@ async function outputs() {
     setBusy(false);
     monitorState = { ...monitorState, phase: "error" };
     renderMonitor();
-    add(error.message);
+    showAppNotice(error.message, { kind: "error" });
     startPolling();
   } finally {
     completing = false;
@@ -846,7 +853,7 @@ function handleHistoryFailure(history) {
   });
   rememberJob();
   renderMonitor();
-  add(label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).");
+  add(label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).", "error");
 }
 
 async function pollHistory() {
@@ -876,7 +883,11 @@ async function handleMessage(event) {
     stopPolling();
     setBusy(false);
     rememberJob();
-    add(JSON.stringify(message.data, null, 2));
+    console.warn("ComfyUI execution terminal event", message.data);
+    showAppNotice(
+      message.type === "execution_interrupted" ? "Generazione interrotta." : "Generazione fallita.",
+      { kind: "error" }
+    );
   }
 }
 
@@ -1604,7 +1615,6 @@ async function loadProjectById(id) {
     });
     if (audit.status === LOAD_STATUS.WARNING) statusText = audit.summary;
     setProjectLoadStatus(audit.status, statusText, { hidden: false });
-    add(`Progetto caricato: ${normalized.label}`);
     if (persistence.needsPersistence && batchResult.count) {
       add(`Batch locale ripristinato · ${batchResult.count} job — salvataggio sul progetto in corso…`, "system");
     }
@@ -1612,7 +1622,7 @@ async function loadProjectById(id) {
     if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
     const resolved = resolveLoadStatusFromError(error);
     setProjectLoadStatus(resolved.status, resolved.summary, { hidden: false });
-    add(resolved.detail, "system");
+    add(resolved.detail || resolved.summary || "Errore caricamento progetto", "error");
   } finally {
     setBatchLocalLoadSuppressed(false);
   }
@@ -1742,7 +1752,6 @@ async function saveProject({ asNew = false } = {}) {
   clearRecoveryDraft();
   ensureAutosaveController().reset(SAVE_STATUS.SAVED);
   setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
-  add(`Progetto salvato: ${data.label}`);
 }
 
 async function ingestFiles(fileList, { groupId = null } = {}) {
@@ -1903,7 +1912,7 @@ if (recovery && !$("project").value) {
     renderLibrary();
     renderRoleFields();
     updateDirtyFlag();
-    add("Bozza recuperata");
+    setSaveStatus(SAVE_STATUS.RECOVERED);
   }
 } else {
   setSaveStatus(draft.saved ? SAVE_STATUS.SAVED : SAVE_STATUS.LOCAL_DRAFT);

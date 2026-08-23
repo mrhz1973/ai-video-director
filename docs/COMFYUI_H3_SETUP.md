@@ -2,7 +2,7 @@
 
 Current architecture/status source of truth: `docs/HARNESS_STATE.md`.
 
-The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, local project CRUD, a categorized asset library (Elements / Locations / Objects / Audio), mode-specific workflow role assignment, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, output links, and Batch generation with optional per-job non-video input overrides (v0.8.9).
+The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, local project CRUD, a categorized asset library (Elements / Locations / Objects / Audio), mode-specific workflow role assignment, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, Batch generation with optional per-job non-video input overrides, and an Output Inspector session clip gallery (v0.9.0) plus private archive naming settings.
 
 ## 1. Prepare ComfyUI
 
@@ -104,7 +104,8 @@ If a previously saved project fails on a reference loader, verify that its refer
 - Bind both services to `127.0.0.1` by default.
 - Never place API keys or provider tokens in workflow JSON.
 - This public repository stores text configuration only, never uploaded images, video, audio or generated media.
-- Output files remain in ComfyUI's configured output directory.
+- Output files remain in ComfyUI's configured output directory. The Director Output tab shows a session clip gallery (`h3SessionOutputs:v1`) of finished clips observed in the current browser session; optional archive copies are separate private-folder copies and are never deleted by clearing the gallery list.
+- Monitor diagnostics **Eventi ComfyUI** and **Terminale ComfyUI** remain; the legacy bottom Attività / Output drawer was removed in v0.9.0.
 - `config.json`, private `*.api.json` exports and `projects/*.local.json` remain local and ignored by Git.
 - Never commit local filesystem paths or personal/private reference filenames.
 

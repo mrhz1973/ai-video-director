@@ -108,19 +108,6 @@
         tabindex="0"
       ></div>
     </div>
-
-    <details id="activityDrawer" class="activity-drawer">
-      <summary>Attività / Output</summary>
-      <div
-        id="activityResizeHandle"
-        class="panel-resize-handle"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Ridimensiona l'area Attività"
-        tabindex="0"
-      ></div>
-      <div id="log" class="log activity-log" aria-label="Attività e output"></div>
-    </details>
   </section>
 
   <aside id="inspector" class="inspector" aria-label="Inspector">
@@ -215,38 +202,49 @@
       </div>
 
       <div class="inspector-panel" role="tabpanel" id="panel-output" data-inspector-panel="output" aria-labelledby="tab-output" hidden>
-        <section class="output-section" id="outputSection">
-          <h3>Output</h3>
-          <div class="output-grid">
-            <label>Destinazione
-              <select id="outputScope">
-                <option value="global">Cartella predefinita</option>
-                <option value="project">Cartella di questo progetto</option>
-              </select>
-            </label>
-            <div class="output-folder-row">
-              <div>
-                <span class="hint">Cartella selezionata</span>
-                <div id="outputFolderName" class="output-folder-name">Nessuna cartella scelta</div>
-              </div>
-              <button type="button" class="secondary" id="outputChooseFolder">Scegli cartella</button>
-            </div>
-            <label>Scena / shot<input id="outputScene" type="text" value="shot" autocomplete="off"></label>
-            <label>Variante<input id="outputVariant" type="text" placeholder="es. candidate, v2" autocomplete="off"></label>
-            <label class="wide">Template nome file<input id="outputTemplate" type="text" value="{project}_{scene}_{workflow}_{model}_{mp}MP_{duration}s_{steps}st_seed{seed}_{counter:04}" autocomplete="off"></label>
-            <label>Numerazione
-              <select id="outputCounterScope">
-                <option value="project">Progressiva per progetto</option>
-                <option value="scene">Progressiva per scena</option>
-                <option value="global">Progressiva globale</option>
-              </select>
-            </label>
-            <label class="output-check"><input id="outputAuto" type="checkbox" checked> Copia automaticamente il render finito</label>
-            <div class="output-preview wide"><span>Anteprima</span><code id="outputPreview">render.mp4</code></div>
+        <section class="session-gallery-section" id="sessionGallerySection" aria-label="Clip sessione">
+          <div class="session-gallery-head">
+            <h3 id="sessionGalleryTitle">CLIP SESSIONE · 0</h3>
+            <button type="button" class="secondary" id="sessionGalleryClear" title="Rimuove solo l'elenco in memoria sessione; non cancella i file">Svuota elenco</button>
           </div>
-          <p id="outputStatus" class="output-status">Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.</p>
-          <p class="output-help">La cartella resta privata nel browser locale. L'harness copia il file finito; non cancella né rinomina l'originale ComfyUI.</p>
+          <div id="sessionGalleryList" class="session-gallery-list"></div>
+          <p id="sessionGalleryEmpty" class="session-gallery-empty">Nessuna clip generata in questa sessione.</p>
         </section>
+
+        <details class="output-settings-details" id="outputSettingsDetails">
+          <summary>Destinazione e nomi</summary>
+          <section class="output-section" id="outputSection">
+            <div class="output-grid">
+              <label>Destinazione
+                <select id="outputScope">
+                  <option value="global">Cartella predefinita</option>
+                  <option value="project">Cartella di questo progetto</option>
+                </select>
+              </label>
+              <div class="output-folder-row">
+                <div>
+                  <span class="hint">Cartella selezionata</span>
+                  <div id="outputFolderName" class="output-folder-name">Nessuna cartella scelta</div>
+                </div>
+                <button type="button" class="secondary" id="outputChooseFolder">Scegli cartella</button>
+              </div>
+              <label>Scena / shot<input id="outputScene" type="text" value="shot" autocomplete="off"></label>
+              <label>Variante<input id="outputVariant" type="text" placeholder="es. candidate, v2" autocomplete="off"></label>
+              <label class="wide">Template nome file<input id="outputTemplate" type="text" value="{project}_{scene}_{workflow}_{model}_{mp}MP_{duration}s_{steps}st_seed{seed}_{counter:04}" autocomplete="off"></label>
+              <label>Numerazione
+                <select id="outputCounterScope">
+                  <option value="project">Progressiva per progetto</option>
+                  <option value="scene">Progressiva per scena</option>
+                  <option value="global">Progressiva globale</option>
+                </select>
+              </label>
+              <label class="output-check"><input id="outputAuto" type="checkbox" checked> Copia automaticamente il render finito</label>
+              <div class="output-preview wide"><span>Anteprima</span><code id="outputPreview">render.mp4</code></div>
+            </div>
+            <p id="outputStatus" class="output-status">Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.</p>
+            <p class="output-help">La cartella resta privata nel browser locale. L'harness copia il file finito; non cancella né rinomina l'originale ComfyUI.</p>
+          </section>
+        </details>
       </div>
     </div>
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-23 — v0.9.0
+
+- Output Inspector now prioritizes a **CLIP SESSIONE** gallery of finished single-job and Batch clips observed in the current browser session (`h3SessionOutputs:v1` in sessionStorage; survives F5, clears when the tab session ends).
+- Gallery cards show job attribution, seed/duration/workflow, ComfyUI original filename/subfolder, optional archive copy filename + folder display name, and **Apri video**. Clearing the list removes session metadata only — never ComfyUI or archived media.
+- Existing Destinazione / naming / auto-copy settings move under a compact **Destinazione e nomi** section.
+- Removed the legacy bottom **Attività / Output** drawer (`#activityDrawer` / `#log`). Harness-side errors and important notices use compact toast notifications (`showAppNotice`).
+- ComfyUI **Eventi** and **Terminale** diagnostics remain in the render monitor.
+
 ## 2026-08-23 — v0.8.9
 
 - Batch per-job input/asset bindings: each Batch job may override non-video workflow input roles (image/audio) via sparse `item.files`.

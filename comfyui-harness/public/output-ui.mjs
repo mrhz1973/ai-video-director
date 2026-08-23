@@ -6,6 +6,16 @@ import {
   outputCounterStorageKey,
   sanitizeOutputSegment
 } from "./output-naming.mjs";
+import {
+  SESSION_OUTPUTS_CHANGED,
+  attachArchiveMetadata,
+  clearSessionOutputs,
+  markSessionOutputUnavailable,
+  notifySessionOutputsChanged,
+  readSessionOutputs,
+  sessionGalleryClearSideEffects,
+  subfolderFromOutputUrl
+} from "./session-outputs.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -418,6 +428,18 @@ async function archiveOutputs(promptId, items = []) {
     const bytes = await copyOutputToDirectory(directory, item, allocation.filename);
     localStorage.setItem(allocation.counterKey, String(allocation.counter + 1));
     localStorage.setItem(key, JSON.stringify({ filename: allocation.filename, bytes, archivedAt: Date.now() }));
+    attachArchiveMetadata(sessionStorage, {
+      promptId,
+      filename: item.filename,
+      subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+      archive: {
+        filename: allocation.filename,
+        folderLabel: directory.name || plan.projectLabel || plan.folderKey || "",
+        archivedAt: Date.now(),
+        bytes
+      }
+    });
+    notifySessionOutputsChanged();
     copied += 1;
     setStatus(`Archiviato: ${allocation.filename}`, "ok");
   }
@@ -464,9 +486,111 @@ window.fetch = async (input, init = undefined) => {
   return response;
 };
 
+function formatClipTime(completedAt) {
+  if (!completedAt) return "";
+  try {
+    return new Date(completedAt).toLocaleTimeString("it-IT", { hour12: false });
+  } catch {
+    return "";
+  }
+}
+
+function renderSessionGallery() {
+  const list = $("sessionGalleryList");
+  const empty = $("sessionGalleryEmpty");
+  const title = $("sessionGalleryTitle");
+  if (!list || !empty || !title) return;
+  const items = readSessionOutputs(sessionStorage);
+  title.textContent = `CLIP SESSIONE · ${items.length}`;
+  list.replaceChildren();
+  empty.hidden = items.length > 0;
+  for (const item of items) {
+    const card = document.createElement("article");
+    card.className = `session-clip${item.available === false ? " unavailable" : ""}`;
+    card.dataset.outputId = item.id;
+
+    const meta = document.createElement("div");
+    meta.className = "session-clip-meta";
+    const label = item.jobLabel
+      || (item.source === "batch" && item.jobIndex != null ? `Job ${item.jobIndex + 1}` : "Render");
+    const bits = [`<strong>${label}</strong>`];
+    if (item.seed !== "") bits.push(`seed ${item.seed}`);
+    if (item.duration != null && item.duration !== "") bits.push(`${item.duration}s`);
+    if (item.workflowLabel || item.workflowId) bits.push(item.workflowLabel || item.workflowId);
+    const when = formatClipTime(item.completedAt);
+    if (when) bits.push(when);
+    meta.innerHTML = bits.join("<span>·</span>");
+
+    const paths = document.createElement("div");
+    paths.className = "session-clip-paths";
+    const originalLine = document.createElement("div");
+    originalLine.innerHTML = `Originale ComfyUI:<br><code>${item.subfolder ? `${item.subfolder} / ` : ""}${item.filename}</code>`;
+    paths.append(originalLine);
+    if (item.archive?.filename) {
+      const archiveLine = document.createElement("div");
+      const folder = item.archive.folderLabel ? `${item.archive.folderLabel} / ` : "";
+      archiveLine.innerHTML = `Copia archivio:<br><code>${folder}${item.archive.filename}</code>`;
+      paths.append(archiveLine);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "session-clip-actions";
+    if (item.available === false) {
+      const flag = document.createElement("span");
+      flag.className = "session-clip-unavailable-flag";
+      flag.textContent = "Non disponibile";
+      actions.append(flag);
+    } else if (item.url) {
+      const link = document.createElement("a");
+      link.href = item.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Apri video";
+      link.addEventListener("click", event => {
+        // Opening never queues/generates; mark unavailable if the browser cannot resolve later.
+        void event;
+      });
+      actions.append(link);
+    }
+
+    if (item.url && item.available !== false && /\.(mp4|webm|mov)(\?|$)/i.test(item.filename || item.url)) {
+      const video = document.createElement("video");
+      video.className = "session-clip-preview";
+      video.src = item.url;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.controls = true;
+      video.addEventListener("error", () => {
+        markSessionOutputUnavailable(sessionStorage, item.id);
+        notifySessionOutputsChanged();
+      });
+      card.append(meta, video, paths, actions);
+    } else {
+      card.append(meta, paths, actions);
+    }
+    list.append(card);
+  }
+}
+
+function bindSessionGallery() {
+  if (!$("sessionGallerySection")) return;
+  renderSessionGallery();
+  window.addEventListener(SESSION_OUTPUTS_CHANGED, renderSessionGallery);
+  $("sessionGalleryClear")?.addEventListener("click", () => {
+    const count = readSessionOutputs(sessionStorage).length;
+    if (!count) return;
+    const ok = window.confirm("Svuotare l'elenco clip di questa sessione?\nI file ComfyUI e le copie archivio non verranno cancellati.");
+    if (!ok) return;
+    clearSessionOutputs(sessionStorage);
+    notifySessionOutputsChanged();
+    void sessionGalleryClearSideEffects();
+  });
+}
+
 function bindUi() {
-  if (!$("outputSection")) return;
-  if (typeof window.showDirectoryPicker !== "function") {
+  if (!$("outputSection") && !$("sessionGallerySection")) return;
+  if ($("outputChooseFolder") && typeof window.showDirectoryPicker !== "function") {
     $("outputChooseFolder").disabled = true;
     setStatus("Scelta cartella non supportata dal browser. Edge/Chromium aggiornato è richiesto.", "warn");
   }
@@ -489,6 +613,7 @@ function bindUi() {
 
   loadScope();
   setTimeout(loadScope, 500);
+  bindSessionGallery();
 }
 
 bindUi();

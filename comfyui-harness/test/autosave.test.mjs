@@ -172,7 +172,7 @@ test("app wiring keeps manual Save and never auto-queues from autosave/recovery"
   assert.doesNotMatch(app, /projectSaveAs/);
   assert.match(app, /readRecoveryDraft/);
   assert.match(app, /createAutosaveController/);
-  assert.match(app, /Bozza recuperata/);
+  assert.match(app, /SAVE_STATUS\.RECOVERED/);
   assert.match(app, /\/api\/queue/);
   const saveFnRegion = app.slice(app.indexOf("createAutosaveController"), app.indexOf("createAutosaveController") + 900);
   assert.doesNotMatch(saveFnRegion, /\/api\/queue/);
