@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { LATEST_OUTPUT_KEY } from "../public/completion.mjs";
+import { LATEST_OUTPUT_KEY, persistLatestOutput, readLatestOutput } from "../public/completion.mjs";
 import { createSessionClipCard } from "../public/session-gallery-dom.mjs";
 import {
   BATCH_RUNTIME_STORAGE_KEY,
@@ -10,6 +10,7 @@ import {
   applySessionGalleryReconstruction,
   attachArchiveMetadata,
   buildSessionOutputRecords,
+  buildSingleJobCompletionAttribution,
   clearSessionOutputs,
   formatSessionClipSettingsLine,
   markSessionOutputUnavailable,
@@ -87,6 +88,73 @@ function collectText(node, out = []) {
   }
   return out;
 }
+
+test("completed single job retains promptId after active runtime would be cleared", () => {
+  const completedPromptId = "prompt-keep-me";
+  // Simulate rememberJob() clearing active prompt before attribution runs.
+  let activePrompt = completedPromptId;
+  activePrompt = undefined;
+  void activePrompt;
+
+  const items = [{
+    filename: "solo.mp4",
+    subfolder: "video",
+    url: "/api/view?filename=solo.mp4&subfolder=video&type=output"
+  }];
+  const { galleryRecords, completion } = buildSingleJobCompletionAttribution(completedPromptId, items, {
+    seed: "11",
+    duration: "5",
+    megapixels: "0.3",
+    aspect: "16:9",
+    steps: "20",
+    completedAt: 42
+  });
+
+  assert.equal(galleryRecords.length, 1);
+  assert.equal(galleryRecords[0].promptId, "prompt-keep-me");
+  assert.equal(
+    galleryRecords[0].id,
+    sessionOutputId({ promptId: "prompt-keep-me", subfolder: "video", filename: "solo.mp4" })
+  );
+  assert.equal(completion.promptId, "prompt-keep-me");
+
+  const session = memoryStorage();
+  upsertSessionOutputs(session, galleryRecords);
+  persistLatestOutput(completion, session);
+
+  const latest = readLatestOutput(session);
+  assert.equal(latest.promptId, "prompt-keep-me");
+
+  attachArchiveMetadata(session, {
+    promptId: "prompt-keep-me",
+    filename: "solo.mp4",
+    subfolder: "video",
+    archive: { filename: "copy.mp4", folderLabel: "Proj", archivedAt: 99, bytes: 8 }
+  });
+  assert.equal(readSessionOutputs(session)[0].archive.filename, "copy.mp4");
+
+  const again = buildSingleJobCompletionAttribution(completedPromptId, items, {
+    seed: "11",
+    completedAt: 100
+  });
+  upsertSessionOutputs(session, again.galleryRecords);
+  assert.equal(readSessionOutputs(session).length, 1);
+
+  const reconstructed = reconstructSessionOutputRecords({
+    latestOutput: readLatestOutput(session)
+  });
+  assert.equal(reconstructed.length, 1);
+  assert.equal(reconstructed[0].promptId, "prompt-keep-me");
+  assert.equal(reconstructed[0].id, galleryRecords[0].id);
+
+  assert.deepEqual(reconstructionSideEffects(), {
+    scansOutputFolder: false,
+    guessesFromFilenames: false,
+    queuePosts: 0,
+    promptPosts: 0,
+    gpuWrites: 0
+  });
+});
 
 test("session output record creation and identity", () => {
   const records = buildSessionOutputRecords([
@@ -460,6 +528,17 @@ test("important former add\\(\\) errors still have a visible notice path", () =>
   assert.match(app, /Generazione fallita/);
 });
 
+test("app.js captures completedPromptId before rememberJob clears runtime", () => {
+  const region = app.slice(app.indexOf("async function outputs()"), app.indexOf("function handleHistoryFailure"));
+  assert.match(region, /const completedPromptId = currentPrompt/);
+  assert.match(region, /rememberJob\(\)/);
+  assert.ok(region.indexOf("const completedPromptId = currentPrompt") < region.indexOf("rememberJob()"));
+  assert.match(region, /buildSingleJobCompletionAttribution\(completedPromptId/);
+  assert.doesNotMatch(region, /promptId:\s*currentPrompt/);
+  assert.doesNotMatch(region, /\/api\/queue/);
+  assert.doesNotMatch(region, /["'`]\/prompt["'`]/);
+});
+
 test("gallery never posts queue or prompt", () => {
   const gallery = readFileSync(new URL("../public/session-outputs.mjs", import.meta.url), "utf8");
   const notify = readFileSync(new URL("../public/notify.mjs", import.meta.url), "utf8");
@@ -469,7 +548,7 @@ test("gallery never posts queue or prompt", () => {
   assert.doesNotMatch(notify, /\/api\/queue|["'`]\/prompt["'`]/);
   assert.match(batchUi, /buildSessionOutputRecords/);
   assert.match(batchUi, /job\.item\?\.megapixels/);
-  assert.match(app, /buildSessionOutputRecords/);
+  assert.match(app, /buildSingleJobCompletionAttribution/);
   assert.match(app, /megapixels: \$\("megapixels"\)/);
   assert.match(outputUi, /sessionGalleryClearSideEffects/);
   assert.match(outputUi, /applySessionGalleryReconstruction/);

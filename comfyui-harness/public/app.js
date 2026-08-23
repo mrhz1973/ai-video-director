@@ -80,7 +80,6 @@ import {
 } from "./prompt-history.mjs";
 import {
   batchJobOutputRows,
-  buildCompletionCard,
   clearLatestOutput,
   persistLatestOutput,
   readLatestOutput,
@@ -113,7 +112,7 @@ import {
 } from "./batch-ui.mjs";
 import { showAppNotice } from "./notify.mjs";
 import {
-  buildSessionOutputRecords,
+  buildSingleJobCompletionAttribution,
   notifySessionOutputsChanged,
   upsertSessionOutputs
 } from "./session-outputs.mjs";
@@ -789,13 +788,14 @@ async function upload(file) {
 
 async function outputs() {
   if (completing || !currentPrompt) return;
+  const completedPromptId = currentPrompt;
   completing = true;
   stopPolling();
   try {
-    const response = await fetch(`/api/outputs?promptId=${encodeURIComponent(currentPrompt)}`);
+    const response = await fetch(`/api/outputs?promptId=${encodeURIComponent(completedPromptId)}`);
     const items = await response.json();
     if (!response.ok) throw new Error(items.error || "Output non disponibile");
-    monitorState = applyMonitorEvent(monitorState, { type: "executing", data: { node: null, prompt_id: currentPrompt } });
+    monitorState = applyMonitorEvent(monitorState, { type: "executing", data: { node: null, prompt_id: completedPromptId } });
     monitorState = {
       ...monitorState,
       phase: "completed",
@@ -804,9 +804,7 @@ async function outputs() {
     setBusy(false);
     rememberJob();
     renderMonitor();
-    upsertSessionOutputs(sessionStorage, buildSessionOutputRecords(items, {
-      promptId: currentPrompt,
-      source: "single",
+    const { galleryRecords, completion } = buildSingleJobCompletionAttribution(completedPromptId, items, {
       workflowId: $("workflow")?.value || "",
       workflowLabel: currentPreset()?.label || $("workflow")?.value || "",
       model: $("model")?.value || "",
@@ -816,23 +814,10 @@ async function outputs() {
       aspect: $("aspect")?.value ?? "",
       steps: $("steps")?.value ?? "",
       completedAt: Date.now()
-    }));
-    notifySessionOutputsChanged();
-    latestCompletion = reconstructCompletionFromOutputs(items, {
-      duration: $("duration")?.value,
-      model: $("model")?.value,
-      seed: $("seed")?.value,
-      promptId: currentPrompt,
-      completedAt: Date.now()
-    }) || buildCompletionCard({
-      filename: items[0]?.filename,
-      url: items[0]?.url,
-      duration: $("duration")?.value,
-      model: $("model")?.value,
-      seed: $("seed")?.value,
-      promptId: currentPrompt,
-      completedAt: Date.now()
     });
+    upsertSessionOutputs(sessionStorage, galleryRecords);
+    notifySessionOutputsChanged();
+    latestCompletion = completion;
     persistLatestOutput(latestCompletion, sessionStorage);
     renderCompletionCard();
   } catch (error) {

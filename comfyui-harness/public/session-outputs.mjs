@@ -3,7 +3,7 @@
  * Does not delete media, queue jobs, or persist execution authority.
  */
 
-import { LATEST_OUTPUT_KEY } from "./completion.mjs";
+import { LATEST_OUTPUT_KEY, buildCompletionCard, reconstructCompletionFromOutputs } from "./completion.mjs";
 
 export const SESSION_OUTPUTS_KEY = "h3SessionOutputs:v1";
 export const MAX_SESSION_OUTPUTS = 100;
@@ -103,6 +103,42 @@ export function buildSessionOutputRecords(items = [], meta = {}) {
       archive: meta.archive || null
     }))
     .filter(Boolean);
+}
+
+/**
+ * Single-job completion attribution must use the prompt id captured BEFORE
+ * active runtime state is cleared (rememberJob() with no id).
+ * Returns gallery records + latest-completion card sharing that promptId.
+ */
+export function buildSingleJobCompletionAttribution(completedPromptId, items = [], meta = {}) {
+  const promptId = String(completedPromptId || "").trim();
+  if (!promptId || !Array.isArray(items) || !items.length) {
+    return { completedPromptId: promptId, galleryRecords: [], completion: null };
+  }
+  const completedAt = Number(meta.completedAt) || Date.now();
+  const galleryMeta = {
+    ...meta,
+    promptId,
+    source: "single",
+    completedAt
+  };
+  const galleryRecords = buildSessionOutputRecords(items, galleryMeta);
+  const completion = reconstructCompletionFromOutputs(items, {
+    duration: meta.duration,
+    model: meta.model,
+    seed: meta.seed,
+    promptId,
+    completedAt
+  }) || buildCompletionCard({
+    filename: items[0]?.filename || items[0]?.name,
+    url: items[0]?.url,
+    duration: meta.duration,
+    model: meta.model,
+    seed: meta.seed,
+    promptId,
+    completedAt
+  });
+  return { completedPromptId: promptId, galleryRecords, completion };
 }
 
 /** Compact settings line for clip cards, e.g. "seed 22 · 5s · 0.3 MP · 16:9 · 20 steps". */
