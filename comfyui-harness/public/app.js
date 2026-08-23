@@ -812,6 +812,9 @@ async function outputs() {
       model: $("model")?.value || "",
       seed: $("seed")?.value ?? "",
       duration: $("duration")?.value ?? null,
+      megapixels: $("megapixels")?.value ?? "",
+      aspect: $("aspect")?.value ?? "",
+      steps: $("steps")?.value ?? "",
       completedAt: Date.now()
     }));
     notifySessionOutputsChanged();

@@ -125,7 +125,8 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 
 - The Inspector **Output** tab primary surface is **CLIP SESSIONE**: finished media observed by this Director browser session (single Generate and Batch jobs).
 - Session records live in `sessionStorage` key `h3SessionOutputs:v1` (survive F5; do not persist into project JSON; do not store execution authority).
-- Cards may show job label, seed, duration, workflow, ComfyUI original filename/subfolder, optional archive copy filename + destination folder display name, and **Apri video**.
+- Cards may show job label, seed, duration, megapixels, aspect, steps, workflow, ComfyUI original filename/subfolder, optional archive copy filename + destination folder display name, and **Apri video**.
+- On gallery init, a one-shot best-effort reconstruction may seed the list from already-persisted Batch runtime / latest-output metadata when `promptId → job → output` is authoritative. No ComfyUI output-folder scan and no guessed job attribution.
 - **Svuota elenco** clears gallery metadata only — never deletes ComfyUI outputs or archived copies.
 - Existing Destinazione / naming / auto-copy controls remain under **Destinazione e nomi**.
 - The legacy bottom **Attività / Output** drawer was removed. Harness-side errors use compact toast notices. Monitor **Eventi ComfyUI** and **Terminale ComfyUI** remain.

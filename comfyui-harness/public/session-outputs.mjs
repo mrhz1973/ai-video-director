@@ -3,9 +3,15 @@
  * Does not delete media, queue jobs, or persist execution authority.
  */
 
+import { LATEST_OUTPUT_KEY } from "./completion.mjs";
+
 export const SESSION_OUTPUTS_KEY = "h3SessionOutputs:v1";
 export const MAX_SESSION_OUTPUTS = 100;
 export const SESSION_OUTPUTS_CHANGED = "h3-session-outputs-changed";
+/** Matches batch-ui.mjs RUNTIME_KEY — read-only reconstruction source. */
+export const BATCH_RUNTIME_STORAGE_KEY = "h3BatchRuntime:v1";
+/** Once per browser tab session; clearing the gallery does not clear this flag. */
+export const SESSION_OUTPUTS_RECONSTRUCTED_KEY = "h3SessionOutputsReconstructed:v1";
 
 export function subfolderFromOutputUrl(url = "") {
   try {
@@ -21,6 +27,11 @@ export function sessionOutputId({
   filename = ""
 } = {}) {
   return `${String(promptId || "")}:${String(subfolder || "")}:${String(filename || "")}`;
+}
+
+function settingString(value) {
+  if (value == null || value === "") return "";
+  return String(value);
 }
 
 export function normalizeSessionOutput(raw = null) {
@@ -52,6 +63,9 @@ export function normalizeSessionOutput(raw = null) {
     model: String(raw.model || "").trim(),
     seed: raw.seed == null || raw.seed === "" ? "" : String(raw.seed),
     duration: raw.duration == null || raw.duration === "" ? null : String(raw.duration),
+    megapixels: settingString(raw.megapixels),
+    aspect: settingString(raw.aspect),
+    steps: settingString(raw.steps),
     kind: String(raw.kind || "").trim(),
     filename,
     subfolder,
@@ -77,6 +91,9 @@ export function buildSessionOutputRecords(items = [], meta = {}) {
       model: meta.model,
       seed: meta.seed,
       duration: meta.duration,
+      megapixels: meta.megapixels,
+      aspect: meta.aspect,
+      steps: meta.steps,
       kind: item?.kind,
       filename: item?.filename || item?.name,
       subfolder: item?.subfolder,
@@ -86,6 +103,17 @@ export function buildSessionOutputRecords(items = [], meta = {}) {
       archive: meta.archive || null
     }))
     .filter(Boolean);
+}
+
+/** Compact settings line for clip cards, e.g. "seed 22 · 5s · 0.3 MP · 16:9 · 20 steps". */
+export function formatSessionClipSettingsLine(item = {}) {
+  const parts = [];
+  if (item.seed !== "" && item.seed != null) parts.push(`seed ${item.seed}`);
+  if (item.duration != null && item.duration !== "") parts.push(`${item.duration}s`);
+  if (item.megapixels !== "" && item.megapixels != null) parts.push(`${item.megapixels} MP`);
+  if (item.aspect) parts.push(String(item.aspect));
+  if (item.steps !== "" && item.steps != null) parts.push(`${item.steps} steps`);
+  return parts.join(" · ");
 }
 
 export function readSessionOutputs(storage) {
@@ -147,6 +175,10 @@ export function upsertSessionOutputs(storage, records = []) {
       workflowLabel: next.workflowLabel || prev.workflowLabel,
       model: next.model || prev.model,
       seed: next.seed !== "" ? next.seed : prev.seed,
+      duration: next.duration != null && next.duration !== "" ? next.duration : prev.duration,
+      megapixels: next.megapixels !== "" ? next.megapixels : prev.megapixels,
+      aspect: next.aspect || prev.aspect,
+      steps: next.steps !== "" ? next.steps : prev.steps,
       archive: next.archive || prev.archive || null,
       available: next.available !== false && prev.available !== false
     });
@@ -201,4 +233,126 @@ export function sessionGalleryClearSideEffects() {
     promptPosts: 0,
     gpuWrites: 0
   };
+}
+
+/**
+ * Best-effort records from persisted Batch runtime only.
+ * Requires promptId + at least one output file already stored on the job — no folder scan.
+ */
+export function recordsFromBatchRuntime(runtime = null) {
+  if (!runtime || typeof runtime !== "object") return [];
+  if (Number(runtime.version) !== 1 || !Array.isArray(runtime.jobs)) return [];
+  const out = [];
+  for (const job of runtime.jobs) {
+    if (!job || typeof job !== "object") continue;
+    const promptId = String(job.promptId || "").trim();
+    if (!promptId) continue;
+    const outputs = Array.isArray(job.outputs) ? job.outputs : [];
+    const usable = outputs.filter(item => item && (item.filename || item.name || item.url));
+    if (!usable.length) continue;
+    const item = job.item && typeof job.item === "object" ? job.item : {};
+    out.push(...buildSessionOutputRecords(usable, {
+      promptId,
+      source: "batch",
+      jobLabel: String(job.label || "").trim()
+        || (Number.isFinite(Number(job.index)) ? `Job ${Number(job.index) + 1}` : ""),
+      jobIndex: Number.isFinite(Number(job.index)) ? Number(job.index) : null,
+      batchTotal: runtime.jobs.length,
+      workflowId: runtime.workflowId || "",
+      workflowLabel: runtime.workflowLabel || "",
+      model: runtime.model || "",
+      seed: item.seed ?? "",
+      duration: item.duration ?? null,
+      megapixels: item.megapixels ?? "",
+      aspect: item.aspect ?? "",
+      steps: item.steps ?? "",
+      completedAt: Number(runtime.createdAt) || Date.now()
+    }));
+  }
+  return out;
+}
+
+/**
+ * Single-job latest-completion card → gallery record only when promptId is present
+ * and that prompt is not already owned by a Batch runtime job.
+ */
+export function recordsFromLatestOutput(card = null, { batchRuntime = null } = {}) {
+  if (!card || typeof card !== "object") return [];
+  const promptId = String(card.promptId || "").trim();
+  if (!promptId) return [];
+  if (!card.filename && !card.url) return [];
+  const batchJobs = Array.isArray(batchRuntime?.jobs) ? batchRuntime.jobs : [];
+  if (batchJobs.some(job => String(job?.promptId || "").trim() === promptId)) {
+    return [];
+  }
+  return buildSessionOutputRecords([{
+    filename: card.filename,
+    url: card.url,
+    kind: "videos"
+  }], {
+    promptId,
+    source: "single",
+    seed: card.seed ?? "",
+    duration: card.duration ?? null,
+    megapixels: card.megapixels ?? "",
+    aspect: card.aspect ?? "",
+    steps: card.steps ?? "",
+    model: card.model || "",
+    completedAt: Number(card.completedAt) || Date.now()
+  });
+}
+
+/** Pure: build gallery records from already-local metadata only. */
+export function reconstructSessionOutputRecords({
+  batchRuntime = null,
+  latestOutput = null
+} = {}) {
+  return [
+    ...recordsFromBatchRuntime(batchRuntime),
+    ...recordsFromLatestOutput(latestOutput, { batchRuntime })
+  ];
+}
+
+export function reconstructionSideEffects() {
+  return {
+    scansOutputFolder: false,
+    guessesFromFilenames: false,
+    queuePosts: 0,
+    promptPosts: 0,
+    gpuWrites: 0
+  };
+}
+
+/**
+ * One-shot per browser session: seed gallery from Batch runtime + latest completion
+ * when authoritative promptId → job → output linkage already exists locally.
+ */
+export function applySessionGalleryReconstruction(sessionStorage, localStorage) {
+  if (!sessionStorage?.getItem || !sessionStorage?.setItem) {
+    return readSessionOutputs(sessionStorage);
+  }
+  try {
+    if (sessionStorage.getItem(SESSION_OUTPUTS_RECONSTRUCTED_KEY) === "1") {
+      return readSessionOutputs(sessionStorage);
+    }
+  } catch { /* continue */ }
+
+  let batchRuntime = null;
+  let latestOutput = null;
+  try {
+    batchRuntime = JSON.parse(localStorage?.getItem?.(BATCH_RUNTIME_STORAGE_KEY) || "null");
+  } catch { batchRuntime = null; }
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(LATEST_OUTPUT_KEY) || "null");
+    latestOutput = parsed?.card || null;
+  } catch { latestOutput = null; }
+
+  const records = reconstructSessionOutputRecords({ batchRuntime, latestOutput });
+  const result = records.length
+    ? upsertSessionOutputs(sessionStorage, records)
+    : readSessionOutputs(sessionStorage);
+  try {
+    sessionStorage.setItem(SESSION_OUTPUTS_RECONSTRUCTED_KEY, "1");
+  } catch { /* ignore */ }
+  return result;
 }

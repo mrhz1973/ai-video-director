@@ -855,6 +855,9 @@ async function pollRuntime() {
                 model: runtime.model || "",
                 seed: job.item?.seed ?? "",
                 duration: job.item?.duration ?? null,
+                megapixels: job.item?.megapixels ?? "",
+                aspect: job.item?.aspect ?? "",
+                steps: job.item?.steps ?? "",
                 completedAt: Date.now()
               }));
               notifySessionOutputsChanged();

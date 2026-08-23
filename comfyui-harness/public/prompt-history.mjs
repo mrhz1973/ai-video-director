@@ -16,7 +16,8 @@ export const PROMPT_HISTORY_RESERVED = Object.freeze([
   "h3BatchDraft:v1:",
   "h3BatchRuntime:v1",
   "h3LatestOutput:v1",
-  "h3SessionOutputs:v1"
+  "h3SessionOutputs:v1",
+  "h3SessionOutputsReconstructed:v1"
 ]);
 
 export function assertPromptHistoryKeyIsolated(key = PROMPT_HISTORY_KEY) {

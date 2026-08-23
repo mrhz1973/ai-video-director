@@ -6,8 +6,10 @@ import {
   outputCounterStorageKey,
   sanitizeOutputSegment
 } from "./output-naming.mjs";
+import { createSessionClipCard } from "./session-gallery-dom.mjs";
 import {
   SESSION_OUTPUTS_CHANGED,
+  applySessionGalleryReconstruction,
   attachArchiveMetadata,
   clearSessionOutputs,
   markSessionOutputUnavailable,
@@ -486,15 +488,6 @@ window.fetch = async (input, init = undefined) => {
   return response;
 };
 
-function formatClipTime(completedAt) {
-  if (!completedAt) return "";
-  try {
-    return new Date(completedAt).toLocaleTimeString("it-IT", { hour12: false });
-  } catch {
-    return "";
-  }
-}
-
 function renderSessionGallery() {
   const list = $("sessionGalleryList");
   const empty = $("sessionGalleryEmpty");
@@ -505,76 +498,18 @@ function renderSessionGallery() {
   list.replaceChildren();
   empty.hidden = items.length > 0;
   for (const item of items) {
-    const card = document.createElement("article");
-    card.className = `session-clip${item.available === false ? " unavailable" : ""}`;
-    card.dataset.outputId = item.id;
-
-    const meta = document.createElement("div");
-    meta.className = "session-clip-meta";
-    const label = item.jobLabel
-      || (item.source === "batch" && item.jobIndex != null ? `Job ${item.jobIndex + 1}` : "Render");
-    const bits = [`<strong>${label}</strong>`];
-    if (item.seed !== "") bits.push(`seed ${item.seed}`);
-    if (item.duration != null && item.duration !== "") bits.push(`${item.duration}s`);
-    if (item.workflowLabel || item.workflowId) bits.push(item.workflowLabel || item.workflowId);
-    const when = formatClipTime(item.completedAt);
-    if (when) bits.push(when);
-    meta.innerHTML = bits.join("<span>·</span>");
-
-    const paths = document.createElement("div");
-    paths.className = "session-clip-paths";
-    const originalLine = document.createElement("div");
-    originalLine.innerHTML = `Originale ComfyUI:<br><code>${item.subfolder ? `${item.subfolder} / ` : ""}${item.filename}</code>`;
-    paths.append(originalLine);
-    if (item.archive?.filename) {
-      const archiveLine = document.createElement("div");
-      const folder = item.archive.folderLabel ? `${item.archive.folderLabel} / ` : "";
-      archiveLine.innerHTML = `Copia archivio:<br><code>${folder}${item.archive.filename}</code>`;
-      paths.append(archiveLine);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "session-clip-actions";
-    if (item.available === false) {
-      const flag = document.createElement("span");
-      flag.className = "session-clip-unavailable-flag";
-      flag.textContent = "Non disponibile";
-      actions.append(flag);
-    } else if (item.url) {
-      const link = document.createElement("a");
-      link.href = item.url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = "Apri video";
-      link.addEventListener("click", event => {
-        // Opening never queues/generates; mark unavailable if the browser cannot resolve later.
-        void event;
-      });
-      actions.append(link);
-    }
-
-    if (item.url && item.available !== false && /\.(mp4|webm|mov)(\?|$)/i.test(item.filename || item.url)) {
-      const video = document.createElement("video");
-      video.className = "session-clip-preview";
-      video.src = item.url;
-      video.muted = true;
-      video.playsInline = true;
-      video.preload = "metadata";
-      video.controls = true;
-      video.addEventListener("error", () => {
-        markSessionOutputUnavailable(sessionStorage, item.id);
+    list.append(createSessionClipCard(document, item, {
+      onPreviewError: clip => {
+        markSessionOutputUnavailable(sessionStorage, clip.id);
         notifySessionOutputsChanged();
-      });
-      card.append(meta, video, paths, actions);
-    } else {
-      card.append(meta, paths, actions);
-    }
-    list.append(card);
+      }
+    }));
   }
 }
 
 function bindSessionGallery() {
   if (!$("sessionGallerySection")) return;
+  applySessionGalleryReconstruction(sessionStorage, localStorage);
   renderSessionGallery();
   window.addEventListener(SESSION_OUTPUTS_CHANGED, renderSessionGallery);
   $("sessionGalleryClear")?.addEventListener("click", () => {
