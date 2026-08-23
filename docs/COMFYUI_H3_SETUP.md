@@ -2,7 +2,7 @@
 
 Current architecture/status source of truth: `docs/HARNESS_STATE.md`.
 
-The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, local project CRUD, a categorized asset library (Elements / Locations / Objects / Audio), mode-specific workflow role assignment, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, and output links.
+The harness in `comfyui-harness/` is a small local Node.js UI and API bridge. It exposes a prompt/chat area, local project CRUD, a categorized asset library (Elements / Locations / Objects / Audio), mode-specific workflow role assignment, workflow selection, megapixels, model, steps, duration, aspect ratio, seed, a graphical ComfyUI progress monitor with expandable event/terminal panels, output links, and Batch generation with optional per-job non-video input overrides (v0.8.9).
 
 ## 1. Prepare ComfyUI
 

@@ -1,7 +1,72 @@
 import { formatDurationCompact, normalizeDurationSeconds } from "../lib/duration.mjs";
+import { normalizeItemFiles, resolveBatchItemFiles } from "../lib/batch-draft.mjs";
+import { membersCompatibleWithRole } from "../lib/projects.mjs";
+
+export { resolveBatchItemFiles, normalizeItemFiles };
 
 export const MIN_BATCH_JOBS = 2;
 export const MAX_BATCH_JOBS = 8;
+
+function toUnavailableSet(unavailableFiles = null) {
+  if (unavailableFiles instanceof Set) return new Set(unavailableFiles);
+  return new Set(Array.isArray(unavailableFiles) ? unavailableFiles : []);
+}
+
+function roleAcceptForKey(roleKey, attachmentRoles = [], accept = null) {
+  if (accept) return accept;
+  const role = (Array.isArray(attachmentRoles) ? attachmentRoles : []).find(item => item?.key === roleKey);
+  return role?.accept || "image/*";
+}
+
+/**
+ * Fail-closed check for an EXPLICIT per-job item.files override.
+ * Does not consider source.files inheritance.
+ */
+export function isExplicitBatchFileOverrideAvailable({
+  filename,
+  roleKey = "",
+  accept = null,
+  library = null,
+  attachmentRoles = [],
+  unavailableFilenames = null
+} = {}) {
+  const name = String(filename || "").trim();
+  if (!name) return false;
+  const unavailable = toUnavailableSet(unavailableFilenames);
+  if (unavailable.has(name)) return false;
+  if (library == null) return true;
+  const roleAccept = roleAcceptForKey(roleKey, attachmentRoles, accept);
+  return membersCompatibleWithRole(library, roleAccept).some(member => member.filename === name);
+}
+
+/**
+ * Expand unavailable filenames to include explicit overrides missing from the
+ * current compatible Asset library (or already known missing/error).
+ */
+export function collectUnavailableExplicitBatchOverrides({
+  items = [],
+  attachmentRoles = [],
+  library = null,
+  unavailableFilenames = null
+} = {}) {
+  const out = toUnavailableSet(unavailableFilenames);
+  if (library == null) return out;
+  for (const item of items) {
+    const overrides = normalizeItemFiles(item?.files) || {};
+    for (const [roleKey, filename] of Object.entries(overrides)) {
+      if (!isExplicitBatchFileOverrideAvailable({
+        filename,
+        roleKey,
+        library,
+        attachmentRoles,
+        unavailableFilenames: out
+      })) {
+        out.add(filename);
+      }
+    }
+  }
+  return out;
+}
 
 export function clampBatchCount(value, { min = MIN_BATCH_JOBS, max = MAX_BATCH_JOBS } = {}) {
   const numeric = Math.floor(Number(value));
@@ -28,11 +93,14 @@ export function duplicateBatchItem(items = [], index = 0) {
   const source = items[index];
   if (!source || items.length >= MAX_BATCH_JOBS) return [...items];
   const seed = Number(source.seed);
+  const files = normalizeItemFiles(source.files);
   const copy = {
     ...source,
     id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     seed: Number.isFinite(seed) ? String(Math.trunc(seed) + 1) : String(source.seed || "1")
   };
+  if (files) copy.files = { ...files };
+  else delete copy.files;
   const next = [...items];
   next.splice(index + 1, 0, copy);
   return next;
@@ -55,7 +123,12 @@ export function validateBatchDraft({
   items = [],
   safeFitStatus = "not-applicable",
   requiredFiles = {},
+  sharedFiles = null,
   requiredKeys = [],
+  roleLabels = {},
+  unavailableFiles = null,
+  library = null,
+  attachmentRoles = [],
   unsupportedVideoRoles = [],
   megapixelsMin = 0.1,
   megapixelsMax = 16,
@@ -72,8 +145,16 @@ export function validateBatchDraft({
   if (unsupportedVideoRoles.length) {
     errors.push(`Batch v1 non supporta ancora input video: ${unsupportedVideoRoles.join(", ")}.`);
   }
-  const missingRoles = requiredKeys.filter(key => !requiredFiles[key]);
-  if (missingRoles.length) errors.push(`Input workflow mancanti: ${missingRoles.join(", ")}.`);
+
+  const shared = sharedFiles && typeof sharedFiles === "object"
+    ? sharedFiles
+    : (requiredFiles || {});
+  const unavailable = collectUnavailableExplicitBatchOverrides({
+    items,
+    attachmentRoles,
+    library,
+    unavailableFilenames: unavailableFiles
+  });
 
   const perItem = [];
   items.forEach((item, index) => {
@@ -93,6 +174,40 @@ export function validateBatchDraft({
     const mp = Number(item.megapixels);
     if (!Number.isFinite(mp) || mp < megapixelsMin || mp > megapixelsMax) itemErrors.push(`MP fuori ${megapixelsMin}–${megapixelsMax}`);
     if (!String(item.aspect || "").trim()) itemErrors.push("aspect mancante");
+
+    const overrides = normalizeItemFiles(item.files) || {};
+    for (const roleKey of requiredKeys) {
+      const roleLabel = roleLabels[roleKey] || roleKey;
+      const hasExplicitOverride = Object.prototype.hasOwnProperty.call(overrides, roleKey);
+      if (hasExplicitOverride) {
+        // Explicit override must never silently fall back to source.files.
+        const filename = overrides[roleKey];
+        if (!filename) {
+          itemErrors.push(`input ${roleLabel} mancante`);
+          continue;
+        }
+        if (!isExplicitBatchFileOverrideAvailable({
+          filename,
+          roleKey,
+          library,
+          attachmentRoles,
+          unavailableFilenames: unavailable
+        })) {
+          itemErrors.push(`input ${roleLabel} non disponibile`);
+        }
+        continue;
+      }
+
+      const filename = shared[roleKey];
+      if (!filename) {
+        itemErrors.push(`input ${roleLabel} mancante`);
+        continue;
+      }
+      if (unavailable.has(filename)) {
+        itemErrors.push(`input ${roleLabel} non disponibile`);
+      }
+    }
+
     if (itemErrors.length) {
       perItem.push({ index, errors: itemErrors });
       errors.push(`${label}: ${itemErrors.join(", ")}.`);

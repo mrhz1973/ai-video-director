@@ -33,9 +33,48 @@ function stripForbidden(value) {
   return out;
 }
 
+/**
+ * Sparse per-job file overrides. Empty/absent maps inherit source.files.
+ */
+export function normalizeItemFiles(raw = null) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const role = String(key || "").trim();
+    const filename = String(value || "").trim();
+    if (!role || !filename) continue;
+    out[role] = filename;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Merge shared Batch source files with sparse per-job overrides.
+ * Per-job keys win; missing keys inherit the shared fallback.
+ */
+export function resolveBatchItemFiles(item = {}, sharedFiles = {}) {
+  const shared = sharedFiles && typeof sharedFiles === "object" && !Array.isArray(sharedFiles)
+    ? { ...sharedFiles }
+    : {};
+  const overrides = normalizeItemFiles(item?.files);
+  return overrides ? { ...shared, ...overrides } : shared;
+}
+
+function normalizeAttachmentRoles(raw = []) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(role => role && typeof role === "object" && String(role.key || "").trim())
+    .map(role => ({
+      key: String(role.key).trim(),
+      label: String(role.label || role.key).trim(),
+      accept: String(role.accept || "image/*")
+    }));
+}
+
 function normalizeItem(raw = {}, index = 0) {
   const item = raw && typeof raw === "object" ? raw : {};
-  return {
+  const files = normalizeItemFiles(item.files);
+  const out = {
     prompt: String(item.prompt || ""),
     seed: String(item.seed ?? String(index + 1)),
     duration: String(normalizeDurationSeconds(item.duration ?? 5)),
@@ -43,18 +82,26 @@ function normalizeItem(raw = {}, index = 0) {
     megapixels: String(item.megapixels ?? "0.3"),
     aspect: String(item.aspect || "16:9")
   };
+  if (files) out.files = files;
+  return out;
 }
 
 function normalizeSource(raw = null) {
   if (!raw || typeof raw !== "object") return null;
   const source = stripForbidden(raw);
   const base = source.base && typeof source.base === "object" ? source.base : {};
+  const requiredKeys = Array.isArray(source.requiredKeys) ? [...source.requiredKeys] : [];
+  let attachmentRoles = normalizeAttachmentRoles(source.attachmentRoles);
+  if (!attachmentRoles.length && requiredKeys.length) {
+    attachmentRoles = requiredKeys.map(key => ({ key, label: key, accept: "image/*" }));
+  }
   return {
     workflowId: String(source.workflowId || ""),
     workflowLabel: String(source.workflowLabel || source.workflowId || ""),
     model: String(source.model || ""),
     files: source.files && typeof source.files === "object" ? { ...source.files } : {},
-    requiredKeys: Array.isArray(source.requiredKeys) ? [...source.requiredKeys] : [],
+    requiredKeys,
+    attachmentRoles,
     unsupportedVideoRoles: Array.isArray(source.unsupportedVideoRoles) ? [...source.unsupportedVideoRoles] : [],
     safeFitStatus: String(source.safeFitStatus || "not-applicable"),
     megapixelsMin: Number(source.megapixelsMin ?? 0.1),

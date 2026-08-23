@@ -147,3 +147,46 @@ test("assertPersistedBatchMatches rejects omitted Batch in response", () => {
   assert.throws(() => assertPersistedBatchMatches(requested, null), /Batch non persistito/);
   assert.equal(assertPersistedBatchMatches(null, null), true);
 });
+
+test("legacy drafts without item.files still normalize", () => {
+  const draft = normalizeBatchDraft({
+    version: 1,
+    source: sampleSource,
+    items: sampleItems(2)
+  });
+  assert.equal(draft.items[0].files, undefined);
+  assert.equal(draft.items[1].files, undefined);
+  assert.deepEqual(draft.source.files, { firstImage: "frame.png" });
+});
+
+test("item.files survives normalize -> serialize -> normalize", () => {
+  const items = sampleItems(2);
+  items[0].files = { firstImage: "frame-a.png" };
+  items[1].files = { firstImage: "frame-b.png" };
+  const serialized = serializeBatchDraft({ source: sampleSource, items });
+  assert.deepEqual(serialized.items[0].files, { firstImage: "frame-a.png" });
+  assert.deepEqual(serialized.items[1].files, { firstImage: "frame-b.png" });
+  const again = normalizeBatchDraft(serialized);
+  assert.deepEqual(again.items[0].files, { firstImage: "frame-a.png" });
+  assert.deepEqual(again.items[1].files, { firstImage: "frame-b.png" });
+});
+
+test("batchesEqual distinguishes per-job file overrides", () => {
+  const leftItems = sampleItems(2);
+  leftItems[0].files = { firstImage: "frame-a.png" };
+  const rightItems = sampleItems(2);
+  rightItems[0].files = { firstImage: "frame-b.png" };
+  const left = serializeBatchDraft({ source: sampleSource, items: leftItems });
+  const right = serializeBatchDraft({ source: sampleSource, items: rightItems });
+  assert.equal(batchesEqual(left, right), false);
+  assert.equal(batchesEqual(left, serializeBatchDraft({ source: sampleSource, items: leftItems })), true);
+});
+
+test("empty item.files maps are stripped during normalize", () => {
+  const draft = normalizeBatchDraft({
+    version: 1,
+    source: sampleSource,
+    items: [{ ...sampleItems(1)[0], files: { firstImage: "  " } }]
+  });
+  assert.equal(draft.items[0].files, undefined);
+});

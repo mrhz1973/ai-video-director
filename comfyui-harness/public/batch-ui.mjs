@@ -9,12 +9,14 @@ import {
   isTerminalBatchState,
   moveBatchItem,
   removeBatchItem,
+  resolveBatchItemFiles,
   submitBatchSequentially,
   summarizeBatchJobs,
   validateBatchDraft
 } from "./batch-core.mjs";
-import { normalizeBatchDraft, serializeBatchDraft } from "../lib/batch-draft.mjs";
+import { normalizeBatchDraft, normalizeItemFiles, serializeBatchDraft } from "../lib/batch-draft.mjs";
 import { normalizeDurationSeconds } from "../lib/duration.mjs";
+import { memberSelectOption, membersCompatibleWithRole, roleAcceptKind } from "../lib/projects.mjs";
 import { archivePrompt } from "./prompt-history.mjs";
 import { batchJobOutputRows } from "./completion.mjs";
 import {
@@ -36,6 +38,7 @@ let runtime = null;
 let pollTimer = null;
 let persistenceHook = null;
 let suppressLocalLoad = false;
+let assetContextProvider = null;
 
 function projectKey() {
   return $("project")?.value || "none";
@@ -54,10 +57,7 @@ function draftPayload() {
   return {
     version: 1,
     source,
-    items: items.map(item => ({
-      ...item,
-      duration: String(normalizeDurationSeconds(item.duration))
-    }))
+    items: batchItemsForExport()
   };
 }
 
@@ -81,7 +81,7 @@ function loadDraftFromLocalStorage() {
     renderBatch();
     return { restored: false, count: 0, source: "local" };
   }
-  items = normalized.items.map(item => ({ ...item }));
+  items = normalized.items.map(item => cloneBatchItemSnapshot(item));
   source = normalized.source;
   submitted = false;
   renderBatch();
@@ -96,8 +96,33 @@ export function setBatchLocalLoadSuppressed(value) {
   suppressLocalLoad = Boolean(value);
 }
 
+/** Provides project library + unavailable Comfy filenames for Batch input selectors. */
+export function setBatchAssetContextProvider(fn) {
+  assetContextProvider = typeof fn === "function" ? fn : null;
+}
+
+function getBatchAssetContext() {
+  const ctx = assetContextProvider?.() || {};
+  const unavailable = ctx.unavailableFilenames instanceof Set
+    ? ctx.unavailableFilenames
+    : new Set(Array.isArray(ctx.unavailableFilenames) ? ctx.unavailableFilenames : []);
+  return {
+    library: ctx.library || { groups: [] },
+    unavailableFilenames: unavailable
+  };
+}
+
 function batchItemsForExport() {
-  return items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) }));
+  return items.map(item => {
+    const files = normalizeItemFiles(item.files);
+    const out = {
+      ...item,
+      duration: String(normalizeDurationSeconds(item.duration))
+    };
+    if (files) out.files = { ...files };
+    else delete out.files;
+    return out;
+  });
 }
 
 /** Semantic editor snapshot: excludes volatile persistence metadata such as updatedAt. */
@@ -131,7 +156,7 @@ export function importBatchDraftFromProject(draft, { writeLocalCache = true, not
     if (writeLocalCache) persistDraft({ notify });
     return { restored: false, count: 0 };
   }
-  items = normalized.items.map(item => ({ ...item }));
+  items = normalized.items.map(item => cloneBatchItemSnapshot(item));
   source = normalized.source;
   submitted = false;
   renderBatch();
@@ -198,6 +223,7 @@ function collectSourceSnapshot() {
   const rows = [...document.querySelectorAll("#roleFields .role-row")];
   const files = {};
   const requiredKeys = [];
+  const attachmentRoles = [];
   const unsupportedVideoRoles = [];
   let rowIndex = 0;
 
@@ -208,6 +234,11 @@ function collectSourceSnapshot() {
       continue;
     }
     requiredKeys.push(field.key);
+    attachmentRoles.push({
+      key: field.key,
+      label: field.label || field.key,
+      accept: field.accept || "image/*"
+    });
     const row = rows[rowIndex++];
     const select = row?.querySelector("select");
     if (select?.value && !row?.classList.contains("stale")) files[field.key] = select.value;
@@ -221,6 +252,7 @@ function collectSourceSnapshot() {
     model: $("model")?.value || "",
     files,
     requiredKeys,
+    attachmentRoles,
     unsupportedVideoRoles,
     safeFitStatus: preset.safeFit?.status || "not-applicable",
     megapixelsMin: Number(mpField?.min || preset.options?.megapixels?.min || 0.1),
@@ -240,7 +272,120 @@ function collectSourceSnapshot() {
 
 function sourceIdentity(value = source) {
   if (!value) return "";
-  return JSON.stringify({ workflowId: value.workflowId, model: value.model, files: value.files || {} });
+  // Workflow + model only. Shared Input changes must not force re-prepare
+  // (which would wipe explicit per-job item.files overrides).
+  return JSON.stringify({ workflowId: value.workflowId, model: value.model });
+}
+
+function cloneBatchItemSnapshot(item = {}) {
+  const files = normalizeItemFiles(item.files);
+  const out = {
+    ...item,
+    duration: String(normalizeDurationSeconds(item.duration))
+  };
+  if (files) out.files = { ...files };
+  else delete out.files;
+  return out;
+}
+
+function freezeSubmissionSnapshot(preparedSource = source, live = null) {
+  const base = preparedSource && typeof preparedSource === "object" ? preparedSource : {};
+  const liveMeta = live && typeof live === "object" ? live : {};
+  const roleLabels = {};
+  const attachmentRoles = Array.isArray(base.attachmentRoles) && base.attachmentRoles.length
+    ? base.attachmentRoles.map(role => ({ ...role }))
+    : (Array.isArray(liveMeta.attachmentRoles) ? liveMeta.attachmentRoles.map(role => ({ ...role })) : []);
+  for (const role of attachmentRoles) {
+    if (role?.key) roleLabels[role.key] = role.label || role.key;
+  }
+  return {
+    workflowId: base.workflowId,
+    workflowLabel: base.workflowLabel || base.workflowId,
+    model: base.model,
+    files: { ...(base.files || {}) },
+    requiredKeys: Array.isArray(base.requiredKeys) ? [...base.requiredKeys] : [],
+    attachmentRoles,
+    roleLabels,
+    unsupportedVideoRoles: Array.isArray(liveMeta.unsupportedVideoRoles) && liveMeta.unsupportedVideoRoles.length
+      ? [...liveMeta.unsupportedVideoRoles]
+      : (Array.isArray(base.unsupportedVideoRoles) ? [...base.unsupportedVideoRoles] : []),
+    safeFitStatus: liveMeta.safeFitStatus || base.safeFitStatus || "not-applicable",
+    megapixelsMin: Number(liveMeta.megapixelsMin ?? base.megapixelsMin ?? 0.1),
+    megapixelsMax: Number(liveMeta.megapixelsMax ?? base.megapixelsMax ?? 16),
+    durationMin: Number(liveMeta.durationMin ?? base.durationMin ?? 4),
+    durationMax: Number(liveMeta.durationMax ?? base.durationMax ?? 15),
+    base: base.base ? { ...base.base } : (liveMeta.base ? { ...liveMeta.base } : {})
+  };
+}
+
+function setItemFileOverride(item, roleKey, value) {
+  const next = { ...(normalizeItemFiles(item.files) || {}) };
+  const trimmed = String(value || "").trim();
+  if (!trimmed) delete next[roleKey];
+  else next[roleKey] = trimmed;
+  const normalized = normalizeItemFiles(next);
+  if (normalized) item.files = normalized;
+  else delete item.files;
+}
+
+function batchAttachmentRoles() {
+  if (Array.isArray(source?.attachmentRoles) && source.attachmentRoles.length) {
+    return source.attachmentRoles.filter(role => role?.key && roleAcceptKind(role.accept) !== "video");
+  }
+  return (source?.requiredKeys || []).map(key => ({ key, label: key, accept: "image/*" }));
+}
+
+function appendBatchJobInputSection(body, item) {
+  const roles = batchAttachmentRoles();
+  if (!roles.length) return;
+  const { library } = getBatchAssetContext();
+  const section = document.createElement("div");
+  section.className = "batch-job-inputs";
+  const heading = document.createElement("div");
+  heading.className = "batch-job-inputs-label";
+  heading.textContent = "Input";
+  section.append(heading);
+
+  for (const role of roles) {
+    const sharedName = source?.files?.[role.key] || "";
+    const overrides = normalizeItemFiles(item.files) || {};
+    const hasOverride = Object.prototype.hasOwnProperty.call(overrides, role.key);
+    const selected = hasOverride ? overrides[role.key] : "";
+
+    const label = document.createElement("label");
+    label.className = "batch-job-input-role";
+    label.dataset.roleKey = role.key;
+    const title = document.createElement("span");
+    title.textContent = role.label || role.key;
+    const select = document.createElement("select");
+    select.dataset.field = "file";
+    select.dataset.roleKey = role.key;
+    const inheritLabel = sharedName
+      ? `Eredita: ${sharedName}`
+      : "Eredita (nessun asset comune)";
+    select.append(new Option(inheritLabel, "", !hasOverride, !hasOverride));
+
+    const compatible = membersCompatibleWithRole(library, role.accept || "image/*");
+    for (const member of compatible) {
+      const option = memberSelectOption(member);
+      const isSelected = hasOverride && member.filename === selected;
+      const opt = new Option(option.label, option.value, isSelected, isSelected);
+      opt.title = option.title;
+      select.append(opt);
+    }
+    if (hasOverride && selected && !compatible.some(m => m.filename === selected)) {
+      const orphan = new Option(`(non disponibile) ${selected}`, selected, true, true);
+      orphan.title = selected;
+      select.append(orphan);
+    }
+    select.addEventListener("change", () => {
+      setItemFileOverride(item, role.key, select.value);
+      markEdited();
+    });
+    label.append(title, select);
+    section.append(label);
+  }
+  body.append(section);
 }
 
 function markEdited() {
@@ -267,7 +412,7 @@ function createUi() {
   section.innerHTML = `
     <details id="batchDetails">
       <summary><span>Batch</span><span id="batchBadge" class="batch-badge">nessun job</span></summary>
-      <p class="batch-help">2–8 render in coda con un solo click. Workflow, modello e asset restano comuni; prompt, seed, durata, steps, MP e aspect sono modificabili per job.</p>
+      <p class="batch-help">2–8 render in coda con un solo click. Workflow e modello restano comuni; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job.</p>
       <div class="batch-prepare-row">
         <label>Numero job<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
         <button type="button" class="secondary" id="batchPrepare">Prepara dal draft</button>
@@ -399,6 +544,7 @@ function renderBatch() {
       input.addEventListener("input", update);
       input.addEventListener("change", update);
     }
+    appendBatchJobInputSection(body, item);
     card.append(summary, body);
     host.append(card);
   });
@@ -435,11 +581,21 @@ function updateQueueButton() {
 }
 
 function validateCurrentBatch(snapshot) {
+  const { library, unavailableFilenames } = getBatchAssetContext();
+  const roleLabels = { ...(snapshot.roleLabels || {}) };
+  const attachmentRoles = Array.isArray(snapshot.attachmentRoles) ? snapshot.attachmentRoles : [];
+  for (const role of attachmentRoles) {
+    if (role?.key && !roleLabels[role.key]) roleLabels[role.key] = role.label || role.key;
+  }
   return validateBatchDraft({
     items,
     safeFitStatus: snapshot.safeFitStatus,
-    requiredFiles: snapshot.files,
+    sharedFiles: snapshot.files,
     requiredKeys: snapshot.requiredKeys,
+    roleLabels,
+    attachmentRoles,
+    library,
+    unavailableFiles: unavailableFilenames,
     unsupportedVideoRoles: snapshot.unsupportedVideoRoles,
     megapixelsMin: snapshot.megapixelsMin,
     megapixelsMax: snapshot.megapixelsMax,
@@ -461,7 +617,7 @@ function payloadFor(item, snapshot) {
     duration: normalizeDurationSeconds(item.duration),
     aspect: item.aspect,
     seed: Number(item.seed),
-    files: { ...(snapshot.files || {}) }
+    files: resolveBatchItemFiles(item, snapshot.files || {})
   };
 }
 
@@ -476,7 +632,7 @@ async function runSequentialBatch(snapshot) {
   try {
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
-    const snapshotItems = items.map(item => ({ ...item, duration: String(normalizeDurationSeconds(item.duration)) }));
+    const snapshotItems = items.map(item => cloneBatchItemSnapshot(item));
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
       const response = await fetch("/api/queue", {
@@ -531,11 +687,12 @@ async function runSequentialBatch(snapshot) {
 
 async function queueBatch() {
   if (submitting || submitted || items.length < MIN_BATCH_JOBS) return;
-  const snapshot = collectSourceSnapshot();
-  if (snapshot.error) return setFeedback(snapshot.error, "error");
-  if (!source || sourceIdentity(snapshot) !== sourceIdentity(source)) {
-    return setFeedback("Il draft comune è cambiato (workflow, modello o asset). Premi “Prepara dal draft” prima di inviare.", "warn");
+  const live = collectSourceSnapshot();
+  if (live.error) return setFeedback(live.error, "error");
+  if (!source || sourceIdentity(live) !== sourceIdentity(source)) {
+    return setFeedback("Il draft comune è cambiato (workflow o modello). Premi “Prepara dal draft” prima di inviare.", "warn");
   }
+  const snapshot = freezeSubmissionSnapshot(source, live);
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
 
@@ -568,8 +725,11 @@ async function queueBatch() {
         workflowLabel: snapshot.workflowLabel || ""
       }, { storage: localStorage });
       const armed = coord.armDeferredBatch({
-        items: items.map(item => ({ ...item })),
-        snapshot,
+        items: items.map(item => cloneBatchItemSnapshot(item)),
+        snapshot: {
+          ...snapshot,
+          files: { ...(snapshot.files || {}) }
+        },
         submitAll: () => runSequentialBatch(snapshot)
       });
       if (!armed.ok) throw new Error("Impossibile armare il batch in attesa.");

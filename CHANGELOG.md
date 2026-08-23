@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-23 — v0.8.9
+
+- Batch per-job input/asset bindings: each Batch job may override non-video workflow input roles (image/audio) via sparse `item.files`.
+- `source.files` remains the shared fallback; effective job files are `{ ...source.files, ...item.files }`.
+- Legacy Batch drafts without `item.files` keep v0.8.8 behavior (all jobs inherit the common snapshot).
+- Expanded Batch Job cards expose an Input section with inherit/override selectors reused from the project Asset library.
+- Queue payload construction and deferred-Batch snapshots resolve files per job; prompt text is never treated as an asset resolver.
+- Per-job preflight identifies missing/unavailable roles by job index. Workflow and model remain common; changing the global Input selector after prepare does not wipe explicit per-job overrides.
+- Execution authority remains non-persistent. No automatic generation behavior was added. Activation/restart of a live Director is a separate user-authorized step.
+
 ## 2026-08-23 — v0.8.8
 
 - Windows launcher hotfix (Issue #44): fixed invalid PowerShell port-inspection script generation that joined block lines with `"; "` and produced parser errors such as `@{;` / `{;`.

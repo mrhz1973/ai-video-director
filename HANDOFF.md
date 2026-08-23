@@ -75,7 +75,7 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.8.8 (hotfix branch `agent/windows-launcher-hotfix-v088` for Issue #44; live 8787 remains 0.8.7 until activation)
+Known package version: 0.8.9 (feature branch `feature/batch-per-job-input-bindings-v089`; live 8787 remains on the previously activated build until the user authorizes restart)
 
 ## Verified architecture
 
