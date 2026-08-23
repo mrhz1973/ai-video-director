@@ -9,11 +9,12 @@ Before proposing or changing anything:
 1. Read START_HERE.md.
 2. Read PROJECT_BRIEF.md, PROJECT_STATUS.md and HANDOFF.md.
 3. Read docs/HARNESS_STATE.md and docs/COMFYUI_H3_SETUP.md for MiniMax H3/local harness context.
-4. Read CONTINUITY_BIBLE.md.
-5. Read shots/SEQ01/SH010/README.md and the latest run, review and lineage files when the task concerns that shot.
-6. Read the active prompt named in registry/shots.csv when the task concerns an active shot.
-7. Read registry/elements.yaml, registry/generations.csv and docs/REFERENCE_ASSETS.md when identity/generation history matters.
-8. Load the relevant project skill listed below.
+4. Read docs/AGENT_RUNTIME_PROJECT_WORKFLOW.md for service ownership, project isolation and dedicated first-frame rules.
+5. Read CONTINUITY_BIBLE.md.
+6. Read shots/SEQ01/SH010/README.md and the latest run, review and lineage files when the task concerns that shot.
+7. Read the active prompt named in registry/shots.csv when the task concerns an active shot.
+8. Read registry/elements.yaml, registry/generations.csv and docs/REFERENCE_ASSETS.md when identity/generation history matters.
+9. Load the relevant project skill listed below.
 
 Then give a short checkpoint appropriate to the task. Do not make a new user repeat documented context.
 
@@ -36,6 +37,7 @@ For MiniMax H3 harness work, include current harness branch/version, what is alr
 - Current production state: HANDOFF.md and PROJECT_STATUS.md.
 - Current MiniMax H3 harness architecture/state: docs/HARNESS_STATE.md.
 - Harness setup/operations: docs/COMFYUI_H3_SETUP.md.
+- Agent runtime/project/first-frame policy: docs/AGENT_RUNTIME_PROJECT_WORKFLOW.md.
 - Character continuity: CONTINUITY_BIBLE.md.
 - Active handles: registry/elements.yaml. Never guess or normalize a handle.
 - Shot state and active prompt: registry/shots.csv.
@@ -50,7 +52,12 @@ When records conflict, stop and report the conflict before generating or changin
 ## MiniMax H3 harness rules
 
 - The existing operational harness is the Node.js application in `comfyui-harness/`. Do not create a second parallel harness.
-- The harness does not currently start or stop ComfyUI. ComfyUI process lifecycle is external unless the user explicitly approves a future service-manager feature.
+- The harness does not currently start or stop ComfyUI. ComfyUI process lifecycle is external to `server.mjs`; the separate canonical Windows one-click launcher may start/reuse ComfyUI + Director.
+- If the user says the stack is already started, health-probe and reuse it. Do not click the Desktop shortcut, rerun the launcher, start `node server.mjs`, start ComfyUI Python, or create duplicate services. If a required service is unhealthy, stop and report unless the user explicitly asks for startup/recovery.
+- If the user explicitly asks the agent to start the stack, use the canonical Windows launcher documented under `comfyui-harness/scripts/windows/`; do not substitute ad-hoc Node/Python startup commands.
+- When the user requests a new Director project, create a new project with its own id. Do not silently reuse, rename, overwrite or duplicate a currently loaded project unless the user explicitly asks for inheritance/duplication.
+- Dedicated per-job I2VA first frames are a valid workflow. Record neutral intended filenames/labels in the draft when useful, but do not auto-extract, auto-rebind, upload or submit them unless the user explicitly requests those actions.
+- Production first-frame photographs and identity/body/tattoo reference repairs belong to the image-reference/Lira workflow; the harness coordinates job metadata and draft persistence rather than becoming a second image-generation system.
 - The harness passes the manual prompt essentially unchanged to ComfyUI. The MiniMax H3 Director skill is an AI-side authoring/review layer, not a runtime LLM inside the harness.
 - Do not silently rewrite prompts in runtime code.
 - Do not "fix" Base FL2VA being shared by T2VA/I2VA/FL2VA, the separate Ref2VA checkpoint, the direct megapixels resolution binding, or dormant width/height support without controlled evidence and user approval.
