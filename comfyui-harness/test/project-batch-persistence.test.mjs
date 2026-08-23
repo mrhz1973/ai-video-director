@@ -155,3 +155,29 @@ test("persisted project JSON never stores queue execution authority", async () =
   const raw = await readFile(store.filePathFor(created.id), "utf8");
   assert.doesNotMatch(raw, /deferredBatch|queuedNext|submitAll|batchActive|"armed"/);
 });
+
+test("item.files survives project persistence equality checks", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "h3-batch-files-"));
+  const store = createProjectStore(dir);
+  const items = sampleItems(3);
+  items[0].files = { firstImage: "frame-a.png" };
+  items[2].files = { firstImage: "frame-c.png" };
+  const batchDraft = serializeBatchDraft({ source: sampleSource, items, includeUpdatedAt: true });
+  const created = await store.create({
+    label: "Per-job files",
+    workflowId: "minimax-h3-i2v",
+    prompt: "prompt",
+    settings: { model: sampleSource.model },
+    files: sampleSource.files,
+    library: { elements: [], locations: [], objects: [], audio: [] },
+    batchDraft
+  });
+  const reloaded = normalizeProject(await store.read(created.id));
+  assert.deepEqual(reloaded.batchDraft.items[0].files, { firstImage: "frame-a.png" });
+  assert.equal(reloaded.batchDraft.items[1].files, undefined);
+  assert.deepEqual(reloaded.batchDraft.items[2].files, { firstImage: "frame-c.png" });
+  assert.deepEqual(reloaded.batchDraft.source.files, { firstImage: "frame.png" });
+  const raw = await readFile(store.filePathFor(created.id), "utf8");
+  assert.match(raw, /frame-a\.png/);
+  assert.doesNotMatch(raw, /prompt_id|deferredBatch|queuedNext/);
+});

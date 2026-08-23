@@ -80,9 +80,11 @@ This is a supported production pattern and is distinct from a chained workflow s
 When the production plan specifies dedicated first frames:
 
 - each job has its own canonical neutral filename or asset label;
+- from harness **v0.8.9**, bind those files explicitly via Batch per-job Input selectors (`item.files`), not by parsing prompt text;
+- `source.files` remains a shared fallback for jobs without an override;
 - the image is produced outside the harness by the image-reference / cinematic-keyframe workflow;
 - the user may bind the images manually in Director before submission;
-- the draft may record the intended first-frame filename in prompt text or neutral production metadata;
+- the draft may still mention intended first-frame labels in prompt text for human readability, but prompts do **not** auto-resolve assets;
 - an existing safe placeholder may remain temporarily bound only when the UI/schema requires it;
 - do not invent a local path for a missing image;
 - do not automatically extract frames from previous videos;

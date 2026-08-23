@@ -1,4 +1,4 @@
-# Windows one-click launcher (v0.8.8)
+# Windows one-click launcher (v0.8.9)
 
 Definitive Windows launcher for the local AI Video stack:
 

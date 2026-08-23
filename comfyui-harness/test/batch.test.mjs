@@ -6,6 +6,7 @@ import {
   duplicateBatchItem,
   moveBatchItem,
   removeBatchItem,
+  resolveBatchItemFiles,
   submitBatchSequentially,
   summarizeBatchJobs,
   validateBatchDraft
@@ -41,7 +42,7 @@ test("batch preflight blocks safe-fit, missing inputs, video roles and invalid j
 
   result = validateBatchDraft({ items, requiredFiles: {}, requiredKeys: ["firstImage"] });
   assert.equal(result.valid, false);
-  assert.match(result.errors.join(" "), /firstImage/);
+  assert.match(result.errors.join(" "), /Job 1: input firstImage mancante/);
 
   result = validateBatchDraft({ items, requiredFiles: { firstImage: "a.png" }, requiredKeys: ["firstImage"], unsupportedVideoRoles: ["Motion video"] });
   assert.equal(result.valid, false);
@@ -65,6 +66,85 @@ test("valid four-job I2VA-style batch passes preflight", () => {
   });
   assert.equal(result.valid, true);
   assert.deepEqual(result.errors, []);
+});
+
+test("resolveBatchItemFiles merges sparse overrides over shared fallback", () => {
+  const shared = { firstImage: "frame-shared.png", audio: "bed.wav" };
+  assert.deepEqual(resolveBatchItemFiles({}, shared), shared);
+  assert.deepEqual(
+    resolveBatchItemFiles({ files: { firstImage: "frame-b.png" } }, shared),
+    { firstImage: "frame-b.png", audio: "bed.wav" }
+  );
+  assert.deepEqual(
+    resolveBatchItemFiles({ files: { firstImage: "frame-a.png" } }, shared),
+    { firstImage: "frame-a.png", audio: "bed.wav" }
+  );
+});
+
+test("Job A and Job B can resolve different firstImage filenames", () => {
+  const shared = { firstImage: "frame-shared.png" };
+  const jobA = { prompt: "a", seed: "1", duration: "10", steps: "20", megapixels: "0.3", aspect: "16:9", files: { firstImage: "frame-a.png" } };
+  const jobB = { prompt: "b", seed: "2", duration: "10", steps: "20", megapixels: "0.3", aspect: "16:9", files: { firstImage: "frame-b.png" } };
+  assert.equal(resolveBatchItemFiles(jobA, shared).firstImage, "frame-a.png");
+  assert.equal(resolveBatchItemFiles(jobB, shared).firstImage, "frame-b.png");
+  const result = validateBatchDraft({
+    items: [jobA, jobB],
+    sharedFiles: shared,
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" }
+  });
+  assert.equal(result.valid, true);
+});
+
+test("duplicate copies file overrides without shared object references", () => {
+  const items = createBatchItems({ prompt: "p", seed: 1 }, 2);
+  items[0].files = { firstImage: "frame-a.png" };
+  const duplicated = duplicateBatchItem(items, 0);
+  assert.deepEqual(duplicated[1].files, { firstImage: "frame-a.png" });
+  assert.notEqual(duplicated[1].files, duplicated[0].files);
+  duplicated[1].files.firstImage = "frame-b.png";
+  assert.equal(duplicated[0].files.firstImage, "frame-a.png");
+});
+
+test("move preserves per-job file bindings", () => {
+  const items = createBatchItems({ prompt: "p", seed: 1 }, 3);
+  items[0].files = { firstImage: "frame-a.png" };
+  items[2].files = { firstImage: "frame-c.png" };
+  const moved = moveBatchItem(items, 2, 0);
+  assert.equal(moved[0].files.firstImage, "frame-c.png");
+  assert.equal(moved[1].files.firstImage, "frame-a.png");
+  assert.equal(moved[2].files, undefined);
+});
+
+test("per-job missing required input fails preflight for that job", () => {
+  const items = createBatchItems({ prompt: "ok", seed: 1, duration: 10, steps: 20, megapixels: 0.3, aspect: "16:9" }, 3);
+  items[0].files = { firstImage: "frame-a.png" };
+  items[2].files = { firstImage: "frame-c.png" };
+  const result = validateBatchDraft({
+    items,
+    sharedFiles: {},
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" }
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(" "), /Job 2: input First Frame mancante/);
+  assert.ok(!result.errors.some(error => /Job 1:/.test(error)));
+  assert.ok(!result.errors.some(error => /Job 3:/.test(error)));
+});
+
+test("stale explicit binding fails closed", () => {
+  const items = createBatchItems({ prompt: "ok", seed: 1, duration: 10, steps: 20, megapixels: 0.3, aspect: "16:9" }, 2);
+  items[0].files = { firstImage: "frame-gone.png" };
+  const result = validateBatchDraft({
+    items,
+    sharedFiles: { firstImage: "frame-shared.png" },
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" },
+    unavailableFiles: new Set(["frame-gone.png"])
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(" "), /Job 1: input First Frame non disponibile/);
+  assert.ok(!result.errors.some(error => /Job 2:/.test(error)));
 });
 
 test("sequential submit sends exactly once per item in deterministic order", async () => {

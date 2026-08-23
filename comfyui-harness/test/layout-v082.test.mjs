@@ -60,6 +60,6 @@ test("prompt resizes from a visible bottom handle, persisted independently of mo
 
 test("package is 0.8.6 and v082 stylesheet is loaded", () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.8.8");
+  assert.equal(pkg.version, "0.8.9");
   assert.match(html, /workspace-v082\.css/);
 });

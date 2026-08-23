@@ -1,4 +1,7 @@
 import { formatDurationCompact, normalizeDurationSeconds } from "../lib/duration.mjs";
+import { normalizeItemFiles, resolveBatchItemFiles } from "../lib/batch-draft.mjs";
+
+export { resolveBatchItemFiles, normalizeItemFiles };
 
 export const MIN_BATCH_JOBS = 2;
 export const MAX_BATCH_JOBS = 8;
@@ -28,11 +31,14 @@ export function duplicateBatchItem(items = [], index = 0) {
   const source = items[index];
   if (!source || items.length >= MAX_BATCH_JOBS) return [...items];
   const seed = Number(source.seed);
+  const files = normalizeItemFiles(source.files);
   const copy = {
     ...source,
     id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     seed: Number.isFinite(seed) ? String(Math.trunc(seed) + 1) : String(source.seed || "1")
   };
+  if (files) copy.files = { ...files };
+  else delete copy.files;
   const next = [...items];
   next.splice(index + 1, 0, copy);
   return next;
@@ -55,7 +61,10 @@ export function validateBatchDraft({
   items = [],
   safeFitStatus = "not-applicable",
   requiredFiles = {},
+  sharedFiles = null,
   requiredKeys = [],
+  roleLabels = {},
+  unavailableFiles = null,
   unsupportedVideoRoles = [],
   megapixelsMin = 0.1,
   megapixelsMax = 16,
@@ -72,8 +81,13 @@ export function validateBatchDraft({
   if (unsupportedVideoRoles.length) {
     errors.push(`Batch v1 non supporta ancora input video: ${unsupportedVideoRoles.join(", ")}.`);
   }
-  const missingRoles = requiredKeys.filter(key => !requiredFiles[key]);
-  if (missingRoles.length) errors.push(`Input workflow mancanti: ${missingRoles.join(", ")}.`);
+
+  const shared = sharedFiles && typeof sharedFiles === "object"
+    ? sharedFiles
+    : (requiredFiles || {});
+  const unavailable = unavailableFiles instanceof Set
+    ? unavailableFiles
+    : new Set(Array.isArray(unavailableFiles) ? unavailableFiles : []);
 
   const perItem = [];
   items.forEach((item, index) => {
@@ -93,6 +107,20 @@ export function validateBatchDraft({
     const mp = Number(item.megapixels);
     if (!Number.isFinite(mp) || mp < megapixelsMin || mp > megapixelsMax) itemErrors.push(`MP fuori ${megapixelsMin}–${megapixelsMax}`);
     if (!String(item.aspect || "").trim()) itemErrors.push("aspect mancante");
+
+    const effectiveFiles = resolveBatchItemFiles(item, shared);
+    for (const roleKey of requiredKeys) {
+      const roleLabel = roleLabels[roleKey] || roleKey;
+      const filename = effectiveFiles[roleKey];
+      if (!filename) {
+        itemErrors.push(`input ${roleLabel} mancante`);
+        continue;
+      }
+      if (unavailable.has(filename)) {
+        itemErrors.push(`input ${roleLabel} non disponibile`);
+      }
+    }
+
     if (itemErrors.length) {
       perItem.push({ index, errors: itemErrors });
       errors.push(`${label}: ${itemErrors.join(", ")}.`);

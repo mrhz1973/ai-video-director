@@ -107,6 +107,7 @@ import {
   exportBatchDraftForProject,
   exportBatchDraftForPersistence,
   importBatchDraftFromProject,
+  setBatchAssetContextProvider,
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
 } from "./batch-ui.mjs";
@@ -1359,9 +1360,11 @@ function renderRoleFields() {
     const foundForRole = filename ? findMemberByFilename(draft.library, filename) : null;
     const status = filename ? availabilityOf(filename, foundForRole?.member?.subfolder || "") : null;
     row.className = `role-row${status === "missing" || status === "error" ? " stale" : ""}`;
+    row.dataset.roleKey = field.key;
     const label = document.createElement("label");
     label.textContent = field.label;
     const select = document.createElement("select");
+    select.dataset.roleKey = field.key;
     select.append(new Option("— non assegnato —", ""));
     const compatible = membersCompatibleWithRole(draft.library, field.accept);
     for (const member of compatible) {
@@ -1908,6 +1911,23 @@ if (recovery && !$("project").value) {
 persistenceReady = true;
 setBatchPersistenceHook(() => {
   if (draft.saved && draft.id) noteEditorChange();
+});
+setBatchAssetContextProvider(() => {
+  const unavailable = new Set();
+  for (const member of listAllMembers(draft.library)) {
+    const status = availabilityOf(member.filename, member.subfolder || "");
+    if (status === "missing" || status === "error") unavailable.add(member.filename);
+  }
+  for (const name of Object.values(draft.files || {})) {
+    if (!name) continue;
+    const found = findMemberByFilename(draft.library, name);
+    const status = availabilityOf(name, found?.member?.subfolder || "");
+    if (status === "missing" || status === "error") unavailable.add(name);
+  }
+  return {
+    library: draft.library,
+    unavailableFilenames: unavailable
+  };
 });
 $("batchLegacyRecover")?.addEventListener("click", () => {
   if (!pendingLegacyBatchCandidate?.draft || !draft.saved || !draft.id) return;

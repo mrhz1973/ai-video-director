@@ -9,14 +9,14 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.8, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.9, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
 - Harness UI: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 
-### Windows one-click launcher (v0.8.8, Issues #42/#44)
+### Windows one-click launcher (v0.8.8+, Issues #42/#44)
 
 Tracked scripts live in `comfyui-harness/scripts/windows/`:
 
@@ -109,6 +109,17 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 
 - Server `project.batchDraft` is authoritative. A Batch restored from browser-local legacy storage into a saved project stays dirty and autosaves once; `Salvato` requires a verified server response containing the same semantic Batch.
 - Manual Save/autosave fail closed if the request includes a Batch but the response omits or mismatches it. Local `h3BatchDraft:v1:*` recovery is kept until confirmation.
+
+### Batch per-job input bindings (v0.8.9)
+
+- Workflow and model remain common for a prepared Batch. Prompt, seed, duration, steps, megapixels, aspect, and **non-video input/asset bindings** may differ per job.
+- `source.files` is the shared fallback snapshotted at prepare time. Sparse `item.files` holds per-job overrides (`{ [workflowRoleKey]: comfyFilename }`).
+- Effective submission files are `{ ...source.files, ...item.files }`. Missing override keys inherit the shared fallback.
+- Legacy drafts without `item.files` behave exactly as v0.8.8 (all jobs share `source.files`). Schema stays `BATCH_DRAFT_VERSION = 1` (additive).
+- Expanded Job cards show an Input section with inherit/override selectors driven by workflow attachment metadata and the existing project Asset library filters (image/audio roles). Video attachment roles remain unsupported in Batch.
+- Changing the main/global Input selector after prepare does **not** invalidate or wipe explicit per-job overrides; workflow or model changes still require re-prepare.
+- Preflight validates required roles per job (missing or unavailable explicit/shared filenames fail closed with `Job N: input <label> …`).
+- Prompt text is never parsed as an asset resolver. Execution authority is still never persisted. No automatic generation was added.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 
