@@ -17,12 +17,49 @@ function Get-NodeExecutable {
     return $node.Source
 }
 
+function Test-ConcretePowerShellExecutable {
+    param([string]$Path)
+    if (-not $Path) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $item = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    if (-not $item) { return $false }
+    if ($item.Length -le 0) { return $false }
+  $normalized = $Path.Replace('/', '\')
+  if ($normalized -match '\\Microsoft\\WindowsApps\\') { return $false }
+    return $true
+}
+
 function Get-PowerShellLauncherExecutable {
-    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-    if ($pwsh) { return $pwsh.Source }
-    $powershell = Get-Command powershell -ErrorAction SilentlyContinue
-    if ($powershell) { return $powershell.Source }
-    throw "PowerShell was not found."
+    $candidates = @()
+
+    $ps7 = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+    if (Test-ConcretePowerShellExecutable $ps7) {
+        $candidates += $ps7
+    }
+
+    foreach ($cmd in Get-Command pwsh -All -ErrorAction SilentlyContinue) {
+        if (Test-ConcretePowerShellExecutable $cmd.Source) {
+            $candidates += $cmd.Source
+        }
+    }
+
+    $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (Test-ConcretePowerShellExecutable $ps51) {
+        $candidates += $ps51
+    }
+
+    foreach ($cmd in Get-Command powershell -All -ErrorAction SilentlyContinue) {
+        if (Test-ConcretePowerShellExecutable $cmd.Source) {
+            $candidates += $cmd.Source
+        }
+    }
+
+    $unique = @($candidates | Select-Object -Unique)
+    if ($unique.Count -gt 0) {
+        return [string]$unique[0]
+    }
+
+    throw "No usable PowerShell executable was found. Install PowerShell 7 or ensure Windows PowerShell is available."
 }
 
 function Get-DesktopFolderPath {
@@ -41,7 +78,7 @@ function New-LauncherShortcut {
     $shortcut = $shell.CreateShortcut($ShortcutPath)
     $launcherExe = Get-PowerShellLauncherExecutable
     $shortcut.TargetPath = $launcherExe
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$TargetScriptPath`""
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$TargetScriptPath`" -PauseOnError"
     $shortcut.WorkingDirectory = $WorkingDirectory
     $shortcut.WindowStyle = 1
     if ($IconLocation) { $shortcut.IconLocation = $IconLocation }
@@ -59,6 +96,13 @@ function Invoke-LauncherCli {
     $cli = Join-Path $PSScriptRoot 'launcher-cli.mjs'
     & $node $cli $Command --harness-root $HarnessRoot --config $ConfigPath
     if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+        throw "Launcher CLI exited with code $LASTEXITCODE"
     }
+}
+
+function Wait-LauncherErrorPause {
+    Write-Host ""
+    Write-Host "AI Video Director could not start."
+    Write-Host "Press Enter to close this window."
+    [void][System.Console]::ReadLine()
 }

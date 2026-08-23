@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-23 — v0.8.8
+
+- Windows launcher hotfix (Issue #44): fixed invalid PowerShell port-inspection script generation that joined block lines with `"; "` and produced parser errors such as `@{;` / `{;`.
+- Port inspection now uses a testable `buildPortInspectionPowerShell()` helper executed via `-EncodedCommand` (UTF-16LE Base64).
+- Added real Windows integration tests for temporary TCP listener detection and absent-port classification without mocking PowerShell execution.
+- Hardened Desktop shortcut PowerShell resolution to prefer concrete `pwsh.exe` paths and reject `Microsoft\WindowsApps` App Execution Aliases; fallback to Windows PowerShell 5.1.
+- Desktop shortcut now passes `-PauseOnError` so fail-closed startup errors remain visible until Enter; successful startup does not pause.
+
 ## 2026-08-23 — v0.8.7
 
 - Windows one-click launcher (Issue #42): added health-gated, idempotent startup for ComfyUI (`8188`) and AI Video Director (`8787`) under `comfyui-harness/scripts/windows/`.

@@ -4,6 +4,44 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 /**
+ * Build syntactically valid PowerShell source for Windows port inspection.
+ * Uses normal block structure; never joins lines with "; ".
+ */
+export function buildPortInspectionPowerShell(port) {
+  const portNumber = Number(port);
+  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+    throw new Error(`Invalid port for inspection: ${port}`);
+  }
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$port = ${portNumber}`,
+    "$conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1",
+    "if (-not $conn) {",
+    "  @{ listening = $false; inspectionOk = $true; processInfo = $null } | ConvertTo-Json -Compress",
+    "  exit 0",
+    "}",
+    "$proc = Get-CimInstance Win32_Process -Filter (\"ProcessId=\" + $conn.OwningProcess) -ErrorAction SilentlyContinue",
+    "$out = @{",
+    "  listening = $true",
+    "  inspectionOk = $true",
+    "  processInfo = @{",
+    "    pid = [int]$conn.OwningProcess",
+    "    executable = $proc.ExecutablePath",
+    "    commandLine = $proc.CommandLine",
+    "  }",
+    "}",
+    "$out | ConvertTo-Json -Compress"
+  ].join("\n");
+}
+
+/**
+ * Encode PowerShell source for -EncodedCommand (UTF-16LE Base64).
+ */
+export function encodePowerShellCommand(source) {
+  return Buffer.from(String(source), "utf16le").toString("base64");
+}
+
+/**
  * Normalize raw port inspection output into a stable shape.
  */
 export function normalizePortInspection(raw = {}) {
@@ -61,29 +99,18 @@ export function parsePortQueryRows(port, { connections = [], processes = {}, ins
  */
 export async function queryPortStateWindows(port, deps = {}) {
   const execFileFn = deps.execFileFn || execFileAsync;
-  const shell = deps.powershellExecutable || "powershell.exe";
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    `$port = ${Number(port)}`,
-    "$conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1",
-    "if (-not $conn) {",
-    "  @{ listening = $false; inspectionOk = $true; processInfo = $null } | ConvertTo-Json -Compress",
-    "  exit 0",
-    "}",
-    "$proc = Get-CimInstance Win32_Process -Filter (\"ProcessId=\" + $conn.OwningProcess) -ErrorAction SilentlyContinue",
-    "$out = @{",
-    "  listening = $true",
-    "  inspectionOk = $true",
-    "  processInfo = @{",
-    "    pid = [int]$conn.OwningProcess",
-    "    executable = $proc.ExecutablePath",
-    "    commandLine = $proc.CommandLine",
-    "  }",
-    "}",
-    "$out | ConvertTo-Json -Compress"
-  ].join("; ");
+  const shell = deps.powershellExecutable || process.env.SystemRoot
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : "powershell.exe";
+  const source = buildPortInspectionPowerShell(port);
+  const encoded = encodePowerShellCommand(source);
 
-  const { stdout } = await execFileFn(shell, ["-NoProfile", "-Command", script], { windowsHide: true });
+  const { stdout } = await execFileFn(shell, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-EncodedCommand",
+    encoded
+  ], { windowsHide: true });
   const text = String(stdout || "").trim();
   if (!text) {
     throw new Error("Port inspection returned empty output");
