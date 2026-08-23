@@ -12,10 +12,11 @@ import {
   planBatchCurrentInterrupt,
   planBatchStop,
   planSingleInterrupt,
-  verifyPendingDeletions,
+  verifyPromptRemoval,
   formatBatchStopSummary
 } from "../lib/runtime-control.mjs";
 import { createRuntimeControlService } from "../lib/runtime-control-service.mjs";
+import { parseComfyQueuePayload } from "../lib/comfy-queue.mjs";
 import { comfyDeletePendingPrompts, comfyInterruptPrompt } from "../lib/comfy-runtime-api.mjs";
 import {
   isTerminalBatchState,
@@ -36,6 +37,7 @@ const RUNNING = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const OTHER = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const PENDING_A = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const PENDING_B = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+const PENDING_C = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
 const BATCH = "batch-1111-1111-1111-111111111111";
 
 function queuePayload(runningId, pendingIds = []) {
@@ -157,10 +159,160 @@ test("planBatchStop fails closed when ownership missing", () => {
   assert.equal(plan.code, "ownership-missing");
 });
 
-test("verifyPendingDeletions reports skipped ids still pending", () => {
-  const result = verifyPendingDeletions([PENDING_A, PENDING_B, OTHER], [PENDING_B, OTHER], [PENDING_A, PENDING_B]);
+test("verifyPromptRemoval marks removed pending ids as cancelled", () => {
+  const result = verifyPromptRemoval({
+    attemptedIds: [PENDING_A],
+    runningPromptIds: [],
+    pendingPromptIds: []
+  });
   assert.deepEqual(result.cancelled, [PENDING_A]);
-  assert.deepEqual(result.skipped, [PENDING_B]);
+  assert.deepEqual(result.stillPending, []);
+  assert.deepEqual(result.nowRunning, []);
+});
+
+test("verifyPromptRemoval keeps still-pending ids as skipped", () => {
+  const result = verifyPromptRemoval({
+    attemptedIds: [PENDING_A, PENDING_B],
+    runningPromptIds: [],
+    pendingPromptIds: [PENDING_B]
+  });
+  assert.deepEqual(result.cancelled, [PENDING_A]);
+  assert.deepEqual(result.stillPending, [PENDING_B]);
+  assert.deepEqual(result.nowRunning, []);
+});
+
+test("verifyPromptRemoval never marks running prompt as cancelled", () => {
+  const result = verifyPromptRemoval({
+    attemptedIds: [PENDING_A],
+    runningPromptIds: [PENDING_A],
+    pendingPromptIds: []
+  });
+  assert.deepEqual(result.cancelled, []);
+  assert.deepEqual(result.stillPending, []);
+  assert.deepEqual(result.nowRunning, [PENDING_A]);
+});
+
+test("batch stop race: owned pending promoted to running is interrupted not cancelled", async () => {
+  const NEXT = PENDING_A;
+  let queueState = queuePayload(RUNNING, [NEXT, PENDING_B, OTHER]);
+  const interrupted = [];
+  const deleteBodies = [];
+  const fetchFn = async (url, init) => {
+    if (url.endsWith("/queue") && init?.method === "POST") {
+      const body = JSON.parse(init.body);
+      deleteBodies.push(body);
+      queueState = {
+        queue_running: queueState.queue_running,
+        queue_pending: queueState.queue_pending.filter(entry => !body.delete.includes(entry[1]))
+      };
+      return { ok: true, status: 200 };
+    }
+    if (url.endsWith("/queue")) {
+      return { ok: true, status: 200, json: async () => queueState };
+    }
+    if (url.endsWith("/interrupt")) {
+      const body = JSON.parse(init.body);
+      interrupted.push(body.prompt_id);
+      if (body.prompt_id === RUNNING) {
+        queueState = queuePayload(NEXT, [PENDING_B, OTHER]);
+      } else if (body.prompt_id === NEXT) {
+        queueState = queuePayload(null, [PENDING_B, OTHER]);
+      }
+      return { ok: true, status: 200 };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const registry = registryWithBatch([RUNNING, NEXT, PENDING_B]);
+  const service = createRuntimeControlService({
+    comfyUrl: "http://127.0.0.1:1",
+    ownershipRegistry: registry,
+    fetchFn
+  });
+  const result = await service.stopBatch({ batchId: BATCH, expectedRunningPromptId: RUNNING });
+  assert.deepEqual(interrupted, [RUNNING, NEXT]);
+  assert.ok(result.cancelledPromptIds.includes(PENDING_B));
+  assert.equal(result.cancelledPromptIds.includes(NEXT), false);
+  assert.equal(deleteBodies.length >= 1, true);
+  assert.equal(deleteBodies.some(body => body.clear === true), false);
+  assert.ok(deleteBodies.every(body => body.delete.every(id => [NEXT, PENDING_B].includes(id))));
+});
+
+test("batch stop race: unrelated successor is not interrupted", async () => {
+  let queueState = queuePayload(RUNNING, [OTHER]);
+  const interrupted = [];
+  const fetchFn = async (url, init) => {
+    if (url.endsWith("/queue") && init?.method === "POST") {
+      const body = JSON.parse(init.body);
+      queueState = {
+        queue_running: queueState.queue_running,
+        queue_pending: queueState.queue_pending.filter(entry => !body.delete.includes(entry[1]))
+      };
+      return { ok: true, status: 200 };
+    }
+    if (url.endsWith("/queue")) {
+      return { ok: true, status: 200, json: async () => queueState };
+    }
+    if (url.endsWith("/interrupt")) {
+      const body = JSON.parse(init.body);
+      interrupted.push(body.prompt_id);
+      if (body.prompt_id === RUNNING) {
+        queueState = queuePayload(OTHER, []);
+      }
+      return { ok: true, status: 200 };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const registry = registryWithBatch([RUNNING]);
+  const service = createRuntimeControlService({
+    comfyUrl: "http://127.0.0.1:1",
+    ownershipRegistry: registry,
+    fetchFn
+  });
+  const result = await service.stopBatch({ batchId: BATCH, expectedRunningPromptId: RUNNING });
+  assert.deepEqual(interrupted, [RUNNING]);
+  assert.equal(result.cancelledPromptIds.includes(OTHER), false);
+});
+
+test("batch stop preserves unrelated pending queue entries", async () => {
+  let queueState = queuePayload(RUNNING, [PENDING_A, OTHER]);
+  const fetchFn = async (url, init) => {
+    if (url.endsWith("/queue") && init?.method === "POST") {
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.delete, [PENDING_A]);
+      queueState = {
+        queue_running: queueState.queue_running,
+        queue_pending: queueState.queue_pending.filter(entry => !body.delete.includes(entry[1]))
+      };
+      return { ok: true, status: 200 };
+    }
+    if (url.endsWith("/queue")) {
+      return { ok: true, status: 200, json: async () => queueState };
+    }
+    if (url.endsWith("/interrupt")) {
+      queueState = queuePayload(null, [OTHER]);
+      return { ok: true, status: 200 };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const registry = registryWithBatch([RUNNING, PENDING_A]);
+  const service = createRuntimeControlService({
+    comfyUrl: "http://127.0.0.1:1",
+    ownershipRegistry: registry,
+    fetchFn
+  });
+  const result = await service.stopBatch({ batchId: BATCH, expectedRunningPromptId: RUNNING });
+  assert.deepEqual(result.cancelledPromptIds, [PENDING_A]);
+  assert.equal(parseComfyQueuePayload(queueState).pendingPromptIds.includes(OTHER), true);
+});
+
+test("verifyPendingDeletions reports skipped ids still pending", () => {
+  const result = verifyPromptRemoval({
+    attemptedIds: [PENDING_A, PENDING_B],
+    runningPromptIds: [],
+    pendingPromptIds: [PENDING_B]
+  });
+  assert.deepEqual(result.cancelled, [PENDING_A]);
+  assert.deepEqual(result.stillPending, [PENDING_B]);
 });
 
 test("runtime service interrupts owned single and is idempotent", async () => {

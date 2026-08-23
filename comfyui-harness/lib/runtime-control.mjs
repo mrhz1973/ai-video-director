@@ -124,15 +124,38 @@ export function planBatchStop({ batchId, expectedRunningPromptId, queuePayload, 
   };
 }
 
-export function verifyPendingDeletions(beforeIds = [], afterIds = [], attempted = []) {
-  const after = new Set(afterIds);
+export function verifyPromptRemoval({
+  attemptedIds = [],
+  runningPromptIds = [],
+  pendingPromptIds = []
+} = {}) {
+  const running = new Set(runningPromptIds);
+  const pending = new Set(pendingPromptIds);
   const cancelled = [];
-  const skipped = [];
-  for (const id of attempted) {
-    if (after.has(id)) skipped.push(id);
-    else cancelled.push(id);
+  const stillPending = [];
+  const nowRunning = [];
+  for (const id of attemptedIds) {
+    const promptId = String(id || "").trim();
+    if (!promptId) continue;
+    if (running.has(promptId)) nowRunning.push(promptId);
+    else if (pending.has(promptId)) stillPending.push(promptId);
+    else cancelled.push(promptId);
   }
-  return { cancelled, skipped, unrelatedStillPending: beforeIds.filter(id => !attempted.includes(id) && after.has(id)) };
+  return {
+    cancelled,
+    stillPending,
+    nowRunning,
+    skipped: stillPending
+  };
+}
+
+/** @deprecated Use verifyPromptRemoval */
+export function verifyPendingDeletions(beforeIds = [], afterPendingIds = [], attempted = [], afterRunningIds = []) {
+  return verifyPromptRemoval({
+    attemptedIds: attempted,
+    runningPromptIds: afterRunningIds,
+    pendingPromptIds: afterPendingIds
+  });
 }
 
 export function formatBatchStopSummary(jobs = []) {

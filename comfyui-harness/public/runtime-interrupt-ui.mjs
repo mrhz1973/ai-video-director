@@ -73,10 +73,13 @@ export function batchStopConfirmMessage() {
 
 export function applyBatchStopResult(jobs = [], result = {}) {
   const cancelled = new Set(result.cancelledPromptIds || []);
-  const interruptedId = result.interruptedPromptId || null;
+  const interrupted = new Set([
+    ...(result.interruptedPromptIds || []),
+    ...(result.interruptedPromptId ? [result.interruptedPromptId] : [])
+  ]);
   return jobs.map(job => {
     if (cancelled.has(job.promptId)) return { ...job, state: "cancelled" };
-    if (interruptedId && job.promptId === interruptedId && job.state !== "completed") {
+    if (interrupted.has(job.promptId) && job.state !== "completed") {
       return { ...job, state: "interrupting" };
     }
     return { ...job };

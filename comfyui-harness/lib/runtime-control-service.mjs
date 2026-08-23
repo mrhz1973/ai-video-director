@@ -12,8 +12,10 @@ import {
   planBatchCurrentInterrupt,
   planBatchStop,
   planSingleInterrupt,
-  verifyPendingDeletions
+  verifyPromptRemoval
 } from "./runtime-control.mjs";
+
+const MAX_BATCH_STOP_ROUNDS = 3;
 
 export function createRuntimeControlService({
   comfyUrl,
@@ -43,6 +45,48 @@ export function createRuntimeControlService({
     return result.data;
   }
 
+  async function interruptPrompt(promptId) {
+    const interrupt = await comfyInterruptPrompt(comfyUrl, promptId, fetchFn);
+    if (!interrupt.ok) {
+      const error = new Error("Interruzione ComfyUI non riuscita.");
+      error.code = "interrupt-failed";
+      error.status = interrupt.status || 502;
+      throw error;
+    }
+    log("runtime_interrupt_accepted", { prompt_id: String(promptId || "").slice(0, 8) });
+    return promptId;
+  }
+
+  async function deleteOwnedPending(promptIds = []) {
+    const ids = [...new Set(promptIds.map(id => String(id || "").trim()).filter(Boolean))];
+    if (!ids.length) {
+      return { cancelledPromptIds: [], skippedPromptIds: [], nowRunningPromptIds: [] };
+    }
+    const deleteResult = await comfyDeletePendingPrompts(comfyUrl, ids, fetchFn);
+    if (!deleteResult.ok) {
+      const error = new Error("Cancellazione coda ComfyUI non riuscita.");
+      error.code = "delete-failed";
+      error.status = deleteResult.status || 502;
+      throw error;
+    }
+    const after = parseComfyQueuePayload(await loadQueue());
+    const verified = verifyPromptRemoval({
+      attemptedIds: ids,
+      runningPromptIds: after.runningPromptIds,
+      pendingPromptIds: after.pendingPromptIds
+    });
+    log("batch_stop_cancelled_pending", {
+      cancelled: verified.cancelled.length,
+      skipped: verified.stillPending.length,
+      now_running: verified.nowRunning.length
+    });
+    return {
+      cancelledPromptIds: verified.cancelled,
+      skippedPromptIds: verified.stillPending,
+      nowRunningPromptIds: verified.nowRunning
+    };
+  }
+
   async function executePlan(plan, { inFlightKey, inFlightSet }) {
     if (inFlightSet.has(inFlightKey)) {
       return { ok: true, status: "already-in-flight" };
@@ -51,36 +95,15 @@ export function createRuntimeControlService({
     try {
       let interruptedPromptId = null;
       if (plan.interruptPromptId) {
-        const interrupt = await comfyInterruptPrompt(comfyUrl, plan.interruptPromptId, fetchFn);
-        if (!interrupt.ok) {
-          const error = new Error("Interruzione ComfyUI non riuscita.");
-          error.code = "interrupt-failed";
-          error.status = interrupt.status || 502;
-          throw error;
-        }
-        interruptedPromptId = plan.interruptPromptId;
-        log("runtime_interrupt_accepted", { prompt_id: plan.interruptPromptId?.slice?.(0, 8) });
+        interruptedPromptId = await interruptPrompt(plan.interruptPromptId);
       }
 
       let cancelledPromptIds = [];
       let skippedPromptIds = [];
       if (plan.pendingToDelete?.length) {
-        const before = parseComfyQueuePayload(await loadQueue());
-        const deleteResult = await comfyDeletePendingPrompts(comfyUrl, plan.pendingToDelete, fetchFn);
-        if (!deleteResult.ok) {
-          const error = new Error("Cancellazione coda ComfyUI non riuscita.");
-          error.code = "delete-failed";
-          error.status = deleteResult.status || 502;
-          throw error;
-        }
-        const after = parseComfyQueuePayload(await loadQueue());
-        const verified = verifyPendingDeletions(before.pendingPromptIds, after.pendingPromptIds, plan.pendingToDelete);
-        cancelledPromptIds = verified.cancelled;
-        skippedPromptIds = verified.skipped;
-        log("batch_stop_cancelled_pending", {
-          cancelled: cancelledPromptIds.length,
-          skipped: skippedPromptIds.length
-        });
+        const deleted = await deleteOwnedPending(plan.pendingToDelete);
+        cancelledPromptIds = deleted.cancelledPromptIds;
+        skippedPromptIds = deleted.skippedPromptIds;
       }
 
       return {
@@ -93,6 +116,54 @@ export function createRuntimeControlService({
     } finally {
       inFlightSet.delete(inFlightKey);
     }
+  }
+
+  async function executeBatchStop(plan, batchId) {
+    const ownedIds = ownershipRegistry.ownedPromptIdsForBatch(batchId);
+    const interruptedPromptIds = [];
+    const cancelledSet = new Set();
+    const skippedSet = new Set();
+
+    if (plan.interruptPromptId) {
+      interruptedPromptIds.push(await interruptPrompt(plan.interruptPromptId));
+    }
+
+    let pendingToDelete = [...(plan.pendingToDelete || [])];
+
+    for (let round = 0; round < MAX_BATCH_STOP_ROUNDS; round += 1) {
+      if (pendingToDelete.length) {
+        const deleted = await deleteOwnedPending(pendingToDelete);
+        deleted.cancelledPromptIds.forEach(id => cancelledSet.add(id));
+        deleted.skippedPromptIds.forEach(id => skippedSet.add(id));
+        for (const promptId of deleted.nowRunningPromptIds) {
+          if (ownedIds.has(promptId) && !interruptedPromptIds.includes(promptId)) {
+            interruptedPromptIds.push(await interruptPrompt(promptId));
+          }
+        }
+      }
+
+      const queue = parseComfyQueuePayload(await loadQueue());
+      const newInterrupts = queue.runningPromptIds
+        .filter(id => ownedIds.has(id) && !interruptedPromptIds.includes(id));
+      for (const promptId of newInterrupts) {
+        interruptedPromptIds.push(await interruptPrompt(promptId));
+      }
+
+      const refreshed = parseComfyQueuePayload(await loadQueue());
+      pendingToDelete = refreshed.pendingPromptIds.filter(id => ownedIds.has(id) && !cancelledSet.has(id));
+      const ownedStillRunning = refreshed.runningPromptIds
+        .some(id => ownedIds.has(id) && !interruptedPromptIds.includes(id));
+      if (!pendingToDelete.length && !ownedStillRunning) break;
+    }
+
+    return {
+      ok: true,
+      interruptedPromptId: interruptedPromptIds[0] || null,
+      interruptedPromptIds,
+      cancelledPromptIds: [...cancelledSet],
+      skippedPromptIds: [...skippedSet],
+      unrelatedPreserved: plan.unrelatedPreserved ?? 0
+    };
   }
 
   return {
@@ -162,16 +233,24 @@ export function createRuntimeControlService({
 
     async stopBatch({ batchId, expectedRunningPromptId }) {
       log("batch_stop_request", { batch_id: String(batchId || "").slice(0, 8) });
-      const queuePayload = await loadQueue();
-      const plan = planBatchStop({ batchId, expectedRunningPromptId, queuePayload, registry: ownershipRegistry });
-      if (!plan.ok) {
-        log("batch_stop_rejected", { code: plan.code });
-        const error = new Error(plan.error);
-        error.code = plan.code;
-        error.status = 409;
-        throw error;
+      if (batchStopInFlight.has(batchId)) {
+        return { ok: true, status: "already-stopping" };
       }
-      return executePlan(plan, { inFlightKey: batchId, inFlightSet: batchStopInFlight });
+      batchStopInFlight.add(batchId);
+      try {
+        const queuePayload = await loadQueue();
+        const plan = planBatchStop({ batchId, expectedRunningPromptId, queuePayload, registry: ownershipRegistry });
+        if (!plan.ok) {
+          log("batch_stop_rejected", { code: plan.code });
+          const error = new Error(plan.error);
+          error.code = plan.code;
+          error.status = 409;
+          throw error;
+        }
+        return executeBatchStop(plan, batchId);
+      } finally {
+        batchStopInFlight.delete(batchId);
+      }
     }
   };
 }
