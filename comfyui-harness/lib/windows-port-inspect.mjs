@@ -94,14 +94,25 @@ export function parsePortQueryRows(port, { connections = [], processes = {}, ins
 }
 
 /**
+ * Resolve the PowerShell executable used for Windows port inspection.
+ */
+export function resolvePortInspectionPowerShellExecutable(deps = {}) {
+  if (deps.powershellExecutable) {
+    return deps.powershellExecutable;
+  }
+  if (process.env.SystemRoot) {
+    return `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+  }
+  return "powershell.exe";
+}
+
+/**
  * Query Windows for the process listening on a TCP port.
  * Injectable via deps.queryPortState for tests.
  */
 export async function queryPortStateWindows(port, deps = {}) {
   const execFileFn = deps.execFileFn || execFileAsync;
-  const shell = deps.powershellExecutable || process.env.SystemRoot
-    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
-    : "powershell.exe";
+  const shell = resolvePortInspectionPowerShellExecutable(deps);
   const source = buildPortInspectionPowerShell(port);
   const encoded = encodePowerShellCommand(source);
 

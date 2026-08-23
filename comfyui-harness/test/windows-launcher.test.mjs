@@ -33,7 +33,8 @@ import {
   inspectPort,
   normalizePortInspection,
   parsePortQueryRows,
-  queryPortStateWindows
+  queryPortStateWindows,
+  resolvePortInspectionPowerShellExecutable
 } from "../lib/windows-port-inspect.mjs";
 import { runStart, runStatus, assertServiceDecision } from "../scripts/windows/launcher-cli.mjs";
 import { execFile } from "node:child_process";
@@ -779,7 +780,44 @@ test("installer shortcut includes -PauseOnError", async () => {
 test("Start script preserves noninteractive path without PauseOnError", async () => {
   const start = await readFile(path.join(scriptsDir, "Start-AIVideoDirector.ps1"), "utf8");
   assert.match(start, /if \(\$PauseOnError\)/);
+  assert.match(start, /\[ERROR\].*\$_.Exception\.Message/);
   assert.doesNotMatch(start, /-NoExit/);
+});
+
+test("queryPortStateWindows honors explicit powershellExecutable override", async () => {
+  const fakeShell = "X:\\Fake\\powershell.exe";
+  let receivedShell = null;
+  let receivedArgs = null;
+  await queryPortStateWindows(49152, {
+    powershellExecutable: fakeShell,
+    execFileFn: async (shell, args) => {
+      receivedShell = shell;
+      receivedArgs = args;
+      return {
+        stdout: JSON.stringify({
+          listening: false,
+          inspectionOk: true,
+          processInfo: null
+        })
+      };
+    }
+  });
+  assert.equal(receivedShell, fakeShell);
+  assert.notEqual(receivedShell.toLowerCase(), `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`.toLowerCase());
+  assert.ok(receivedArgs.includes("-EncodedCommand"));
+});
+
+test("resolvePortInspectionPowerShellExecutable prefers override then SystemRoot", () => {
+  assert.equal(
+    resolvePortInspectionPowerShellExecutable({ powershellExecutable: "X:\\Fake\\powershell.exe" }),
+    "X:\\Fake\\powershell.exe"
+  );
+  if (process.env.SystemRoot) {
+    assert.equal(
+      resolvePortInspectionPowerShellExecutable({}),
+      `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    );
+  }
 });
 
 async function parsePowerShellScript(script) {
@@ -976,6 +1014,54 @@ if (process.platform === "win32") {
     } finally {
       await new Promise(resolve => server.close(resolve));
     }
+  });
+
+  test("Start-AIVideoDirector.ps1 displays simulated PowerShell-layer error without pausing", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "h3-start-script-"));
+    const libSource = await readFile(path.join(scriptsDir, "launcher-lib.ps1"), "utf8");
+    const startSource = await readFile(path.join(scriptsDir, "Start-AIVideoDirector.ps1"), "utf8");
+    const throwingLib = libSource.replace(
+      /function Invoke-LauncherCli \{[\s\S]*?\n\}\r?\n\r?\nfunction Wait-LauncherErrorPause/,
+      [
+        "function Invoke-LauncherCli {",
+        "    param(",
+        "        [Parameter(Mandatory = $true)][ValidateSet('start', 'status')][string]$Command,",
+        "        [string]$HarnessRoot = (Get-HarnessRoot),",
+        "        [string]$ConfigPath = (Get-LauncherConfigPath)",
+        "    )",
+        "    throw 'SIMULATED LAUNCHER FAILURE'",
+        "}",
+        "",
+        "function Wait-LauncherErrorPause"
+      ].join("\n")
+    );
+    await writeFile(path.join(tempDir, "launcher-lib.ps1"), throwingLib, "utf8");
+    await writeFile(path.join(tempDir, "Start-AIVideoDirector.ps1"), startSource, "utf8");
+    const shell = `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+    const startScript = path.join(tempDir, "Start-AIVideoDirector.ps1");
+    let proc;
+    try {
+      proc = await new Promise((resolve, reject) => {
+        execFile(shell, [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          startScript
+        ], { windowsHide: true }, (error, stdout, stderr) => {
+          resolve({ error, stdout: String(stdout), stderr: String(stderr) });
+        });
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+    assert.ok(proc.error, "expected non-zero exit");
+    assert.notEqual(proc.error.code, 0);
+    const combined = `${proc.stdout}\n${proc.stderr}`;
+    assert.match(combined, /SIMULATED LAUNCHER FAILURE/);
+    assert.match(combined, /\[ERROR\]/);
+    assert.doesNotMatch(combined, /Press Enter to close this window/i);
   });
 }
 

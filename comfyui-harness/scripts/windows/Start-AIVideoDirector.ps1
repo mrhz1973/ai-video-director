@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 try {
     Invoke-LauncherCli -Command 'start' -ConfigPath $(if ($ConfigPath) { $ConfigPath } else { Get-LauncherConfigPath })
 } catch {
+    Write-Host ""
+    Write-Host ("[ERROR] " + $_.Exception.Message) -ForegroundColor Red
     if ($PauseOnError) {
         Wait-LauncherErrorPause
     }
