@@ -1,8 +1,7 @@
-/** Explicit vertical resize for prompt, monitor, and activity panels (v0.8.1). */
+/** Explicit vertical resize for prompt and monitor panels (v0.9.0). */
 
 export const PROMPT_HEIGHT_KEY = "h3PromptHeight:v1";
 export const MONITOR_HEIGHT_KEY = "h3MonitorHeight:v1";
-export const ACTIVITY_HEIGHT_KEY = "h3ActivityHeight:v1";
 
 export const PROMPT_DEFAULT = 260;
 export const PROMPT_MIN = 140;
@@ -11,10 +10,6 @@ export const PROMPT_MAX_VH = 0.55;
 export const MONITOR_DEFAULT = 260;
 export const MONITOR_MIN = 180;
 export const MONITOR_MAX_VH = 0.5;
-
-export const ACTIVITY_DEFAULT = 180;
-export const ACTIVITY_MIN = 100;
-export const ACTIVITY_MAX_VH = 0.4;
 
 /** Existing keys that must never be reused by panel resize. */
 export const RESERVED_LAYOUT_KEYS = Object.freeze([
@@ -48,8 +43,7 @@ export function storedPanelHeight(raw, options) {
 
 export function assertPanelKeysIsolated(keys = [
   PROMPT_HEIGHT_KEY,
-  MONITOR_HEIGHT_KEY,
-  ACTIVITY_HEIGHT_KEY
+  MONITOR_HEIGHT_KEY
 ]) {
   for (const key of keys) {
     if (RESERVED_LAYOUT_KEYS.includes(key)) {
@@ -184,23 +178,6 @@ export function initPanelResize() {
       }
     }
   });
-
-  const log = document.getElementById("log");
-  const activityHandle = document.getElementById("activityResizeHandle");
-  if (log && activityHandle) {
-    bindVerticalResize({
-      target: log,
-      handle: activityHandle,
-      storageKey: ACTIVITY_HEIGHT_KEY,
-      min: ACTIVITY_MIN,
-      maxVh: ACTIVITY_MAX_VH,
-      fallback: ACTIVITY_DEFAULT,
-      apply: height => {
-        log.style.height = `${height}px`;
-        log.style.maxHeight = `${height}px`;
-      }
-    });
-  }
 }
 
 if (typeof window !== "undefined") {

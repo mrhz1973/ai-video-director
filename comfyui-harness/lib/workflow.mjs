@@ -41,7 +41,12 @@ export function collectOutputs(history, baseUrl) {
       for (const item of node?.[key] || []) {
         if (!item.filename) continue;
         const query = new URLSearchParams({ filename: item.filename, subfolder: item.subfolder || "", type: item.type || "output" });
-        outputs.push({ kind: key, filename: item.filename, url: `${baseUrl}/api/view?${query}` });
+        outputs.push({
+          kind: key,
+          filename: item.filename,
+          subfolder: item.subfolder || "",
+          url: `${baseUrl}/api/view?${query}`
+        });
       }
     }
   }

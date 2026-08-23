@@ -20,6 +20,11 @@ import { memberSelectOption, membersCompatibleWithRole, roleAcceptKind } from ".
 import { archivePrompt } from "./prompt-history.mjs";
 import { batchJobOutputRows } from "./completion.mjs";
 import {
+  buildSessionOutputRecords,
+  notifySessionOutputsChanged,
+  upsertSessionOutputs
+} from "./session-outputs.mjs";
+import {
   getSharedCoordinator,
   resolveBatchQueueAction
 } from "./queue-coordinator.mjs";
@@ -839,6 +844,23 @@ async function pollRuntime() {
             if (outResponse.ok && Array.isArray(out)) {
               job.outputs = out;
               job.outputsFetched = true;
+              upsertSessionOutputs(sessionStorage, buildSessionOutputRecords(out, {
+                promptId: job.promptId,
+                source: "batch",
+                jobLabel: job.label || `Job ${(job.index ?? 0) + 1}`,
+                jobIndex: job.index ?? null,
+                batchTotal: runtime.jobs.length,
+                workflowId: runtime.workflowId || "",
+                workflowLabel: runtime.workflowLabel || "",
+                model: runtime.model || "",
+                seed: job.item?.seed ?? "",
+                duration: job.item?.duration ?? null,
+                megapixels: job.item?.megapixels ?? "",
+                aspect: job.item?.aspect ?? "",
+                steps: job.item?.steps ?? "",
+                completedAt: Date.now()
+              }));
+              notifySessionOutputsChanged();
             }
           }
           continue;

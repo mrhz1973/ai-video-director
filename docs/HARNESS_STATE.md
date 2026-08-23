@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.8.9, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.9.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -66,12 +66,12 @@ On Windows a normal user cannot run `nvidia-smi -pl` (real-GPU smoke of v0.7.4 c
 
 For viewports wider than 800px the Director uses a two-pane layout:
 
-- **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`) → collapsed-by-default Attività/Output drawer (`#activityDrawer` / `#log`).
-- **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height.
+- **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`). The legacy Attività/Output drawer was removed in v0.9.0.
+- **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height. Output prioritizes the session clip gallery (v0.9.0); Destinazione/naming settings stay under a compact secondary section.
 - **Asset labels:** `member.label` is the primary human-facing name in Asset cards and role selects (`Group / Member label`). Physical filenames remain secondary/tooltip identity and are never renamed by label edits.
 - **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual **Salva** creates a new project (`POST /api/projects`) or updates the current id (`PUT /api/projects/<id>`). There is no separate Salva come. Recovery/autosave never submit Generate, Batch, or GPU Power. Armed queued-next / deferred-Batch intent is session/in-memory only and is never written to the recovery draft, saved projects, or prompt history.
 - **Sidebar width:** existing `#sidebarResizeHandle` and `h3SidebarWidth:v1` remain (default about 460px). Whole-workspace native `resize: vertical` is removed; desktop `main` uses the viewport height instead of a 72vh resizable box.
-- Generate no longer copies the prompt into Activity. Activity is for project notices, errors, warnings and output links — not a chat transcript.
+- Generate no longer copies the prompt into a transcript. Harness-side errors and important notices use compact toast notifications (`showAppNotice`). Session finished clips appear in Output → CLIP SESSIONE.
 
 At ≤800px the layout remains a usable single column. No Generate, Batch, GPU Power, Output Manager or safe-fit semantics change in v0.8.1.
 
@@ -120,6 +120,16 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - Changing the main/global Input selector after prepare does **not** invalidate or wipe explicit per-job overrides; workflow or model changes still require re-prepare.
 - Preflight validates required roles per job (missing or unavailable explicit/shared filenames fail closed with `Job N: input <label> …`).
 - Prompt text is never parsed as an asset resolver. Execution authority is still never persisted. No automatic generation was added.
+
+### Session output gallery (v0.9.0)
+
+- The Inspector **Output** tab primary surface is **CLIP SESSIONE**: finished media observed by this Director browser session (single Generate and Batch jobs).
+- Session records live in `sessionStorage` key `h3SessionOutputs:v1` (survive F5; do not persist into project JSON; do not store execution authority).
+- Cards may show job label, seed, duration, megapixels, aspect, steps, workflow, ComfyUI original filename/subfolder, optional archive copy filename + destination folder display name, and **Apri video**.
+- On gallery init, a one-shot best-effort reconstruction may seed the list from already-persisted Batch runtime / latest-output metadata when `promptId → job → output` is authoritative. No ComfyUI output-folder scan and no guessed job attribution.
+- **Svuota elenco** clears gallery metadata only — never deletes ComfyUI outputs or archived copies.
+- Existing Destinazione / naming / auto-copy controls remain under **Destinazione e nomi**.
+- The legacy bottom **Attività / Output** drawer was removed. Harness-side errors use compact toast notices. Monitor **Eventi ComfyUI** and **Terminale ComfyUI** remain.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 
@@ -340,7 +350,7 @@ Thumbnails request `/api/view` with percent-encoded `filename`, `type=input`, an
 
 Workflow binding `<option>` labels are dynamic ordinals (`Martino · Elements #1`) from current group order. Reorder refreshes labels immediately. The option value and saved project binding remain the ComfyUI filename. `schemaVersion` is unchanged.
 
-The desktop workspace (v0.8.1) order is header → prompt → quick generation controls → Batch → compact monitor → Attività/Output drawer on the left, with Project/Asset/Input/Output inspector tabs on the right and GPU Power always visible above those tabs. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
+The desktop workspace order is header → prompt → quick generation controls → Batch → compact monitor on the left (v0.9.0 removed the Attività/Output drawer), with Project/Asset/Input/Output inspector tabs on the right and GPU Power always visible above those tabs. Output shows the current-session clip gallery first. ComfyUI connection text is always shown; green/amber/red classes only reinforce `collegato` / `Connessione…`|`Riconnessione…` / `scollegato`.
 
 Aspect-ratio-safe I2VA/FL2VA preprocessing is implemented in harness **v0.6.0** as fail-closed inspection + an external private-workflow patcher (Issue #11 PR B). Pad/Stretch UI modes remain deferred.
 

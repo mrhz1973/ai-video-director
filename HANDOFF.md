@@ -75,7 +75,14 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.8.9 (feature branch `feature/batch-per-job-input-bindings-v089`; live 8787 remains on the previously activated build until the user authorizes restart)
+Known package version: 0.9.0 (feature branch `feature/session-output-gallery-v090`; live 8787 remains on the previously activated build until the user authorizes restart)
+
+## Current harness UX focus (v0.9.0)
+
+- Inspector **Output** prioritizes **CLIP SESSIONE** (single + Batch finished clips for this browser session; `sessionStorage` survives F5).
+- Destinazione / naming / auto-copy remain under **Destinazione e nomi**.
+- Legacy **Attività / Output** drawer removed; harness errors use compact toasts. **Eventi ComfyUI** and **Terminale ComfyUI** remain.
+- Gallery never deletes media and never posts `/api/queue` or ComfyUI `/prompt`.
 
 ## Verified architecture
 

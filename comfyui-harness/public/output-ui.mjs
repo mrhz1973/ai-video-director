@@ -6,6 +6,18 @@ import {
   outputCounterStorageKey,
   sanitizeOutputSegment
 } from "./output-naming.mjs";
+import { createSessionClipCard } from "./session-gallery-dom.mjs";
+import {
+  SESSION_OUTPUTS_CHANGED,
+  applySessionGalleryReconstruction,
+  attachArchiveMetadata,
+  clearSessionOutputs,
+  markSessionOutputUnavailable,
+  notifySessionOutputsChanged,
+  readSessionOutputs,
+  sessionGalleryClearSideEffects,
+  subfolderFromOutputUrl
+} from "./session-outputs.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -418,6 +430,18 @@ async function archiveOutputs(promptId, items = []) {
     const bytes = await copyOutputToDirectory(directory, item, allocation.filename);
     localStorage.setItem(allocation.counterKey, String(allocation.counter + 1));
     localStorage.setItem(key, JSON.stringify({ filename: allocation.filename, bytes, archivedAt: Date.now() }));
+    attachArchiveMetadata(sessionStorage, {
+      promptId,
+      filename: item.filename,
+      subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+      archive: {
+        filename: allocation.filename,
+        folderLabel: directory.name || plan.projectLabel || plan.folderKey || "",
+        archivedAt: Date.now(),
+        bytes
+      }
+    });
+    notifySessionOutputsChanged();
     copied += 1;
     setStatus(`Archiviato: ${allocation.filename}`, "ok");
   }
@@ -464,9 +488,44 @@ window.fetch = async (input, init = undefined) => {
   return response;
 };
 
+function renderSessionGallery() {
+  const list = $("sessionGalleryList");
+  const empty = $("sessionGalleryEmpty");
+  const title = $("sessionGalleryTitle");
+  if (!list || !empty || !title) return;
+  const items = readSessionOutputs(sessionStorage);
+  title.textContent = `CLIP SESSIONE · ${items.length}`;
+  list.replaceChildren();
+  empty.hidden = items.length > 0;
+  for (const item of items) {
+    list.append(createSessionClipCard(document, item, {
+      onPreviewError: clip => {
+        markSessionOutputUnavailable(sessionStorage, clip.id);
+        notifySessionOutputsChanged();
+      }
+    }));
+  }
+}
+
+function bindSessionGallery() {
+  if (!$("sessionGallerySection")) return;
+  applySessionGalleryReconstruction(sessionStorage, localStorage);
+  renderSessionGallery();
+  window.addEventListener(SESSION_OUTPUTS_CHANGED, renderSessionGallery);
+  $("sessionGalleryClear")?.addEventListener("click", () => {
+    const count = readSessionOutputs(sessionStorage).length;
+    if (!count) return;
+    const ok = window.confirm("Svuotare l'elenco clip di questa sessione?\nI file ComfyUI e le copie archivio non verranno cancellati.");
+    if (!ok) return;
+    clearSessionOutputs(sessionStorage);
+    notifySessionOutputsChanged();
+    void sessionGalleryClearSideEffects();
+  });
+}
+
 function bindUi() {
-  if (!$("outputSection")) return;
-  if (typeof window.showDirectoryPicker !== "function") {
+  if (!$("outputSection") && !$("sessionGallerySection")) return;
+  if ($("outputChooseFolder") && typeof window.showDirectoryPicker !== "function") {
     $("outputChooseFolder").disabled = true;
     setStatus("Scelta cartella non supportata dal browser. Edge/Chromium aggiornato è richiesto.", "warn");
   }
@@ -489,6 +548,7 @@ function bindUi() {
 
   loadScope();
   setTimeout(loadScope, 500);
+  bindSessionGallery();
 }
 
 bindUi();

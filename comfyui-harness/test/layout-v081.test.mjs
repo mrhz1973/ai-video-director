@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  ACTIVITY_HEIGHT_KEY,
   MONITOR_HEIGHT_KEY,
   PROMPT_HEIGHT_KEY,
   assertPanelKeysIsolated,
@@ -59,7 +58,9 @@ test("generation controls and batch mount live in the left workspace", () => {
   assert.match(left, /id="workflow"/);
   assert.match(left, /id="batchMount"/);
   assert.match(left, /id="renderMonitor"/);
-  assert.match(left, /id="activityDrawer"/);
+  assert.match(left, /id="monitorEvents"/);
+  assert.match(left, /id="monitorTerminal"/);
+  assert.doesNotMatch(left, /id="activityDrawer"/);
   assert.doesNotMatch(right, /id="generationGrid"/);
   assert.doesNotMatch(right, /id="batchMount"/);
   assert.doesNotMatch(right, /id="workflow"/);
@@ -101,7 +102,6 @@ test("panel resize keys are isolated from sidebar, workspace-height, and inspect
   assert.equal(assertPanelKeysIsolated(), true);
   assert.equal(PROMPT_HEIGHT_KEY, "h3PromptHeight:v1");
   assert.equal(MONITOR_HEIGHT_KEY, "h3MonitorHeight:v1");
-  assert.equal(ACTIVITY_HEIGHT_KEY, "h3ActivityHeight:v1");
   assert.equal(INSPECTOR_TAB_KEY, "h3InspectorTab:v1");
   assert.notEqual(PROMPT_HEIGHT_KEY, "h3WorkspaceHeight:v1");
   assert.notEqual(MONITOR_HEIGHT_KEY, "h3SidebarWidth:v1");
@@ -146,9 +146,12 @@ test("inspector tab helpers normalize and persist the active tab", () => {
   assert.equal(applyInspectorTab(root, "asset"), "asset");
 });
 
-test("activity drawer exists collapsed-by-default without seeding a large system card", () => {
-  assert.match(html, /id="activityDrawer"/);
-  assert.doesNotMatch(html, /<div class="message system">Carica un workflow/);
+test("legacy Attività drawer is removed; session gallery and diagnostics remain", () => {
+  assert.doesNotMatch(html, /id="activityDrawer"/);
+  assert.doesNotMatch(html, /id="log"/);
+  assert.match(html, /id="sessionGalleryList"/);
+  assert.match(html, /id="monitorEvents"/);
+  assert.match(html, /id="monitorTerminal"/);
   assert.match(html, /id="promptResizeHandle"/);
   assert.match(html, /id="monitorResizeHandle"/);
 });
@@ -158,5 +161,5 @@ test("index loads the v0.8.1 layout modules", () => {
   assert.match(html, /panel-resize\.mjs/);
   assert.match(html, /inspector-ui\.mjs/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.8.9");
+  assert.equal(pkg.version, "0.9.0");
 });
