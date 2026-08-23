@@ -45,7 +45,7 @@ Do not silently reuse, rename, overwrite, or mutate an existing project merely b
 Rules:
 
 - `POST /api/projects` is the normal path for a brand-new project.
-- Project duplication is used only when the user explicitly wants to inherit an existing project.
+- Project duplication is used only when the user explicitly wants to inherit an existing project. Harness **Salva come…** (v0.10.0, Issue #50) POSTs a new project from the current editor snapshot; the source project id is unchanged and runtime execution authority is not copied.
 - Before writing a Batch draft, verify the intended project's `id` and `label`.
 - Save draft data only into the intended project.
 - Do not delete or clear another project's `batchDraft` as cleanup unless the user explicitly requests it.

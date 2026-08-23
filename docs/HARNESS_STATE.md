@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.9.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.10.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -69,7 +69,7 @@ For viewports wider than 800px the Director uses a two-pane layout:
 - **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`). The legacy Attività/Output drawer was removed in v0.9.0.
 - **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height. Output prioritizes the session clip gallery (v0.9.0); Destinazione/naming settings stay under a compact secondary section.
 - **Asset labels:** `member.label` is the primary human-facing name in Asset cards and role selects (`Group / Member label`). Physical filenames remain secondary/tooltip identity and are never renamed by label edits.
-- **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual **Salva** creates a new project (`POST /api/projects`) or updates the current id (`PUT /api/projects/<id>`). There is no separate Salva come. Recovery/autosave never submit Generate, Batch, or GPU Power. Armed queued-next / deferred-Batch intent is session/in-memory only and is never written to the recovery draft, saved projects, or prompt history.
+- **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual **Salva** creates a new project (`POST /api/projects`) or updates the current id (`PUT /api/projects/<id>`). **Salva come…** (v0.10.0) duplicates the current editor into a new project id after POST success; the source project is unchanged. Recovery/autosave never submit Generate, Batch, or GPU Power. Armed queued-next / deferred-Batch intent is session/in-memory only and is never written to the recovery draft, saved projects, or prompt history.
 - **Sidebar width:** existing `#sidebarResizeHandle` and `h3SidebarWidth:v1` remain (default about 460px). Whole-workspace native `resize: vertical` is removed; desktop `main` uses the viewport height instead of a 72vh resizable box.
 - Generate no longer copies the prompt into a transcript. Harness-side errors and important notices use compact toast notifications (`showAppNotice`). Session finished clips appear in Output → CLIP SESSIONE.
 
@@ -130,6 +130,12 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - **Svuota elenco** clears gallery metadata only — never deletes ComfyUI outputs or archived copies.
 - Existing Destinazione / naming / auto-copy controls remain under **Destinazione e nomi**.
 - The legacy bottom **Attività / Output** drawer was removed. Harness-side errors use compact toast notices. Monitor **Eventi ComfyUI** and **Terminale ComfyUI** remain.
+
+### Project duplication and Batch global settings (v0.10.0, Issue #50)
+
+- **Salva come…** in the Progetto inspector duplicates the current editor snapshot into a **new** project (`POST /api/projects`). Fail-closed: editor identity does not change until persistence succeeds. Copies workflow, model, prompt, settings, asset library, file references, and full `batchDraft` (per-job prompts, seeds, durations, MP/aspect/steps, sparse `item.files`, job order). Does **not** copy runtime execution authority (`h3BatchRuntime:v1`, queued-next, deferred Batch, ComfyUI prompt IDs, session gallery runtime).
+- Batch editor adds **Impostazioni globali batch** (Megapixel / Aspect / Steps) with mixed-value (`Misti`) detection. Only **Applica a tutti gli N job** mutates prepared items — and only `item.megapixels`, `item.aspect`, `item.steps`. Prompts, seeds, durations, `item.files`, and order are preserved without `Prepara dal draft` rebuild.
+- **Espandi tutti / Comprimi tutti** toggle editable job card `<details>` open state only (UI session; not in project JSON; does not mark dirty or autosave).
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

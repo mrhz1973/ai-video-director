@@ -369,13 +369,18 @@ test("manual Save: response with equivalent 2-job Batch -> SAVED, baseline advan
 test("manual Save wiring: verification precedes baseline advance and click handler fails closed", () => {
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 
-  const saveFn = app.slice(app.indexOf("async function saveProject"), app.indexOf("async function ingestFiles"));
+  const saveFn = app.slice(app.indexOf("async function saveProject"), app.indexOf("async function duplicateCurrentProject"));
   const verifyIdx = saveFn.indexOf("assertPersistedBatchMatches");
-  const baselineIdx = saveFn.indexOf("markBaselineFromDraft");
-  const savedIdx = saveFn.indexOf("SAVE_STATUS.SAVED");
+  const activateIdx = saveFn.indexOf("activatePersistedProject");
   assert.ok(verifyIdx >= 0, "saveProject must verify persisted Batch");
-  assert.ok(baselineIdx > verifyIdx, "baseline must advance only after verification");
-  assert.ok(savedIdx > verifyIdx, "SAVED must be shown only after verification");
+  assert.ok(activateIdx > verifyIdx, "project activation must run only after verification");
+  assert.doesNotMatch(saveFn, /markBaselineFromDraft/);
+
+  const activateFn = app.slice(app.indexOf("async function activatePersistedProject"), app.indexOf("async function ingestFiles"));
+  assert.match(activateFn, /loadProjectById/);
+
+  const loadFn = app.slice(app.indexOf("async function loadProjectById"), app.indexOf("function resetDraft"));
+  assert.match(loadFn, /markBaselineFromServerBatch/);
 
   const handlerStart = app.indexOf('$("projectSave").onclick');
   assert.ok(handlerStart >= 0);

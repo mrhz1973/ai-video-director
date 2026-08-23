@@ -1,4 +1,4 @@
-/** Explicit vertical resize for prompt and monitor panels (v0.9.0). */
+/** Explicit vertical resize for prompt and monitor panels (v0.10.0). */
 
 export const PROMPT_HEIGHT_KEY = "h3PromptHeight:v1";
 export const MONITOR_HEIGHT_KEY = "h3MonitorHeight:v1";

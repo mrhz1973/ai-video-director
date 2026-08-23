@@ -75,9 +75,15 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.9.0 (feature branch `feature/session-output-gallery-v090`; live 8787 remains on the previously activated build until the user authorizes restart)
+Known package version: 0.10.0 (feature branch `feature/project-duplicate-batch-globals-v0100`; live 8787 remains on the previously activated build until the user authorizes restart)
 
-## Current harness UX focus (v0.9.0)
+## Current harness UX focus (v0.10.0)
+
+- **Salva come…** duplicates the current editor into a new project (Issue #50). Source project is unchanged; switch happens only after POST success.
+- Batch **Impostazioni globali** (MP / aspect / steps) with explicit **Applica a tutti gli N job**; per-job prompt, seed, duration, and `item.files` stay independent.
+- **Espandi tutti / Comprimi tutti** for editable Batch job cards (UI-only; not in project JSON).
+
+## Prior harness UX (v0.9.0)
 
 - Inspector **Output** prioritizes **CLIP SESSIONE** (single + Batch finished clips for this browser session; `sessionStorage` survives F5).
 - Destinazione / naming / auto-copy remain under **Destinazione e nomi**.
@@ -113,7 +119,7 @@ Current resolution behavior (harness v0.5.1):
 - real ComfyUI `ResolutionSelector` constraints are min 0.1, max 16.0, step 0.1; harness default 0.3;
 - legacy `Preview` -> 0.3 and `Final` -> 0.4 are accepted only for old clients and old `.local.json` projects;
 - a read-only `≈ WxH · class` hint sits beside the field and never changes what is submitted.
-- local projects support Nuovo/Salva/Elimina, dirty state, and a categorized Elements/Locations/Objects/Audio library of multi-file groups with explicit workflow role binding (Issue #5). v0.8.2 removes the separate Salva come control; first Salva creates, later Salva updates the same id.
+- local projects support Nuovo/Salva/**Salva come…**/Elimina, dirty state, and a categorized Elements/Locations/Objects/Audio library of multi-file groups with explicit workflow role binding (Issue #5). v0.8.2 removed the separate Salva come control; v0.10.0 restores it as explicit project duplication (Issue #50).
 - v0.8.2 adds queued-next / deferred Batch handoff, prompt history (`h3PromptHistory:v1`), integer-second duration, a completion card with Apri video, asset group headers, and a clearer bottom prompt resize handle. Armed execution intent is never persisted.
 
 Current presets bind `aspectRatio` and `megapixels` on node `115`. Generic calculated width/height values are dormant for the active H3 workflows and are not an operational bug.

@@ -2,8 +2,11 @@ import { classifyHistoryState, historyFailureLabel, promptIdPrefix } from "./rec
 import {
   MAX_BATCH_JOBS,
   MIN_BATCH_JOBS,
+  BATCH_ASPECT_OPTIONS,
+  applyBatchWideSettings,
   clampBatchCount,
   createBatchItems,
+  detectBatchWideFieldState,
   duplicateBatchItem,
   formatBatchJobSummary,
   isTerminalBatchState,
@@ -12,7 +15,8 @@ import {
   resolveBatchItemFiles,
   submitBatchSequentially,
   summarizeBatchJobs,
-  validateBatchDraft
+  validateBatchDraft,
+  validateBatchWideSettings
 } from "./batch-core.mjs";
 import { normalizeBatchDraft, normalizeItemFiles, serializeBatchDraft } from "../lib/batch-draft.mjs";
 import { normalizeDurationSeconds } from "../lib/duration.mjs";
@@ -44,6 +48,87 @@ let pollTimer = null;
 let persistenceHook = null;
 let suppressLocalLoad = false;
 let assetContextProvider = null;
+/** UI-session only: index -> expanded. Not persisted to project JSON. */
+const batchExpandState = new Map();
+
+function clearBatchExpandState() {
+  batchExpandState.clear();
+}
+
+function setAllBatchJobsExpanded(open) {
+  if (!items.length) return;
+  for (let index = 0; index < items.length; index += 1) {
+    batchExpandState.set(index, Boolean(open));
+  }
+  renderBatch();
+}
+
+function syncBatchGlobalControls() {
+  const mpField = $("batchGlobalMp");
+  const aspectField = $("batchGlobalAspect");
+  const stepsField = $("batchGlobalSteps");
+  const applyBtn = $("batchGlobalApply");
+  const hasBatch = items.length > 0;
+  if (applyBtn) applyBtn.disabled = !hasBatch;
+  if (!hasBatch) {
+    if (mpField) { mpField.value = ""; mpField.placeholder = "—"; }
+    if (aspectField) aspectField.value = "";
+    if (stepsField) { stepsField.value = ""; stepsField.placeholder = "—"; }
+    return;
+  }
+  const mpState = detectBatchWideFieldState(items, "megapixels");
+  const aspectState = detectBatchWideFieldState(items, "aspect");
+  const stepsState = detectBatchWideFieldState(items, "steps");
+  if (mpField) {
+    if (mpState.mode === "uniform") {
+      mpField.value = mpState.value;
+      mpField.placeholder = "";
+    } else {
+      mpField.value = "";
+      mpField.placeholder = "Misti";
+    }
+  }
+  if (aspectField) {
+    aspectField.value = aspectState.mode === "uniform" ? aspectState.value : "";
+  }
+  if (stepsField) {
+    if (stepsState.mode === "uniform") {
+      stepsField.value = stepsState.value;
+      stepsField.placeholder = "";
+    } else {
+      stepsField.value = "";
+      stepsField.placeholder = "Misti";
+    }
+  }
+  if (applyBtn) {
+    applyBtn.textContent = `Applica a tutti gli ${items.length} job`;
+  }
+}
+
+function applyBatchGlobalSettings() {
+  if (!items.length) return { ok: false, error: "Nessun batch preparato." };
+  const megapixels = $("batchGlobalMp")?.value ?? "";
+  const aspect = $("batchGlobalAspect")?.value ?? "";
+  const steps = $("batchGlobalSteps")?.value ?? "";
+  const limits = {
+    megapixelsMin: Number(source?.megapixelsMin ?? 0.1),
+    megapixelsMax: Number(source?.megapixelsMax ?? 16)
+  };
+  const validation = validateBatchWideSettings({
+    items,
+    megapixels,
+    aspect,
+    steps,
+    ...limits
+  });
+  if (!validation.valid) {
+    return { ok: false, error: validation.errors.join(" ") };
+  }
+  items = applyBatchWideSettings(items, { megapixels, aspect, steps });
+  markEdited();
+  renderBatch();
+  return { ok: true };
+}
 
 function projectKey() {
   return $("project")?.value || "none";
@@ -83,6 +168,7 @@ function loadDraftFromLocalStorage() {
     items = [];
     source = null;
     submitted = false;
+    clearBatchExpandState();
     renderBatch();
     return { restored: false, count: 0, source: "local" };
   }
@@ -157,6 +243,7 @@ export function importBatchDraftFromProject(draft, { writeLocalCache = true, not
     items = [];
     source = null;
     submitted = false;
+    clearBatchExpandState();
     renderBatch();
     if (writeLocalCache) persistDraft({ notify });
     return { restored: false, count: 0 };
@@ -164,6 +251,7 @@ export function importBatchDraftFromProject(draft, { writeLocalCache = true, not
   items = normalized.items.map(item => cloneBatchItemSnapshot(item));
   source = normalized.source;
   submitted = false;
+  clearBatchExpandState();
   renderBatch();
   if (writeLocalCache) persistDraft({ notify });
   return { restored: true, count: items.length };
@@ -173,6 +261,7 @@ export function clearBatchEditor({ writeLocalCache = true, notify = true } = {})
   items = [];
   source = null;
   submitted = false;
+  clearBatchExpandState();
   renderBatch();
   if (writeLocalCache) persistDraft({ notify });
   return { cleared: true };
@@ -422,6 +511,24 @@ function createUi() {
         <label>Numero job<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
         <button type="button" class="secondary" id="batchPrepare">Prepara dal draft</button>
       </div>
+      <div class="batch-global-settings" id="batchGlobalSettings">
+        <div class="batch-global-head">
+          <strong>Impostazioni globali batch</strong>
+          <div class="batch-expand-tools">
+            <button type="button" class="secondary" id="batchExpandAll">Espandi tutti</button>
+            <button type="button" class="secondary" id="batchCollapseAll">Comprimi tutti</button>
+          </div>
+        </div>
+        <div class="batch-global-grid">
+          <label>Megapixel<input id="batchGlobalMp" type="number" min="0.1" max="16" step="0.1" disabled></label>
+          <label>Aspect<select id="batchGlobalAspect" disabled>
+            <option value="">— Misti —</option>
+            ${BATCH_ASPECT_OPTIONS.map(opt => `<option>${opt}</option>`).join("")}
+          </select></label>
+          <label>Steps<input id="batchGlobalSteps" type="number" min="1" disabled></label>
+        </div>
+        <button type="button" class="secondary" id="batchGlobalApply" disabled>Applica a tutti gli 0 job</button>
+      </div>
       <div id="batchList" class="batch-list"></div>
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
@@ -445,6 +552,13 @@ function createUi() {
   }
 
   $("batchPrepare").onclick = prepareFromDraft;
+  $("batchExpandAll")?.addEventListener("click", () => setAllBatchJobsExpanded(true));
+  $("batchCollapseAll")?.addEventListener("click", () => setAllBatchJobsExpanded(false));
+  $("batchGlobalApply")?.addEventListener("click", () => {
+    const result = applyBatchGlobalSettings();
+    if (!result.ok) setFeedback(result.error, "error");
+    else setFeedback(`Impostazioni globali applicate a ${items.length} job.`, "ok");
+  });
   $("batchAdd").onclick = () => {
     if (!items.length) return prepareFromDraft();
     if (items.length >= MAX_BATCH_JOBS) return;
@@ -456,6 +570,7 @@ function createUi() {
     items = [];
     source = null;
     submitted = false;
+    clearBatchExpandState();
     persistDraft();
     renderBatch();
     setFeedback("Batch svuotato. Nessuna generazione avviata.");
@@ -471,6 +586,7 @@ function prepareFromDraft() {
   if ($("batchCount")) $("batchCount").value = String(count);
   items = createBatchItems(snapshot.base, count);
   submitted = false;
+  clearBatchExpandState();
   persistDraft();
   renderBatch();
   const inputNote = snapshot.unsupportedVideoRoles.length
@@ -484,6 +600,14 @@ function renderBatch() {
   if (!host) return;
   host.replaceChildren();
   $("batchBadge").textContent = items.length ? `${items.length} job` : "nessun job";
+  syncBatchGlobalControls();
+  const mpField = $("batchGlobalMp");
+  const aspectField = $("batchGlobalAspect");
+  const stepsField = $("batchGlobalSteps");
+  const globalEnabled = items.length > 0;
+  if (mpField) mpField.disabled = !globalEnabled;
+  if (aspectField) aspectField.disabled = !globalEnabled;
+  if (stepsField) stepsField.disabled = !globalEnabled;
   if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "batch-empty";
@@ -496,7 +620,10 @@ function renderBatch() {
   items.forEach((item, index) => {
     const card = document.createElement("details");
     card.className = "batch-job";
-    card.open = index === 0;
+    card.open = batchExpandState.has(index) ? batchExpandState.get(index) : index === 0;
+    card.addEventListener("toggle", () => {
+      batchExpandState.set(index, card.open);
+    });
     const summary = document.createElement("summary");
     summary.innerHTML = `<strong>Job ${index + 1}</strong><span>${formatBatchJobSummary(item)}</span>`;
 

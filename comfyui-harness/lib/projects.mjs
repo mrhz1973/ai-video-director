@@ -267,7 +267,7 @@ function normalizeLibrary(rawLibrary, legacyAssets, files) {
   return library;
 }
 
-function normalizeSettings(settings = {}) {
+export function normalizeSettings(settings = {}) {
   const out = {};
   for (const key of ["megapixels", "steps", "duration", "aspect", "seed", "model", "quality"]) {
     if (settings[key] !== undefined && settings[key] !== null && settings[key] !== "") {

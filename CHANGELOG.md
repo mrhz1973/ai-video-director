@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — v0.10.0
+
+- **Salva come…** (Issue #50): Progetto inspector action duplicates the current editor state into a **new** project id via POST `/api/projects`. Original project remains untouched; identity switch happens only after successful persistence (fail-closed on error).
+- Duplicate copies workflow, model, prompt, settings, asset library, file references, and the full persisted `batchDraft` (per-job prompts, seeds, durations, megapixels/aspect/steps, sparse `item.files`, job order). Runtime execution authority is **not** copied (`h3BatchRuntime:v1`, queued-next, deferred Batch, prompt IDs, etc.).
+- **Impostazioni globali batch**: compact Megapixel / Aspect / Steps controls with mixed-value (`Misti`) detection and an explicit **Applica a tutti gli N job** action. Updates only `item.megapixels`, `item.aspect`, and `item.steps` on existing prepared jobs — prompts, seeds, durations, `item.files`, and order are preserved. No `Prepara dal draft` rebuild.
+- **Espandi tutti / Comprimi tutti**: presentation-only Batch job card expand/collapse (UI session; not persisted in project JSON). Collapsed summaries now include aspect and steps alongside seed, duration, and megapixels.
+- No generation, `/api/queue`, ComfyUI `/prompt`, GPU Power writes, or media deletion implied by any of these actions.
+
 ## 2026-08-23 — v0.9.0
 
 - Output Inspector now prioritizes a **CLIP SESSIONE** gallery of finished single-job and Batch clips observed in the current browser session (`h3SessionOutputs:v1` in sessionStorage; survives F5, clears when the tab session ends).

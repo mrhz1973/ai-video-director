@@ -169,7 +169,7 @@ test("app wiring keeps manual Save and never auto-queues from autosave/recovery"
   const fs = await import("node:fs");
   const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.match(app, /projectSave/);
-  assert.doesNotMatch(app, /projectSaveAs/);
+  assert.match(app, /projectSaveAs/);
   assert.match(app, /readRecoveryDraft/);
   assert.match(app, /createAutosaveController/);
   assert.match(app, /SAVE_STATUS\.RECOVERED/);
