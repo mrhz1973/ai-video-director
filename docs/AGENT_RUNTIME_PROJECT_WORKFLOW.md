@@ -46,6 +46,7 @@ Rules:
 
 - `POST /api/projects` is the normal path for a brand-new project.
 - Project duplication is used only when the user explicitly wants to inherit an existing project. Harness **Salva come…** (v0.10.0, Issue #50) POSTs a new project from the current editor snapshot; the source project id is unchanged and runtime execution authority is not copied.
+- **Genera singolo** (v0.11.0, Issue #53) submits exactly one clip from current editor/Input bindings. It must not mutate prepared Batch jobs or infer Batch execution from Numero job. Batch runs only after an explicit **Avvia batch** user action.
 - Before writing a Batch draft, verify the intended project's `id` and `label`.
 - Save draft data only into the intended project.
 - Do not delete or clear another project's `batchDraft` as cleanup unless the user explicitly requests it.

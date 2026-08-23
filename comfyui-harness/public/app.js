@@ -69,6 +69,10 @@ import {
   summarizeQueuedNext
 } from "./queue-coordinator.mjs";
 import {
+  buildSingleRenderPayload,
+  toSingleRenderQueueBody
+} from "./single-render.mjs";
+import {
   PROMPT_HISTORY_MAX,
   archivePrompt,
   clearPromptHistory,
@@ -536,8 +540,8 @@ function renderQueueWaitCard() {
     update.textContent = "Aggiorna dal draft";
     update.onclick = async () => {
       try {
-        const payload = await prepareQueuePayload();
-        coordinator.updateQueuedNextFromDraft(payload);
+        const intent = await prepareSingleRenderPayload();
+        coordinator.updateQueuedNextFromDraft(toSingleRenderQueueBody(intent));
         renderQueueWaitCard();
       } catch (error) {
         add(error.message);
@@ -628,7 +632,7 @@ function adoptSubmittedJob(data) {
   renderMonitor();
 }
 
-async function prepareQueuePayload() {
+async function prepareSingleRenderPayload() {
   const prompt = $("prompt").value.trim();
   const megapixels = $("megapixels").value;
   if (!isValidMegapixels(megapixels)) throw new Error(`Megapixel non valido: usa un numero tra ${MEGAPIXELS_LIMITS.min} e ${MEGAPIXELS_LIMITS.max}`);
@@ -652,7 +656,7 @@ async function prepareQueuePayload() {
     const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
     throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
   }
-  return {
+  return buildSingleRenderPayload({
     clientId,
     workflowId: $("workflow").value,
     prompt,
@@ -663,7 +667,17 @@ async function prepareQueuePayload() {
     aspect: $("aspect").value,
     seed: $("seed").value,
     files: filterFilesForActivePreset(built.files, activeKeys)
-  };
+  });
+}
+
+async function submitSingleRender({ action }) {
+  const intent = await prepareSingleRenderPayload();
+  const queueBody = toSingleRenderQueueBody(intent);
+  archiveCurrentPrompt(action);
+  if (action === "queue-next") {
+    return coordinator.armQueuedNext(queueBody);
+  }
+  return coordinator.tryImmediateGenerate(queueBody);
 }
 
 function renderPromptHistory() {
@@ -2029,10 +2043,8 @@ $("send").onclick = async () => {
   updateGenerateButton();
   try {
     $("progress").textContent = action.action === "queue-next" ? "Preparazione prossimo job…" : "Controllo allegati…";
-    const payload = await prepareQueuePayload();
-    archiveCurrentPrompt(action.action);
     if (action.action === "queue-next") {
-      const armed = coordinator.armQueuedNext(payload);
+      const armed = await submitSingleRender({ action: action.action });
       if (!armed.ok) throw new Error(armed.reason === "already-armed" ? "Un prossimo job è già in coda." : "Impossibile mettere in coda il job.");
       renderQueueWaitCard();
       add("Prossimo job in attesa. Nessuna generazione inviata.");
@@ -2042,7 +2054,7 @@ $("send").onclick = async () => {
     latestCompletion = null;
     clearLatestOutput(sessionStorage);
     $("progress").textContent = "In coda…";
-    const result = await coordinator.tryImmediateGenerate(payload);
+    const result = await submitSingleRender({ action: action.action });
     if (!result.ok) throw new Error(result.reason === "locked" ? "Invio già in corso." : "Invio non disponibile.");
     adoptSubmittedJob(result.result);
   } catch (error) {

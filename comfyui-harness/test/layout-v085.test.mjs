@@ -37,9 +37,9 @@ test("Cronologia appears exactly once", () => {
   assert.equal((html.match(/>Cronologia</g) || []).length, 1);
 });
 
-test("Genera appears exactly once", () => {
+test("Genera singolo appears exactly once", () => {
   assert.equal(countId("send"), 1);
-  assert.match(html, /id="send"[^>]*>Genera</);
+  assert.match(html, /id="send"[^>]*>Genera singolo</);
 });
 
 test("all three prompt action buttons share the same container", () => {
@@ -74,7 +74,7 @@ test("existing IDs used by JS remain unchanged", () => {
   assert.match(app, /\$\("promptHistoryPanel"\)/);
 });
 
-test("Genera remains visually primary and secondary actions stay compact", () => {
+test("Genera singolo remains visually primary and secondary actions stay compact", () => {
   const actions = promptActionsBlock(composerSection());
   assert.doesNotMatch(actions, /id="send"[^>]*class="[^"]*secondary/);
   assert.match(actions, /class="secondary"[^>]*id="promptClear"/);
@@ -93,8 +93,8 @@ test("frontend bootstrap regression from v0.8.4 still passes", () => {
   assert.match(app, /const \$ = id => document\.getElementById\(id\);/);
 });
 
-test("v085 stylesheet is loaded and package version is 0.10.0", () => {
+test("v085 stylesheet is loaded and package version is 0.11.0", () => {
   assert.match(html, /workspace-v085\.css/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.10.0");
+  assert.equal(pkg.version, "0.11.0");
 });

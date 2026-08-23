@@ -55,6 +55,24 @@ export function canArmDeferredBatch({
   return isSingleActiveRender({ running, pending });
 }
 
+export const SINGLE_RENDER_ACTION_LABELS = Object.freeze({
+  idle: "Genera singolo",
+  busy: "Generazione…",
+  queued: "In coda",
+  blocked: "Genera singolo",
+  queueNext: "Metti in coda"
+});
+
+export const BATCH_EXECUTION_LABELS = Object.freeze({
+  queue: (count) => `Avvia batch (${count})`,
+  defer: "Metti batch in attesa",
+  submitting: "Invio batch…",
+  submitted: "Batch inviato",
+  waiting: "Batch in attesa",
+  prepare: (count) => `Avvia batch (${count || 0})`,
+  blocked: (count) => `Avvia batch (${count || 0})`
+});
+
 export function resolveGenerateAction({
   blocked = false,
   reason = "",
@@ -67,24 +85,24 @@ export function resolveGenerateAction({
   lockOwner = QUEUE_OWNER.NONE
 } = {}) {
   if (queuedNext) {
-    return { action: "queued", label: "In coda", disabled: true, reason: "Prossimo job già in attesa" };
+    return { action: "queued", label: SINGLE_RENDER_ACTION_LABELS.queued, disabled: true, reason: "Prossimo job già in attesa" };
   }
   if (submitting || lockOwner === QUEUE_OWNER.GENERATE) {
-    return { action: "busy", label: "Generazione…", disabled: true, reason: "" };
+    return { action: "busy", label: SINGLE_RENDER_ACTION_LABELS.busy, disabled: true, reason: "" };
   }
   if (deferredBatch || batchActive || lockOwner === QUEUE_OWNER.DEFERRED_BATCH || lockOwner === QUEUE_OWNER.ACTIVE_BATCH) {
-    return { action: "blocked", label: "Genera", disabled: true, reason: "Batch in attesa o in esecuzione" };
+    return { action: "blocked", label: SINGLE_RENDER_ACTION_LABELS.blocked, disabled: true, reason: "Batch in attesa o in esecuzione" };
   }
   if (blocked) {
-    return { action: "blocked", label: "Genera", disabled: true, reason };
+    return { action: "blocked", label: SINGLE_RENDER_ACTION_LABELS.blocked, disabled: true, reason };
   }
   if (isQueueEmpty({ running, pending })) {
-    return { action: "generate", label: "Genera", disabled: false, reason: "" };
+    return { action: "generate", label: SINGLE_RENDER_ACTION_LABELS.idle, disabled: false, reason: "" };
   }
   if (canArmQueuedNext({ running, pending, queuedNext, deferredBatch, batchActive, lockOwner })) {
-    return { action: "queue-next", label: "Metti in coda", disabled: false, reason: "" };
+    return { action: "queue-next", label: SINGLE_RENDER_ACTION_LABELS.queueNext, disabled: false, reason: "" };
   }
-  return { action: "busy", label: "Generazione…", disabled: true, reason: "Generazione in corso" };
+  return { action: "busy", label: SINGLE_RENDER_ACTION_LABELS.busy, disabled: true, reason: "Generazione in corso" };
 }
 
 export function resolveBatchQueueAction({
@@ -97,20 +115,20 @@ export function resolveBatchQueueAction({
   deferredBatch = null,
   batchActive = false
 } = {}) {
-  if (submitting) return { action: "submitting", label: "Invio batch…", disabled: true };
-  if (submitted || batchActive) return { action: "submitted", label: "Batch inviato", disabled: true };
-  if (deferredBatch) return { action: "waiting", label: "Batch in attesa", disabled: true };
-  if (preparedCount < 2) return { action: "prepare", label: `Queue batch (${preparedCount || 0})`, disabled: true };
-  if (queuedNext) return { action: "blocked", label: "Queue batch", disabled: true, reason: "Prossimo job singolo già in attesa" };
+  if (submitting) return { action: "submitting", label: BATCH_EXECUTION_LABELS.submitting, disabled: true };
+  if (submitted || batchActive) return { action: "submitted", label: BATCH_EXECUTION_LABELS.submitted, disabled: true };
+  if (deferredBatch) return { action: "waiting", label: BATCH_EXECUTION_LABELS.waiting, disabled: true };
+  if (preparedCount < 2) return { action: "prepare", label: BATCH_EXECUTION_LABELS.prepare(preparedCount), disabled: true };
+  if (queuedNext) return { action: "blocked", label: BATCH_EXECUTION_LABELS.blocked(preparedCount), disabled: true, reason: "Prossimo job singolo già in attesa" };
   if (isQueueEmpty({ running, pending })) {
-    return { action: "queue", label: `Queue batch (${preparedCount})`, disabled: false };
+    return { action: "queue", label: BATCH_EXECUTION_LABELS.queue(preparedCount), disabled: false };
   }
   if (canArmDeferredBatch({ running, pending, queuedNext, deferredBatch, batchActive, preparedCount })) {
-    return { action: "defer", label: "Metti batch in attesa", disabled: false };
+    return { action: "defer", label: BATCH_EXECUTION_LABELS.defer, disabled: false };
   }
   return {
     action: "blocked",
-    label: `Queue batch (${preparedCount})`,
+    label: BATCH_EXECUTION_LABELS.blocked(preparedCount),
     disabled: true,
     reason: `Queue non vuota: ${running} running · ${pending} pending.`
   };

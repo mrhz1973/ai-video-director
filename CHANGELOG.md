@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-24 — v0.11.0
+
+- **Genera singolo** (Issue #53): explicit Single Render path independent from Batch. One click builds exactly one queue payload from the current prompt, workflow, model, Input bindings, seed, duration, steps, megapixels and aspect — never from Batch count/items/source.
+- Prepared Batch jobs may coexist unchanged while Single Render runs. Only **Avvia batch** submits Batch execution.
+- Batch section heading is now **Batch — opzionale** with helper copy; batch execution button is **Avvia batch (N)** instead of generic Queue batch.
+- Single output still enters **CLIP SESSIONE** with `source = "single"`. No synthetic one-job `batchDraft`, no Batch mutation on Single submit.
+
 ## 2026-08-24 — v0.10.0
 
 - **Salva come…** (Issue #50): Progetto inspector action duplicates the current editor state into a **new** project id via POST `/api/projects`. Original project remains untouched; identity switch happens only after successful persistence (fail-closed on error).
