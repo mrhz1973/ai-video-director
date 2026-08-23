@@ -66,6 +66,22 @@ async function loadConfig(configPath, { required = true } = {}) {
   return normalizeConfig(raw);
 }
 
+export function assertServiceDecision({
+  decision,
+  portState,
+  service,
+  port
+}) {
+  if (decision.action !== ACTION.FAIL) return;
+  const label = service === SERVICE.COMFY ? "ComfyUI" : "Director";
+  if (portState.inspectionOk === false) {
+    throw new Error(
+      `${label} port inspection failed on ${port}${portState.diagnostic ? `: ${portState.diagnostic}` : ""}`
+    );
+  }
+  throw new Error(formatOccupiedPortError(service, port, portState.processInfo));
+}
+
 function buildServiceStatus({
   port,
   portState,
@@ -159,11 +175,12 @@ export async function runStart({
   });
 
   if (comfyDecision.action === ACTION.FAIL) {
-    throw new Error(
-      comfyPortState.inspectionOk === false
-        ? `ComfyUI port inspection failed on ${config.comfyPort}${comfyPortState.diagnostic ? `: ${comfyPortState.diagnostic}` : ""}`
-        : formatOccupiedPortError(SERVICE.COMFY, config.comfyPort, comfyPortState.processInfo)
-    );
+    assertServiceDecision({
+      decision: comfyDecision,
+      portState: comfyPortState,
+      service: SERVICE.COMFY,
+      port: config.comfyPort
+    });
   }
 
   let comfySpawnCount = 0;
@@ -182,10 +199,17 @@ export async function runStart({
     log("[OK]", `ComfyUI healthy on ${config.comfyPort}`);
     comfyHealth = wait.attempts;
     comfyPortState = await inspectPortFn(config.comfyPort, deps);
+    comfyHealth = await probeComfyHealth(comfyUrl, { fetchFn });
     comfyDecision = decideServiceAction({
       portState: comfyPortState,
-      healthy: true,
+      healthy: comfyHealth.healthy,
       service: SERVICE.COMFY
+    });
+    assertServiceDecision({
+      decision: comfyDecision,
+      portState: comfyPortState,
+      service: SERVICE.COMFY,
+      port: config.comfyPort
     });
   }
 
@@ -199,11 +223,12 @@ export async function runStart({
   });
 
   if (directorDecision.action === ACTION.FAIL) {
-    throw new Error(
-      directorPortState.inspectionOk === false
-        ? `Director port inspection failed on ${config.directorPort}${directorPortState.diagnostic ? `: ${directorPortState.diagnostic}` : ""}`
-        : formatOccupiedPortError(SERVICE.DIRECTOR, config.directorPort, directorPortState.processInfo)
-    );
+    assertServiceDecision({
+      decision: directorDecision,
+      portState: directorPortState,
+      service: SERVICE.DIRECTOR,
+      port: config.directorPort
+    });
   }
 
   if (directorDecision.action === ACTION.REUSE) {
@@ -224,10 +249,17 @@ export async function runStart({
     directorHealth = wait.attempts;
     log("[OK]", `Director v${directorHealth.version || expectedVersion} healthy on ${config.directorPort}`);
     directorPortState = await inspectPortFn(config.directorPort, deps);
+    directorHealth = await probeDirectorHealth(directorUrl, expectedVersion, { fetchFn });
     directorDecision = decideServiceAction({
       portState: directorPortState,
-      healthy: true,
+      healthy: directorHealth.healthy,
       service: SERVICE.DIRECTOR
+    });
+    assertServiceDecision({
+      decision: directorDecision,
+      portState: directorPortState,
+      service: SERVICE.DIRECTOR,
+      port: config.directorPort
     });
   }
 

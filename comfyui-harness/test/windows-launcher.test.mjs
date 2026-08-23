@@ -32,7 +32,7 @@ import {
   normalizePortInspection,
   parsePortQueryRows
 } from "../lib/windows-port-inspect.mjs";
-import { runStart, runStatus } from "../scripts/windows/launcher-cli.mjs";
+import { runStart, runStatus, assertServiceDecision } from "../scripts/windows/launcher-cli.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -545,6 +545,127 @@ test("port inspection failure fails closed and never starts", async () => {
   assert.equal(spawns.length, 0);
   await rm(path.dirname(configPath), { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("post-start Comfy reinspection failure rejects and does not open browser or start Director", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  const spawns = [];
+  const browsers = [];
+  let comfyInspectCount = 0;
+  let comfyHealthChecks = 0;
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) {
+          comfyHealthChecks += 1;
+          return comfyHealthChecks >= 2 ? comfyStats() : new Response("down", { status: 503 });
+        }
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async port => {
+        if (port !== 8188) return absentPort();
+        comfyInspectCount += 1;
+        if (comfyInspectCount === 1) return absentPort();
+        return failedInspection("post-start Comfy inspection unavailable");
+      },
+      spawnFn: cmd => spawns.push(cmd),
+      openBrowserFn: url => browsers.push(url),
+      sleepFn: async () => {}
+    }
+  }), /ComfyUI port inspection failed on 8188: post-start Comfy inspection unavailable/);
+  assert.equal(spawns.length, 1);
+  assert.equal(browsers.length, 0);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("post-start Director reinspection failure rejects and does not open browser", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  const spawns = [];
+  const browsers = [];
+  let directorInspectCount = 0;
+  let directorHealthChecks = 0;
+  const version = await readDirectorPackageVersion(harnessRoot);
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) return comfyStats();
+        if (String(url).includes("/api/config")) {
+          directorHealthChecks += 1;
+          return directorHealthChecks >= 2 ? directorConfig(version) : new Response("down", { status: 503 });
+        }
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async port => {
+        if (port === 8188) return listeningPort(8188);
+        directorInspectCount += 1;
+        if (directorInspectCount === 1) return absentPort();
+        return failedInspection("post-start Director inspection unavailable");
+      },
+      spawnFn: cmd => spawns.push(cmd),
+      openBrowserFn: url => browsers.push(url),
+      sleepFn: async () => {}
+    }
+  }), /Director port inspection failed on 8787: post-start Director inspection unavailable/);
+  assert.equal(spawns.length, 1);
+  assert.match(spawns[0].displayCommand, /server\.mjs/);
+  assert.equal(browsers.length, 0);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("post-start listening but invalid ownership fails closed after HTTP health", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  let comfyInspectCount = 0;
+  let comfyHealthChecks = 0;
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) {
+          comfyHealthChecks += 1;
+          if (comfyHealthChecks === 1) return new Response("down", { status: 503 });
+          if (comfyHealthChecks === 2) return comfyStats();
+          return new Response("not comfy", { status: 503 });
+        }
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async port => {
+        if (port !== 8188) return absentPort();
+        comfyInspectCount += 1;
+        if (comfyInspectCount === 1) return absentPort();
+        return listeningPort(4242, { executable: "other.exe", commandLine: "other.exe --listen" });
+      },
+      spawnFn: () => {},
+      openBrowserFn: () => { throw new Error("browser should not open"); },
+      sleepFn: async () => {}
+    }
+  }), /unexpected process/i);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("assertServiceDecision throws for inspection and occupied-port failures", () => {
+  assert.throws(() => assertServiceDecision({
+    decision: { action: ACTION.FAIL },
+    portState: failedInspection("powershell failed"),
+    service: SERVICE.COMFY,
+    port: 8188
+  }), /ComfyUI port inspection failed on 8188: powershell failed/);
+  assert.throws(() => assertServiceDecision({
+    decision: { action: ACTION.FAIL },
+    portState: listeningPort(4242, { executable: "other.exe" }),
+    service: SERVICE.DIRECTOR,
+    port: 8787
+  }), /unexpected process/i);
 });
 
 test("status reports PID metadata when available", async () => {
