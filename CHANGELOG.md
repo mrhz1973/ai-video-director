@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-24 — v0.12.0
+
+- **Runtime interruption** (Issue #51): ownership-safe **INTERROMPI RENDER** (Single), **Interrompi job corrente**, and **INTERROMPI BATCH** controls using audited ComfyUI `POST /interrupt` and selective `POST /queue` `{ delete: [...] }` — never whole-queue clear.
+- Server-side in-memory ownership registry on successful `POST /api/queue` (`x-h3-batch-id` / `x-h3-batch-index` for Batch). `GET /api/runtime/ownership` for fail-closed re-check after F5; Director restart intentionally loses destructive authority.
+- Batch runtime states extended: `interrupting`, `interrupted`, `cancelled` (terminal). Full Batch stop cancels only verified owned pending prompt IDs; current-job interrupt leaves remaining Batch queue intact.
+- Technical reference: `docs/COMFYUI_RUNTIME_CONTROL.md`. No process killing, no project/Batch draft mutation, no output deletion.
+
 ## 2026-08-24 — v0.11.0
 
 - **Genera singolo** (Issue #53): explicit Single Render path independent from Batch. One click builds exactly one queue payload from the current prompt, workflow, model, Input bindings, seed, duration, steps, megapixels and aspect — never from Batch count/items/source.

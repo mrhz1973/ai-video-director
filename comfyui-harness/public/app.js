@@ -12,6 +12,7 @@ import {
   resolveObserverClientId,
   summarizeMonitor
 } from "./monitor.mjs";
+import { singleInterruptActionable } from "./runtime-interrupt-ui.mjs";
 import { connectionBadge } from "./connection-badge.mjs";
 import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
@@ -153,6 +154,8 @@ let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || nul
 let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
 let monitorState = initialMonitorState();
 let logsAvailable = null;
+let singleInterruptPending = false;
+let singleOwnershipControllable = false;
 
 /** Draft project editor state (library ≠ workflow bindings). */
 let draft = {
@@ -497,12 +500,72 @@ function renderMonitor() {
   $("monitorConnection").textContent = badge.text;
   $("monitorConnection").className = badge.className;
   $("monitorQueue").textContent = `${summary.queueRunning ?? 0} running · ${summary.queuePending ?? 0} pending`;
+  renderInterruptControl();
   renderQueueWaitCard();
   renderCompletionCard();
   const events = monitorState.events || [];
   $("monitorEvents").textContent = events.length ? events.map(item => `[${item.t}] ${item.m}`).join("\n") : "Nessun evento.";
   $("progress").textContent = compactProgressText(summary);
   updateElapsed();
+}
+
+function renderInterruptControl() {
+  const btn = $("interruptSingleRender");
+  if (!btn) return;
+  const actionable = singleInterruptActionable({
+    phase: monitorState.phase,
+    promptId: currentPrompt,
+    ownershipControllable: singleOwnershipControllable,
+    interruptPending: singleInterruptPending
+  });
+  btn.hidden = !actionable.visible;
+  btn.disabled = !actionable.enabled;
+  btn.textContent = actionable.label;
+}
+
+async function refreshSingleOwnership() {
+  if (!currentPrompt) {
+    singleOwnershipControllable = false;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/runtime/ownership?promptId=${encodeURIComponent(currentPrompt)}`);
+    const data = await response.json();
+    singleOwnershipControllable = Boolean(data.controllable);
+  } catch {
+    singleOwnershipControllable = false;
+  }
+}
+
+async function interruptSingleRender() {
+  const promptId = currentPrompt;
+  if (!promptId || singleInterruptPending) return;
+  const actionable = singleInterruptActionable({
+    phase: monitorState.phase,
+    promptId,
+    ownershipControllable: singleOwnershipControllable,
+    interruptPending: singleInterruptPending
+  });
+  if (!actionable.enabled) return;
+  if (!confirm("Interrompere il render corrente?")) return;
+  singleInterruptPending = true;
+  monitorState = { ...monitorState, phase: "interrupting", userInterrupted: true };
+  renderMonitor();
+  try {
+    const response = await fetch("/api/runtime/interrupt-single", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedPromptId: promptId })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Interruzione non disponibile.");
+    add("Interruzione richiesta.", "system");
+  } catch (error) {
+    singleInterruptPending = false;
+    monitorState = { ...monitorState, phase: "running", userInterrupted: false };
+    showAppNotice(error.message, { kind: "error" });
+    renderMonitor();
+  }
 }
 
 function renderQueueWaitCard() {
@@ -767,6 +830,7 @@ async function refreshQueueCounts() {
       queuePending: pending
     };
     coordinator.markQueue({ running, pending });
+    await refreshSingleOwnership();
     const transition = await coordinator.observeQueue({ running, pending });
     if (transition.submitted === "queued-next" && transition.result?.result?.prompt_id) {
       adoptSubmittedJob(transition.result.result);
@@ -852,14 +916,22 @@ async function outputs() {
 function handleHistoryFailure(history) {
   stopPolling();
   setBusy(false);
+  singleInterruptPending = false;
   const label = historyFailureLabel(history, currentPrompt);
+  const userInterrupted = Boolean(monitorState.userInterrupted);
   monitorState = applyMonitorEvent(monitorState, {
     type: label === "interrupted" ? "execution_interrupted" : "execution_error",
     data: { prompt_id: currentPrompt }
   });
+  if (userInterrupted && label === "interrupted") {
+    monitorState = { ...monitorState, userInterrupted: true };
+  }
   rememberJob();
   renderMonitor();
-  add(label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).", "error");
+  add(userInterrupted && label === "interrupted"
+    ? "Interrotto dall'utente."
+    : label === "interrupted" ? "Generazione interrotta (history)." : "Generazione fallita (history).",
+  userInterrupted && label === "interrupted" ? "system" : "error");
 }
 
 async function pollHistory() {
@@ -888,6 +960,10 @@ async function handleMessage(event) {
   if (["execution_error", "execution_interrupted"].includes(message.type)) {
     stopPolling();
     setBusy(false);
+    singleInterruptPending = false;
+    if (message.type === "execution_interrupted" && monitorState.userInterrupted) {
+      monitorState = { ...monitorState, phase: "interrupted", userInterrupted: true };
+    }
     rememberJob();
     console.warn("ComfyUI execution terminal event", message.data);
     showAppNotice(
@@ -2017,6 +2093,8 @@ connect();
 await refreshComfyLogs();
 logTimer = setInterval(refreshComfyLogs, LOG_POLL_MS);
 startQueuePolling();
+if (currentPrompt) void refreshSingleOwnership();
+$("interruptSingleRender")?.addEventListener("click", () => { void interruptSingleRender(); });
 
 $("send").onclick = async () => {
   const gate = describeGenerateBlockers({

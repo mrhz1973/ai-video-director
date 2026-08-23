@@ -75,9 +75,16 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.11.0 (feature branch `feature/explicit-single-render-v0110`; live 8787 remains on the previously activated build until the user authorizes restart)
+Known package version: 0.12.0 (feature branch `feature/runtime-safe-interrupt-v0120`)
 
-## Current harness UX focus (v0.11.0)
+## Current harness UX focus (v0.12.0)
+
+- **INTERROMPI RENDER** stops the owned Single Render after live queue + ownership verification (Issue #51).
+- **Interrompi job corrente** interrupts only the running Batch job; later Batch jobs already queued in ComfyUI continue.
+- **INTERROMPI BATCH** interrupts the owned running job and cancels owned pending Batch prompt IDs only; unrelated ComfyUI queue entries and completed outputs are preserved.
+- Ownership is in-memory; after Director restart destructive controls are disabled fail-closed. See `docs/COMFYUI_RUNTIME_CONTROL.md`.
+
+## Prior harness UX (v0.11.0)
 
 - **Genera singolo** creates exactly one clip from current editor controls (Issue #53). Numero job is Batch-only; prepared Batch is optional and unchanged by Single Render.
 - Batch execution is explicit via **Avvia batch (N)** only.

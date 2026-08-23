@@ -15,6 +15,7 @@ import {
   resolveBatchItemFiles,
   submitBatchSequentially,
   summarizeBatchJobs,
+  formatBatchRuntimeSummary,
   validateBatchDraft,
   validateBatchWideSettings
 } from "./batch-core.mjs";
@@ -33,6 +34,15 @@ import {
   resolveBatchQueueAction
 } from "./queue-coordinator.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
+import {
+  applyBatchStopResult,
+  batchCurrentInterruptActionable,
+  batchCurrentInterruptConfirmMessage,
+  batchHasActiveWork,
+  batchStopActionable,
+  batchStopConfirmMessage,
+  findActiveBatchJob
+} from "./runtime-interrupt-ui.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -46,6 +56,9 @@ let submitting = false;
 let submitted = false;
 let runtime = null;
 let pollTimer = null;
+let batchOwnershipControllable = false;
+let batchInterruptPending = false;
+let batchStopPending = false;
 let persistenceHook = null;
 let suppressLocalLoad = false;
 let assetContextProvider = null;
@@ -548,8 +561,26 @@ function createUi() {
     block.id = "batchMonitorSummary";
     block.className = "batch-monitor";
     block.hidden = true;
+    const controls = document.createElement("div");
+    controls.id = "batchInterruptControls";
+    controls.className = "batch-interrupt-controls";
+    controls.hidden = true;
+    const btnCurrent = document.createElement("button");
+    btnCurrent.type = "button";
+    btnCurrent.id = "batchInterruptCurrent";
+    btnCurrent.className = "secondary";
+    btnCurrent.textContent = "Interrompi job corrente";
+    const btnStop = document.createElement("button");
+    btnStop.type = "button";
+    btnStop.id = "batchInterruptAll";
+    btnStop.className = "danger";
+    btnStop.textContent = "INTERROMPI BATCH";
+    controls.append(btnCurrent, btnStop);
     const firstDetails = monitor.querySelector(".monitor-details");
-    monitor.insertBefore(block, firstDetails || null);
+    monitor.insertBefore(controls, firstDetails || null);
+    monitor.insertBefore(block, controls);
+    btnCurrent.onclick = () => { void interruptCurrentBatchJob(); };
+    btnStop.onclick = () => { void stopEntireBatch(); };
   }
 
   $("batchPrepare").onclick = prepareFromDraft;
@@ -891,10 +922,116 @@ async function queueBatch() {
 function stateLabel(state) {
   if (state === "completed") return "completato";
   if (state === "running") return "in esecuzione";
+  if (state === "interrupting") return "interruzione…";
   if (state === "error") return "errore";
   if (state === "interrupted") return "interrotto";
+  if (state === "cancelled") return "annullato";
   if (state === "not-submitted") return "non inviato";
   return "in coda";
+}
+
+async function refreshBatchOwnership() {
+  if (!runtime?.batchId || !batchHasActiveWork(runtime.jobs)) {
+    batchOwnershipControllable = false;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/runtime/ownership?batchId=${encodeURIComponent(runtime.batchId)}`);
+    const data = await response.json();
+    batchOwnershipControllable = Boolean(data.controllable);
+  } catch {
+    batchOwnershipControllable = false;
+  }
+}
+
+function renderBatchInterruptControls() {
+  const controls = $("batchInterruptControls");
+  const btnCurrent = $("batchInterruptCurrent");
+  const btnStop = $("batchInterruptAll");
+  if (!controls || !btnCurrent || !btnStop) return;
+  const jobs = runtime?.jobs || [];
+  const currentAction = batchCurrentInterruptActionable({
+    jobs,
+    ownershipControllable: batchOwnershipControllable,
+    interruptPending: batchInterruptPending
+  });
+  const stopAction = batchStopActionable({
+    jobs,
+    ownershipControllable: batchOwnershipControllable,
+    stopPending: batchStopPending
+  });
+  controls.hidden = !currentAction.visible && !stopAction.visible;
+  btnCurrent.hidden = !currentAction.visible;
+  btnCurrent.disabled = !currentAction.enabled;
+  btnStop.hidden = !stopAction.visible;
+  btnStop.disabled = !stopAction.enabled;
+}
+
+async function interruptCurrentBatchJob() {
+  if (!runtime?.batchId || batchInterruptPending) return;
+  const active = findActiveBatchJob(runtime.jobs);
+  if (!active?.promptId) return;
+  const currentAction = batchCurrentInterruptActionable({
+    jobs: runtime.jobs,
+    ownershipControllable: batchOwnershipControllable,
+    interruptPending: batchInterruptPending
+  });
+  if (!currentAction.enabled) return;
+  if (!confirm(batchCurrentInterruptConfirmMessage(active.label))) return;
+  batchInterruptPending = true;
+  active.state = "interrupting";
+  renderRuntime();
+  try {
+    const response = await fetch("/api/runtime/interrupt-batch-current", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ batchId: runtime.batchId, expectedPromptId: active.promptId })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Interruzione non disponibile.");
+    setFeedback(`Interruzione richiesta per ${active.label}. I job successivi in coda continueranno.`, "ok");
+  } catch (error) {
+    batchInterruptPending = false;
+    active.state = "running";
+    setFeedback(error.message, "error");
+    renderRuntime();
+  }
+}
+
+async function stopEntireBatch() {
+  if (!runtime?.batchId || batchStopPending) return;
+  const stopAction = batchStopActionable({
+    jobs: runtime.jobs,
+    ownershipControllable: batchOwnershipControllable,
+    stopPending: batchStopPending
+  });
+  if (!stopAction.enabled) return;
+  if (!confirm(batchStopConfirmMessage())) return;
+  batchStopPending = true;
+  const active = findActiveBatchJob(runtime.jobs);
+  renderRuntime();
+  try {
+    const response = await fetch("/api/runtime/stop-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        batchId: runtime.batchId,
+        expectedRunningPromptId: active?.promptId || null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Interruzione batch non disponibile.");
+    runtime.jobs = applyBatchStopResult(runtime.jobs, data);
+    persistRuntime();
+    const summary = formatBatchRuntimeSummary(runtime.jobs);
+    setFeedback(`Batch interrotto · ${summary}`, "warn");
+  } catch (error) {
+    setFeedback(error.message, "error");
+  } finally {
+    batchStopPending = false;
+    batchInterruptPending = false;
+    renderRuntime();
+  }
 }
 
 function renderRuntime() {
@@ -908,7 +1045,9 @@ function renderRuntime() {
   }
   const summary = summarizeBatchJobs(runtime.jobs);
   monitor.hidden = false;
-  monitor.innerHTML = `<strong>BATCH ${summary.completed}/${summary.total}</strong><span>${summary.running} running · ${summary.pending} pending · ${summary.failed + summary.interrupted} failed${summary.notSubmitted ? ` · ${summary.notSubmitted} non inviati` : ""}</span>`;
+  const runtimeSummary = formatBatchRuntimeSummary(runtime.jobs);
+  monitor.innerHTML = `<strong>BATCH ${summary.completed}/${summary.total}</strong><span>${runtimeSummary} · ${summary.running} running · ${summary.pending} pending</span>`;
+  renderBatchInterruptControls();
 
   const title = document.createElement("div");
   title.className = "batch-runtime-head";
@@ -956,9 +1095,11 @@ async function pollRuntime() {
     const response = await fetch("/api/active");
     if (response.ok) active = await response.json();
   } catch { /* status remains conservative */ }
+  await refreshBatchOwnership();
 
   for (const job of runtime.jobs) {
     if (!job.promptId || isTerminalBatchState(job.state)) continue;
+    if (job.state === "cancelled") continue;
     try {
       const response = await fetch(`/api/history?promptId=${encodeURIComponent(job.promptId)}`);
       const history = await response.json();
@@ -966,6 +1107,7 @@ async function pollRuntime() {
         const state = classifyHistoryState(history, job.promptId);
         if (state === "completed") {
           job.state = "completed";
+          batchInterruptPending = false;
           if (!job.outputsFetched) {
             const outResponse = await fetch(`/api/outputs?promptId=${encodeURIComponent(job.promptId)}`);
             const out = await outResponse.json();
@@ -996,16 +1138,25 @@ async function pollRuntime() {
         if (state === "failed") {
           const label = historyFailureLabel(history, job.promptId);
           job.state = label === "interrupted" ? "interrupted" : "error";
+          if (label === "interrupted") batchInterruptPending = false;
           continue;
         }
       }
     } catch { /* keep pending/running */ }
+    if (job.state === "interrupting") {
+      if (active?.active && active.promptId === job.promptId) continue;
+      continue;
+    }
     job.state = active?.active && active.promptId === job.promptId ? "running" : "pending";
   }
 
   persistRuntime();
   renderRuntime();
-  if (runtime.jobs.every(job => isTerminalBatchState(job.state))) stopPolling();
+  if (runtime.jobs.every(job => isTerminalBatchState(job.state))) {
+    batchInterruptPending = false;
+    batchStopPending = false;
+    stopPolling();
+  }
 }
 
 function stopPolling() {

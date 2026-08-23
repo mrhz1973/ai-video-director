@@ -45,6 +45,7 @@ const execFileAsync = promisify(execFile);
 
 const harnessRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptsDir = path.join(harnessRoot, "scripts", "windows");
+const expectedDirectorVersion = await readDirectorPackageVersion(harnessRoot);
 
 function absentPort() {
   return { listening: false, inspectionOk: true, processInfo: null };
@@ -75,7 +76,7 @@ function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
 }
 
-function directorConfig(version = "0.11.0") {
+function directorConfig(version = expectedDirectorVersion) {
   return new Response(JSON.stringify({ version, presets: [{ id: "minimax-h3-i2v" }] }), { status: 200 });
 }
 

@@ -243,21 +243,43 @@ export async function submitBatchSequentially(items = [], submit) {
 }
 
 export function summarizeBatchJobs(jobs = []) {
-  const summary = { total: jobs.length, completed: 0, running: 0, pending: 0, failed: 0, interrupted: 0, notSubmitted: 0 };
+  const summary = {
+    total: jobs.length,
+    completed: 0,
+    running: 0,
+    pending: 0,
+    failed: 0,
+    interrupted: 0,
+    cancelled: 0,
+    interrupting: 0,
+    notSubmitted: 0
+  };
   for (const job of jobs) {
     const state = job?.state || "pending";
     if (state === "completed") summary.completed += 1;
     else if (state === "running") summary.running += 1;
+    else if (state === "interrupting") summary.interrupting += 1;
     else if (state === "error") summary.failed += 1;
     else if (state === "interrupted") summary.interrupted += 1;
+    else if (state === "cancelled") summary.cancelled += 1;
     else if (state === "not-submitted") summary.notSubmitted += 1;
     else summary.pending += 1;
   }
   return summary;
 }
 
+export function formatBatchRuntimeSummary(jobs = []) {
+  const summary = summarizeBatchJobs(jobs);
+  const parts = [];
+  if (summary.completed) parts.push(`${summary.completed} completati`);
+  if (summary.interrupted) parts.push(`${summary.interrupted} interrotti`);
+  if (summary.cancelled) parts.push(`${summary.cancelled} annullati`);
+  if (parts.length) return parts.join(" · ");
+  return `${summary.total} job`;
+}
+
 export function isTerminalBatchState(state) {
-  return ["completed", "error", "interrupted", "not-submitted"].includes(String(state || ""));
+  return ["completed", "error", "interrupted", "cancelled", "not-submitted"].includes(String(state || ""));
 }
 
 export function formatBatchJobSummary(item = {}) {
