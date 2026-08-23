@@ -296,6 +296,8 @@ test("batch summary keeps terminal and pending states distinct", () => {
     pending: 1,
     failed: 1,
     interrupted: 1,
+    cancelled: 0,
+    interrupting: 0,
     notSubmitted: 1
   });
 });

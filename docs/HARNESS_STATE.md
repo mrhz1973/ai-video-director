@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.11.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.12.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -142,6 +142,12 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - **Genera singolo** submits exactly one render from the current editor state and current Input bindings. It never reads Numero job, never prepares/submits/mutates Batch items, and never creates a synthetic one-job `batchDraft`.
 - **Batch — opzionale** remains separate. Only **Avvia batch (N)** (or **Metti batch in attesa** when the queue is busy) starts Batch execution. A prepared Batch may coexist unchanged while the user runs Single Render.
 - Single completed output still enters **CLIP SESSIONE** with `source = "single"`.
+
+### Runtime interruption (v0.12.0, Issue #51)
+
+- **INTERROMPI RENDER** (Single monitor): confirmation → live queue match → server ownership → `POST /interrupt` with `prompt_id`. Never clears queue or mutates project/Batch draft.
+- **Interrompi job corrente** / **INTERROMPI BATCH** (submitted Batch monitor): server-side ownership registry from `POST /api/queue` headers (`x-h3-batch-id`, `x-h3-batch-index`). Current-job interrupt leaves pending same-Batch jobs queued; full stop deletes only owned pending prompt IDs via `{ delete: [...] }` — never `{ clear: true }`.
+- Registry is in-memory only; Director restart disables destructive controls fail-closed. Contract: `docs/COMFYUI_RUNTIME_CONTROL.md`.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

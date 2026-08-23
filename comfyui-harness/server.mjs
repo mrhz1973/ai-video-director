@@ -33,6 +33,8 @@ import {
   gpuHelperPublicPayload,
   readGpuHelperState
 } from "./lib/gpu-power-helper.mjs";
+import { createRuntimeOwnershipRegistry } from "./lib/runtime-ownership.mjs";
+import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -43,6 +45,12 @@ const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows"
 const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
+const runtimeOwnership = createRuntimeOwnershipRegistry();
+const runtimeControl = createRuntimeControlService({
+  comfyUrl: comfy,
+  ownershipRegistry: runtimeOwnership,
+  logger
+});
 
 const json = (res, status, body) => sendJson(res, status, body);
 const body = async req => { const chunks=[]; for await (const c of req) chunks.push(c); return Buffer.concat(chunks); };
@@ -202,6 +210,50 @@ const server = http.createServer(async (req, res) => {
         return json(res, 500, { error: error.message, code: "gpu-power-error" });
       }
     }
+    if (req.method === "GET" && url.pathname === "/api/runtime/ownership") {
+      const promptId = url.searchParams.get("promptId") || "";
+      const batchId = url.searchParams.get("batchId") || "";
+      return json(res, 200, runtimeControl.getOwnershipQuery({
+        promptId: promptId || undefined,
+        batchId: batchId || undefined
+      }));
+    }
+    if (req.method === "POST" && url.pathname === "/api/runtime/interrupt-single") {
+      try {
+        const input = await readJsonBody(req);
+        const result = await runtimeControl.interruptSingle({ expectedPromptId: input.expectedPromptId });
+        return json(res, 200, result);
+      } catch (error) {
+        logger.error("runtime_interrupt_rejected", { scope: "single", code: error.code, reason: error.message });
+        return json(res, error.status || 409, { error: error.message, code: error.code || "interrupt-rejected" });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/runtime/interrupt-batch-current") {
+      try {
+        const input = await readJsonBody(req);
+        const result = await runtimeControl.interruptBatchCurrent({
+          batchId: input.batchId,
+          expectedPromptId: input.expectedPromptId
+        });
+        return json(res, 200, result);
+      } catch (error) {
+        logger.error("runtime_interrupt_rejected", { scope: "batch-current", code: error.code, reason: error.message });
+        return json(res, error.status || 409, { error: error.message, code: error.code || "interrupt-rejected" });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/runtime/stop-batch") {
+      try {
+        const input = await readJsonBody(req);
+        const result = await runtimeControl.stopBatch({
+          batchId: input.batchId,
+          expectedRunningPromptId: input.expectedRunningPromptId
+        });
+        return json(res, 200, result);
+      } catch (error) {
+        logger.error("batch_stop_rejected", { code: error.code, reason: error.message });
+        return json(res, error.status || 409, { error: error.message, code: error.code || "batch-stop-rejected" });
+      }
+    }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {
         const upstream = await fetch(`${comfy}/queue`);
@@ -349,6 +401,14 @@ const server = http.createServer(async (req, res) => {
         if (!upstream.ok || !data.prompt_id) {
           logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
         } else {
+          const batchId = req.headers["x-h3-batch-id"];
+          const batchIndexRaw = req.headers["x-h3-batch-index"];
+          runtimeControl.registerQueueAcceptance({
+            promptId: data.prompt_id,
+            batchId: batchId ? String(batchId) : null,
+            batchIndex: batchIndexRaw != null && batchIndexRaw !== "" ? Number(batchIndexRaw) : null,
+            clientId: input.clientId
+          });
           logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
         }
         return json(res, upstream.status, data);

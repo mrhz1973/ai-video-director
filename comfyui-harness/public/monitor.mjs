@@ -235,12 +235,15 @@ export function summarizeMonitor(state = {}) {
   if (state.phase === "completed") {
     barMode = "complete";
     summary = "Completato";
+  } else if (state.phase === "interrupting") {
+    barMode = "indeterminate";
+    summary = "Interruzione…";
+  } else if (state.phase === "interrupted") {
+    barMode = "error";
+    summary = state.userInterrupted ? "Interrotto dall'utente" : "Interrotta";
   } else if (state.phase === "error") {
     barMode = "error";
     summary = "Errore";
-  } else if (state.phase === "interrupted") {
-    barMode = "error";
-    summary = "Interrotta";
   } else if (progress.kind === "numeric") {
     barMode = "numeric";
     summary = `Progresso nodo attivo · ${progress.value}/${progress.max} · ${progress.percent}%`;

@@ -96,5 +96,5 @@ test("frontend bootstrap regression from v0.8.4 still passes", () => {
 test("v085 stylesheet is loaded and package version is 0.11.0", () => {
   assert.match(html, /workspace-v085\.css/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.11.0");
+  assert.equal(pkg.version, "0.12.0");
 });
