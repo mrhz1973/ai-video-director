@@ -33,7 +33,9 @@ $payload = [ordered]@{
     comfyTimeoutSeconds = 180
     directorTimeoutSeconds = 30
 }
-$payload | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $resolvedConfig -Encoding UTF8
+$json = ($payload | ConvertTo-Json -Depth 4) + "`n"
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($resolvedConfig, $json, $utf8NoBom)
 
 $launcherScript = Join-Path $PSScriptRoot 'Start-AIVideoDirector.ps1'
 $desktop = Get-DesktopFolderPath

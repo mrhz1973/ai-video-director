@@ -62,13 +62,3 @@ function Invoke-LauncherCli {
         exit $LASTEXITCODE
     }
 }
-
-Export-ModuleMember -Function @(
-    'Get-HarnessRoot',
-    'Get-LauncherConfigPath',
-    'Get-NodeExecutable',
-    'Get-PowerShellLauncherExecutable',
-    'Get-DesktopFolderPath',
-    'New-LauncherShortcut',
-    'Invoke-LauncherCli'
-)

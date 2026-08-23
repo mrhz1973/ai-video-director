@@ -20,15 +20,51 @@ import {
   probeComfyHealth,
   probeDirectorHealth,
   readDirectorPackageVersion,
+  readLauncherConfigFile,
   shouldOpenBrowser,
+  stripUtf8Bom,
   validateComfyRoot,
   validateConfig,
   waitForHealth
 } from "../lib/windows-launcher.mjs";
+import {
+  inspectPort,
+  normalizePortInspection,
+  parsePortQueryRows
+} from "../lib/windows-port-inspect.mjs";
 import { runStart, runStatus } from "../scripts/windows/launcher-cli.mjs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const harnessRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptsDir = path.join(harnessRoot, "scripts", "windows");
+
+function absentPort() {
+  return { listening: false, inspectionOk: true, processInfo: null };
+}
+
+function listeningPort(pid, extra = {}) {
+  return { listening: true, inspectionOk: true, processInfo: { pid, ...extra } };
+}
+
+function failedInspection(diagnostic = "inspection failed") {
+  return { listening: false, inspectionOk: false, processInfo: null, diagnostic };
+}
+
+async function runPowerShellSmoke(shellCommand) {
+  const script = [
+    `$lib = '${scriptsDir.replace(/\\/g, "\\\\")}\\launcher-lib.ps1'`,
+    ". $lib",
+    "$root = Get-HarnessRoot",
+    "$desktop = Get-DesktopFolderPath",
+    "Write-Output \"root=$root\"",
+    "Write-Output \"desktop=$desktop\""
+  ].join("; ");
+  const { stdout, stderr } = await execFileAsync(shellCommand, ["-NoProfile", "-Command", script], { windowsHide: true });
+  return { stdout: String(stdout), stderr: String(stderr) };
+}
 
 function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
@@ -70,7 +106,7 @@ test("Comfy healthy -> reuse, spawn count 0", async () => {
         if (String(url).includes("/api/config")) return directorConfig();
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async port => (port === 8188 || port === 8787 ? { pid: 1000 + port } : null),
+      inspectPortFn: async port => (port === 8188 || port === 8787 ? listeningPort(1000 + port) : absentPort()),
       spawnFn: cmd => spawns.push(cmd),
       openBrowserFn: () => {}
     }
@@ -98,7 +134,7 @@ test("Comfy absent -> exactly one intended start", async () => {
         if (String(url).includes("/api/config")) return directorConfig();
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async port => (port === 8787 ? { pid: 9877 } : null),
+      inspectPortFn: async port => (port === 8787 ? listeningPort(9877) : absentPort()),
       spawnFn: cmd => spawns.push(cmd),
       openBrowserFn: () => {},
       sleepFn: async () => {}
@@ -120,7 +156,7 @@ test("Comfy port occupied by unexpected service -> fail closed", async () => {
     configPath,
     deps: {
       fetchFn: async () => new Response("not comfy", { status: 200 }),
-      getPortOwner: async port => ({ pid: 4242, executable: "other.exe", commandLine: "other.exe --port" }),
+      inspectPortFn: async () => listeningPort(4242, { executable: "other.exe", commandLine: "other.exe --port" }),
       spawnFn: () => { throw new Error("should not spawn"); }
     }
   }), /unexpected process/i);
@@ -136,7 +172,7 @@ test("Comfy startup health timeout -> error", async () => {
     configPath,
     deps: {
       fetchFn: async () => new Response("down", { status: 503 }),
-      getPortOwner: async () => null,
+      inspectPortFn: async () => absentPort(),
       spawnFn: () => {},
       sleepFn: async () => {}
     }
@@ -158,7 +194,7 @@ test("Director healthy -> reuse, spawn count 0", async () => {
         if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async () => ({ pid: 1 }),
+      inspectPortFn: async () => listeningPort(1),
       spawnFn: cmd => spawns.push(cmd),
       openBrowserFn: () => {}
     }
@@ -187,7 +223,7 @@ test("Director absent -> exactly one intended start", async () => {
         }
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async port => (port === 8188 ? { pid: 8188 } : null),
+      inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : absentPort()),
       spawnFn: cmd => spawns.push(cmd),
       openBrowserFn: () => {},
       sleepFn: async () => {}
@@ -211,7 +247,7 @@ test("Director occupied by unexpected service -> fail closed", async () => {
         if (String(url).includes("/system_stats")) return comfyStats();
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async port => ({ pid: 7777, executable: "node.exe", commandLine: "node other.js" }),
+      inspectPortFn: async () => listeningPort(7777, { executable: "node.exe", commandLine: "node other.js" }),
       spawnFn: () => { throw new Error("should not spawn"); }
     }
   }), /unexpected process/i);
@@ -230,7 +266,7 @@ test("Director startup timeout -> error", async () => {
         if (String(url).includes("/system_stats")) return comfyStats();
         return new Response("down", { status: 503 });
       },
-      getPortOwner: async port => (port === 8188 ? { pid: 8188 } : null),
+      inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : absentPort()),
       spawnFn: () => {},
       sleepFn: async () => {}
     }
@@ -253,7 +289,7 @@ test("both already healthy -> idempotent success", async () => {
         if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async () => ({ pid: 1 }),
+      inspectPortFn: async () => listeningPort(1),
       spawnFn: cmd => spawns.push(cmd),
       openBrowserFn: url => browsers.push(url)
     }
@@ -285,7 +321,7 @@ test("browser opens only after both health gates", async () => {
         }
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async port => (port === 8188 ? { pid: 8188 } : null),
+      inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : absentPort()),
       spawnFn: () => events.push("spawn-director"),
       openBrowserFn: url => events.push(`open:${url}`),
       sleepFn: async () => {}
@@ -311,7 +347,7 @@ test("openBrowser=false -> browser count 0", async () => {
         if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async () => ({ pid: 1 }),
+      inspectPortFn: async () => listeningPort(1),
       spawnFn: () => {},
       openBrowserFn: url => browsers.push(url)
     }
@@ -335,7 +371,7 @@ test("status command performs no writes/spawns", async () => {
         if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
-      getPortOwner: async () => ({ pid: 1 })
+      inspectPortFn: async () => listeningPort(1)
     }
   });
   assert.equal(spawns.length, 0);
@@ -366,6 +402,7 @@ test("Desktop path uses Known Folder API/shell resolution", async () => {
 test("launcher source contains no /api/queue POST or ComfyUI /prompt POST", async () => {
   const files = [
     path.join(harnessRoot, "lib", "windows-launcher.mjs"),
+    path.join(harnessRoot, "lib", "windows-port-inspect.mjs"),
     path.join(scriptsDir, "launcher-cli.mjs"),
     path.join(scriptsDir, "Start-AIVideoDirector.ps1"),
     path.join(scriptsDir, "Get-AIVideoDirectorStatus.ps1"),
@@ -380,10 +417,12 @@ test("launcher source contains no /api/queue POST or ComfyUI /prompt POST", asyn
 });
 
 test("decision helpers classify occupied and healthy ports", () => {
-  assert.equal(decideServiceAction({ listening: true, healthy: true }).action, ACTION.REUSE);
-  assert.equal(decideServiceAction({ listening: false, healthy: false }).action, ACTION.START);
-  assert.equal(decideServiceAction({ listening: true, healthy: false }).action, ACTION.FAIL);
-  assert.equal(classifyServiceState({ listening: true, healthy: false }), PROCESS_CLASS.UNKNOWN);
+  assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: true }).action, ACTION.REUSE);
+  assert.equal(decideServiceAction({ portState: absentPort(), healthy: false }).action, ACTION.START);
+  assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: false }).action, ACTION.FAIL);
+  assert.equal(decideServiceAction({ portState: failedInspection(), healthy: false }).action, ACTION.FAIL);
+  assert.equal(classifyServiceState({ listening: true, healthy: false, inspectionOk: true }), PROCESS_CLASS.UNKNOWN);
+  assert.equal(classifyServiceState({ listening: false, healthy: false, inspectionOk: false }), PROCESS_CLASS.UNKNOWN);
 });
 
 test("buildComfyCommand uses portable relative layout", () => {
@@ -449,3 +488,151 @@ test("readDirectorPackageVersion reads local package.json", async () => {
   const version = await readDirectorPackageVersion(harnessRoot);
   assert.match(version, /^\d+\.\d+\.\d+$/);
 });
+
+test("production launcher wires inspectPort instead of null port-owner fallback", async () => {
+  const cliSource = await readFile(path.join(scriptsDir, "launcher-cli.mjs"), "utf8");
+  assert.match(cliSource, /inspectPortFn:\s*deps\.inspectPortFn\s*\|\|\s*inspectPort/);
+  assert.doesNotMatch(cliSource, /getPortOwner/);
+  assert.doesNotMatch(cliSource, /async\s*\(\)\s*=>\s*null/);
+});
+
+test("parsePortQueryRows distinguishes absent, listening, and inspection failure", () => {
+  const absent = parsePortQueryRows(8188, { connections: [] });
+  assert.equal(absent.listening, false);
+  assert.equal(absent.inspectionOk, true);
+
+  const listening = parsePortQueryRows(8188, {
+    connections: [{ LocalPort: 8188, State: "Listen", OwningProcess: 4242 }],
+    processes: { 4242: { ExecutablePath: "python.exe", CommandLine: "python main.py" } }
+  });
+  assert.equal(listening.listening, true);
+  assert.equal(listening.processInfo.pid, 4242);
+
+  const failed = parsePortQueryRows(8188, { inspectionOk: false, diagnostic: "powershell failed" });
+  assert.equal(failed.inspectionOk, false);
+  assert.equal(decideServiceAction({ portState: failed, healthy: false }).action, ACTION.FAIL);
+});
+
+test("listening with unavailable process metadata still fails closed when unhealthy", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async () => new Response("not comfy", { status: 503 }),
+      inspectPortFn: async () => ({ listening: true, inspectionOk: true, processInfo: { pid: 9999 } }),
+      spawnFn: () => { throw new Error("should not spawn"); }
+    }
+  }), /unexpected process/i);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("port inspection failure fails closed and never starts", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  const spawns = [];
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async () => new Response("down", { status: 503 }),
+      inspectPortFn: async () => failedInspection("Get-NetTCPConnection unavailable"),
+      spawnFn: cmd => spawns.push(cmd)
+    }
+  }), /port inspection failed/i);
+  assert.equal(spawns.length, 0);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("status reports PID metadata when available", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  const status = await runStatus({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) return comfyStats();
+        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async port => listeningPort(1000 + port, {
+        executable: port === 8188 ? "python.exe" : "node.exe",
+        commandLine: port === 8188 ? "python main.py" : "node server.mjs"
+      })
+    }
+  });
+  assert.equal(status.comfy.pid, 9188);
+  assert.equal(status.director.pid, 9787);
+  assert.equal(status.comfy.executable, "python.exe");
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("status with missing config is useful and read-only", async () => {
+  const missingPath = path.join(os.tmpdir(), `missing-launcher-${Date.now()}.json`);
+  const status = await runStatus({
+    harnessRoot,
+    configPath: missingPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) return comfyStats();
+        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async port => (port === 8787 ? listeningPort(9024) : absentPort())
+    }
+  });
+  assert.equal(status.config.found, false);
+  assert.equal(status.config.comfyRootValid, false);
+  assert.equal(status.config.path, missingPath);
+  assert.equal(status.director.pid, 9024);
+});
+
+test("launcher config loader accepts UTF-8 BOM and plain UTF-8", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "h3-bom-config-"));
+  const configPath = path.join(dir, "launcher.json");
+  const payload = { comfyRoot: "C:/Comfy", openBrowser: true, comfyTimeoutSeconds: 180, directorTimeoutSeconds: 30 };
+  await writeFile(configPath, `\uFEFF${JSON.stringify(payload)}`, "utf8");
+  const withBom = await readLauncherConfigFile(configPath);
+  assert.equal(withBom.comfyRoot, "C:/Comfy");
+  await writeFile(configPath, JSON.stringify(payload), "utf8");
+  const plain = await readLauncherConfigFile(configPath);
+  assert.equal(plain.comfyRoot, "C:/Comfy");
+  assert.equal(stripUtf8Bom("\uFEFFabc"), "abc");
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("installer writes UTF-8 without BOM", async () => {
+  const installer = await readFile(path.join(scriptsDir, "Install-AIVideoDirectorLauncher.ps1"), "utf8");
+  assert.match(installer, /UTF8Encoding \$false/);
+  assert.match(installer, /WriteAllText/);
+  assert.doesNotMatch(installer, /Set-Content -LiteralPath \$resolvedConfig -Encoding UTF8/);
+});
+
+test("launcher-lib.ps1 is dot-source safe", async () => {
+  const lib = await readFile(path.join(scriptsDir, "launcher-lib.ps1"), "utf8");
+  assert.doesNotMatch(lib, /Export-ModuleMember/);
+});
+
+if (process.platform === "win32") {
+  test("PowerShell 7 helper runtime smoke", async () => {
+    try {
+      const result = await runPowerShellSmoke("pwsh");
+      assert.match(result.stdout, /root=/);
+      assert.match(result.stdout, /desktop=/);
+    } catch (error) {
+      if (String(error?.message || error).includes("ENOENT")) return;
+      throw error;
+    }
+  });
+
+  test("Windows PowerShell 5.1 helper runtime smoke", async () => {
+    const result = await runPowerShellSmoke("powershell");
+    assert.match(result.stdout, /root=/);
+    assert.match(result.stdout, /desktop=/);
+  });
+}

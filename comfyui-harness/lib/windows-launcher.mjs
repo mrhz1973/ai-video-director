@@ -119,44 +119,60 @@ export function serviceBaseUrl(config, service) {
   return `http://${config.directorHost}:${config.directorPort}`;
 }
 
-export function classifyServiceState({ listening = false, healthy = false } = {}) {
+export function classifyServiceState({ listening = false, healthy = false, inspectionOk = true } = {}) {
+  if (!inspectionOk) return PROCESS_CLASS.UNKNOWN;
   if (healthy) return PROCESS_CLASS.HEALTHY;
   if (!listening) return PROCESS_CLASS.ABSENT;
   return PROCESS_CLASS.UNKNOWN;
 }
 
 export function decideServiceAction({
-  listening = false,
+  portState = { listening: false, inspectionOk: true, processInfo: null },
   healthy = false,
-  service = SERVICE.COMFY,
-  processInfo = null
+  service = SERVICE.COMFY
 } = {}) {
-  const classification = classifyServiceState({ listening, healthy });
-  if (classification === PROCESS_CLASS.HEALTHY) {
+  const listening = Boolean(portState?.listening);
+  const inspectionOk = portState?.inspectionOk !== false;
+  const processInfo = portState?.processInfo || null;
+
+  if (!inspectionOk) {
+    return {
+      action: ACTION.FAIL,
+      classification: PROCESS_CLASS.UNKNOWN,
+      message: service === SERVICE.COMFY
+        ? "ComfyUI port inspection failed"
+        : "Director port inspection failed",
+      processInfo
+    };
+  }
+
+  if (healthy) {
     return {
       action: ACTION.REUSE,
-      classification,
+      classification: PROCESS_CLASS.HEALTHY,
       message: service === SERVICE.COMFY
         ? "ComfyUI already healthy"
         : "Director already healthy"
     };
   }
-  if (classification === PROCESS_CLASS.ABSENT) {
+
+  if (listening) {
     return {
-      action: ACTION.START,
-      classification,
+      action: ACTION.FAIL,
+      classification: PROCESS_CLASS.UNKNOWN,
       message: service === SERVICE.COMFY
-        ? "ComfyUI not listening; start required"
-        : "Director not listening; start required"
+        ? "Port occupied by unexpected process (not healthy ComfyUI)"
+        : "Port occupied by unexpected process (not healthy Director)",
+      processInfo
     };
   }
+
   return {
-    action: ACTION.FAIL,
-    classification,
+    action: ACTION.START,
+    classification: PROCESS_CLASS.ABSENT,
     message: service === SERVICE.COMFY
-      ? "Port occupied by unexpected process (not healthy ComfyUI)"
-      : "Port occupied by unexpected process (not healthy Director)",
-    processInfo
+      ? "ComfyUI not listening; start required"
+      : "Director not listening; start required"
   };
 }
 
@@ -245,10 +261,13 @@ export function planStartup({
 } = {}) {
   const steps = [];
   const comfyDecision = decideServiceAction({
-    listening: comfy.listening,
+    portState: {
+      listening: Boolean(comfy.listening),
+      inspectionOk: comfy.inspectionOk !== false,
+      processInfo: comfy.processInfo || null
+    },
     healthy: comfy.healthy,
-    service: SERVICE.COMFY,
-    processInfo: comfy.processInfo
+    service: SERVICE.COMFY
   });
   steps.push({ service: SERVICE.COMFY, ...comfyDecision });
 
@@ -262,10 +281,13 @@ export function planStartup({
   }
 
   const directorDecision = decideServiceAction({
-    listening: director.listening,
+    portState: {
+      listening: Boolean(director.listening),
+      inspectionOk: director.inspectionOk !== false,
+      processInfo: director.processInfo || null
+    },
     healthy: director.healthy,
-    service: SERVICE.DIRECTOR,
-    processInfo: director.processInfo
+    service: SERVICE.DIRECTOR
   });
   steps.push({ service: SERVICE.DIRECTOR, ...directorDecision });
 
@@ -297,6 +319,15 @@ export function planStartup({
 
 export function resolveHarnessRootFromScript(scriptDir = "") {
   return path.resolve(scriptDir, "..", "..");
+}
+
+export function stripUtf8Bom(text = "") {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
+export async function readLauncherConfigFile(configPath) {
+  const text = stripUtf8Bom(await readFile(configPath, "utf8"));
+  return JSON.parse(text);
 }
 
 export function resolveConfigPath(explicitPath = "", env = process.env) {

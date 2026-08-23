@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { inspectPort } from "../../lib/windows-port-inspect.mjs";
 import {
   ACTION,
+  DEFAULT_CONFIG,
   SERVICE,
   buildComfyCommand,
   buildDirectorCommand,
@@ -17,6 +19,7 @@ import {
   probeComfyHealth,
   probeDirectorHealth,
   readDirectorPackageVersion,
+  readLauncherConfigFile,
   resolveConfigPath,
   resolveHarnessRootFromScript,
   serviceBaseUrl,
@@ -42,12 +45,51 @@ function logLine(prefix, message) {
   console.log(`${prefix} ${message}`);
 }
 
-async function loadConfig(configPath) {
+function resolveDeps(deps = {}) {
+  return {
+    fetchFn: deps.fetchFn || fetch,
+    spawnFn: deps.spawnFn || spawnDetached,
+    openBrowserFn: deps.openBrowserFn || openSystemBrowser,
+    inspectPortFn: deps.inspectPortFn || inspectPort,
+    sleepFn: deps.sleepFn || (ms => new Promise(resolve => setTimeout(resolve, ms))),
+    log: deps.log || ((level, message) => logLine(level, message)),
+    ...deps
+  };
+}
+
+async function loadConfig(configPath, { required = true } = {}) {
   if (!configPath || !existsSync(configPath)) {
+    if (!required) return null;
     throw new Error(`Launcher config not found: ${configPath || "(missing path)"}`);
   }
-  const raw = JSON.parse(await readFile(configPath, "utf8"));
+  const raw = await readLauncherConfigFile(configPath);
   return normalizeConfig(raw);
+}
+
+function buildServiceStatus({
+  port,
+  portState,
+  health,
+  service,
+  version = null
+}) {
+  const decision = decideServiceAction({
+    portState,
+    healthy: health.healthy,
+    service
+  });
+  return {
+    reachable: health.healthy,
+    port,
+    version,
+    pid: portState.processInfo?.pid ?? null,
+    executable: portState.processInfo?.executable ?? null,
+    commandLine: portState.processInfo?.commandLine ?? null,
+    listening: portState.listening,
+    inspectionOk: portState.inspectionOk,
+    classification: decision.classification,
+    health: health.healthy ? "healthy" : "unhealthy"
+  };
 }
 
 export async function runStatus({
@@ -55,46 +97,39 @@ export async function runStatus({
   configPath,
   deps = {}
 } = {}) {
-  const fetchFn = deps.fetchFn || fetch;
-  const getPortOwner = deps.getPortOwner || (async () => null);
-  const config = await loadConfig(configPath);
-  const expectedVersion = await readDirectorPackageVersion(harnessRoot);
-  const comfyUrl = serviceBaseUrl(config, SERVICE.COMFY);
-  const directorUrl = serviceBaseUrl(config, SERVICE.DIRECTOR);
+  const { fetchFn, inspectPortFn } = resolveDeps(deps);
+  const expectedVersion = await readDirectorPackageVersion(harnessRoot).catch(() => null);
+  const config = await loadConfig(configPath, { required: false });
+
+  const comfyPort = config?.comfyPort ?? DEFAULT_CONFIG.comfyPort;
+  const directorPort = config?.directorPort ?? DEFAULT_CONFIG.directorPort;
+  const comfyUrl = serviceBaseUrl(config || DEFAULT_CONFIG, SERVICE.COMFY);
+  const directorUrl = serviceBaseUrl(config || DEFAULT_CONFIG, SERVICE.DIRECTOR);
+
+  const comfyPortState = await inspectPortFn(comfyPort, deps);
+  const directorPortState = await inspectPortFn(directorPort, deps);
   const comfyHealth = await probeComfyHealth(comfyUrl, { fetchFn });
-  const directorHealth = await probeDirectorHealth(directorUrl, expectedVersion, { fetchFn });
-  const comfyOwner = await getPortOwner(config.comfyPort);
-  const directorOwner = await getPortOwner(config.directorPort);
+  const directorHealth = await probeDirectorHealth(directorUrl, expectedVersion || "", { fetchFn });
 
   return {
     config: {
       path: configPath,
-      found: true,
-      comfyRootValid: validateConfig(config).length === 0
+      found: Boolean(config),
+      comfyRootValid: config ? validateConfig(config).length === 0 : false
     },
-    comfy: {
-      reachable: comfyHealth.healthy,
-      port: config.comfyPort,
-      pid: comfyOwner?.pid || null,
-      classification: decideServiceAction({
-        listening: Boolean(comfyOwner),
-        healthy: comfyHealth.healthy,
-        service: SERVICE.COMFY
-      }).classification,
-      health: comfyHealth.healthy ? "healthy" : "unhealthy"
-    },
-    director: {
-      reachable: directorHealth.healthy,
-      port: config.directorPort,
-      version: directorHealth.version || null,
-      pid: directorOwner?.pid || null,
-      classification: decideServiceAction({
-        listening: Boolean(directorOwner),
-        healthy: directorHealth.healthy,
-        service: SERVICE.DIRECTOR
-      }).classification,
-      health: directorHealth.healthy ? "healthy" : "unhealthy"
-    }
+    comfy: buildServiceStatus({
+      port: comfyPort,
+      portState: comfyPortState,
+      health: comfyHealth,
+      service: SERVICE.COMFY
+    }),
+    director: buildServiceStatus({
+      port: directorPort,
+      portState: directorPortState,
+      health: directorHealth,
+      service: SERVICE.DIRECTOR,
+      version: directorHealth.version || expectedVersion || null
+    })
   };
 }
 
@@ -103,14 +138,9 @@ export async function runStart({
   configPath,
   deps = {}
 } = {}) {
-  const fetchFn = deps.fetchFn || fetch;
-  const spawnFn = deps.spawnFn || spawnDetached;
-  const openBrowserFn = deps.openBrowserFn || openSystemBrowser;
-  const getPortOwner = deps.getPortOwner || (async () => null);
-  const sleepFn = deps.sleepFn || (ms => new Promise(resolve => setTimeout(resolve, ms)));
-  const log = deps.log || ((level, message) => logLine(level, message));
+  const { fetchFn, spawnFn, openBrowserFn, inspectPortFn, sleepFn, log } = resolveDeps(deps);
 
-  const config = await loadConfig(configPath);
+  const config = await loadConfig(configPath, { required: true });
   const configErrors = validateConfig(config);
   if (configErrors.length) throw new Error(configErrors.join("; "));
 
@@ -120,18 +150,22 @@ export async function runStart({
 
   log("[OK]", "Config loaded");
 
-  let comfyOwner = await getPortOwner(config.comfyPort);
+  let comfyPortState = await inspectPortFn(config.comfyPort, deps);
   let comfyHealth = await probeComfyHealth(comfyUrl, { fetchFn });
   let comfyDecision = decideServiceAction({
-    listening: Boolean(comfyOwner),
+    portState: comfyPortState,
     healthy: comfyHealth.healthy,
-    service: SERVICE.COMFY,
-    processInfo: comfyOwner
+    service: SERVICE.COMFY
   });
 
   if (comfyDecision.action === ACTION.FAIL) {
-    throw new Error(formatOccupiedPortError(SERVICE.COMFY, config.comfyPort, comfyOwner));
+    throw new Error(
+      comfyPortState.inspectionOk === false
+        ? `ComfyUI port inspection failed on ${config.comfyPort}${comfyPortState.diagnostic ? `: ${comfyPortState.diagnostic}` : ""}`
+        : formatOccupiedPortError(SERVICE.COMFY, config.comfyPort, comfyPortState.processInfo)
+    );
   }
+
   let comfySpawnCount = 0;
   if (comfyDecision.action === ACTION.REUSE) {
     log("[OK]", `ComfyUI already healthy on ${config.comfyPort}`);
@@ -147,28 +181,31 @@ export async function runStart({
     if (!wait.healthy) throw new Error(`ComfyUI did not become healthy within ${config.comfyTimeoutSeconds}s`);
     log("[OK]", `ComfyUI healthy on ${config.comfyPort}`);
     comfyHealth = wait.attempts;
-    comfyOwner = await getPortOwner(config.comfyPort);
+    comfyPortState = await inspectPortFn(config.comfyPort, deps);
     comfyDecision = decideServiceAction({
-      listening: Boolean(comfyOwner),
+      portState: comfyPortState,
       healthy: true,
-      service: SERVICE.COMFY,
-      processInfo: comfyOwner
+      service: SERVICE.COMFY
     });
   }
 
   let directorSpawnCount = 0;
-  let directorOwner = await getPortOwner(config.directorPort);
+  let directorPortState = await inspectPortFn(config.directorPort, deps);
   let directorHealth = await probeDirectorHealth(directorUrl, expectedVersion, { fetchFn });
   let directorDecision = decideServiceAction({
-    listening: Boolean(directorOwner),
+    portState: directorPortState,
     healthy: directorHealth.healthy,
-    service: SERVICE.DIRECTOR,
-    processInfo: directorOwner
+    service: SERVICE.DIRECTOR
   });
 
   if (directorDecision.action === ACTION.FAIL) {
-    throw new Error(formatOccupiedPortError(SERVICE.DIRECTOR, config.directorPort, directorOwner));
+    throw new Error(
+      directorPortState.inspectionOk === false
+        ? `Director port inspection failed on ${config.directorPort}${directorPortState.diagnostic ? `: ${directorPortState.diagnostic}` : ""}`
+        : formatOccupiedPortError(SERVICE.DIRECTOR, config.directorPort, directorPortState.processInfo)
+    );
   }
+
   if (directorDecision.action === ACTION.REUSE) {
     log("[OK]", `Director v${directorHealth.version || expectedVersion} already healthy on ${config.directorPort}`);
   } else {
@@ -186,18 +223,27 @@ export async function runStart({
     }
     directorHealth = wait.attempts;
     log("[OK]", `Director v${directorHealth.version || expectedVersion} healthy on ${config.directorPort}`);
-    directorOwner = await getPortOwner(config.directorPort);
+    directorPortState = await inspectPortFn(config.directorPort, deps);
     directorDecision = decideServiceAction({
-      listening: Boolean(directorOwner),
+      portState: directorPortState,
       healthy: true,
-      service: SERVICE.DIRECTOR,
-      processInfo: directorOwner
+      service: SERVICE.DIRECTOR
     });
   }
 
   const startupPlan = planStartup({
-    comfy: { listening: Boolean(comfyOwner), healthy: true, processInfo: comfyOwner },
-    director: { listening: Boolean(directorOwner), healthy: true, processInfo: directorOwner },
+    comfy: {
+      listening: comfyPortState.listening,
+      inspectionOk: comfyPortState.inspectionOk,
+      healthy: true,
+      processInfo: comfyPortState.processInfo
+    },
+    director: {
+      listening: directorPortState.listening,
+      inspectionOk: directorPortState.inspectionOk,
+      healthy: true,
+      processInfo: directorPortState.processInfo
+    },
     openBrowser: config.openBrowser
   });
 
