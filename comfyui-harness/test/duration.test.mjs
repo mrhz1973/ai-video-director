@@ -50,7 +50,7 @@ test("project load and recovery draft normalize duration without generation", ()
 test("batch prepare/summary use compact integer seconds", () => {
   const items = createBatchItems({ prompt: "ok", seed: 1, duration: "5.0", steps: 20, megapixels: 0.3, aspect: "16:9" }, 2);
   assert.equal(items[0].duration, "5");
-  assert.equal(formatBatchJobSummary(items[0]), "seed 1 · 5s · 0.3MP");
+  assert.equal(formatBatchJobSummary(items[0]), "seed 1 · 5s · 0.3MP · 16:9 · 20 steps");
   assert.equal(hasDecimalDurationDisplay(formatBatchJobSummary(items[0])), false);
   const valid = validateBatchDraft({
     items,

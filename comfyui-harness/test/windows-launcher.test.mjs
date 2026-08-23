@@ -75,7 +75,7 @@ function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
 }
 
-function directorConfig(version = "0.9.0") {
+function directorConfig(version = "0.10.0") {
   return new Response(JSON.stringify({ version, presets: [{ id: "minimax-h3-i2v" }] }), { status: 200 });
 }
 
@@ -448,8 +448,8 @@ test("probe helpers recognize healthy ComfyUI and Director responses", async () 
     fetchFn: async () => comfyStats()
   });
   assert.equal(comfy.healthy, true);
-  const director = await probeDirectorHealth("http://127.0.0.1:8787", "0.9.0", {
-    fetchFn: async () => directorConfig("0.9.0")
+  const director = await probeDirectorHealth("http://127.0.0.1:8787", "0.10.0", {
+    fetchFn: async () => directorConfig("0.10.0")
   });
   assert.equal(director.healthy, true);
 });

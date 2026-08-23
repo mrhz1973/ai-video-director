@@ -261,5 +261,72 @@ export function isTerminalBatchState(state) {
 }
 
 export function formatBatchJobSummary(item = {}) {
-  return `seed ${item.seed} · ${formatDurationCompact(item.duration)} · ${item.megapixels}MP`;
+  const parts = [
+    `seed ${item.seed}`,
+    formatDurationCompact(item.duration),
+    `${item.megapixels}MP`
+  ];
+  if (item.aspect) parts.push(String(item.aspect));
+  if (item.steps != null && item.steps !== "") parts.push(`${item.steps} steps`);
+  return parts.join(" · ");
+}
+
+export const BATCH_ASPECT_OPTIONS = Object.freeze(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
+
+export function detectBatchWideFieldState(items = [], field) {
+  if (!Array.isArray(items) || !items.length) return { mode: "empty" };
+  const values = items.map(item => String(item?.[field] ?? ""));
+  const unique = [...new Set(values)];
+  if (unique.length === 1) return { mode: "uniform", value: unique[0] };
+  return { mode: "mixed" };
+}
+
+/**
+ * Apply MP/aspect/steps to every prepared Batch item without rebuilding the batch.
+ * Returns a new items array; unrelated fields (prompt, seed, duration, files) are preserved.
+ */
+export function applyBatchWideSettings(items = [], { megapixels, aspect, steps } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  return list.map(item => {
+    const files = normalizeItemFiles(item?.files);
+    const next = { ...item };
+    if (megapixels !== undefined && megapixels !== null && megapixels !== "") {
+      next.megapixels = String(megapixels);
+    }
+    if (aspect !== undefined && aspect !== null && aspect !== "") {
+      next.aspect = String(aspect);
+    }
+    if (steps !== undefined && steps !== null && steps !== "") {
+      next.steps = String(steps);
+    }
+    if (files) next.files = { ...files };
+    else delete next.files;
+    return next;
+  });
+}
+
+export function validateBatchWideSettings({
+  items = [],
+  megapixels,
+  aspect,
+  steps,
+  megapixelsMin = 0.1,
+  megapixelsMax = 16
+} = {}) {
+  const errors = [];
+  if (!Array.isArray(items) || !items.length) {
+    errors.push("Nessun batch preparato.");
+  }
+  const mp = Number(megapixels);
+  if (!Number.isFinite(mp) || mp < megapixelsMin || mp > megapixelsMax) {
+    errors.push(`Megapixel non valido (${megapixelsMin}–${megapixelsMax}).`);
+  }
+  if (!BATCH_ASPECT_OPTIONS.includes(String(aspect || ""))) {
+    errors.push("Aspect non supportato.");
+  }
+  const stepNum = Number(steps);
+  if (!Number.isFinite(stepNum) || stepNum < 1) {
+    errors.push("Steps non validi.");
+  }
+  return { valid: errors.length === 0, errors };
 }

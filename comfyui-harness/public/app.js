@@ -92,6 +92,10 @@ import {
   resolvePostLoadBatchPersistence
 } from "/lib/batch-draft.mjs";
 import {
+  buildDuplicateProjectPayload,
+  defaultDuplicateProjectLabel
+} from "/lib/project-duplicate.mjs";
+import {
   LOAD_STATUS,
   auditProjectRestore,
   formatBatchRestoreLabel,
@@ -1727,19 +1731,42 @@ async function saveProject({ asNew = false } = {}) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Salvataggio fallito");
   assertPersistedBatchMatches(body.batchDraft, data.batchDraft);
+  await activatePersistedProject(data);
+}
+
+async function duplicateCurrentProject() {
+  const currentLabel = $("projectLabel").value.trim() || draft.label || "";
+  const suggested = defaultDuplicateProjectLabel(currentLabel);
+  const newLabel = prompt("Nome del nuovo progetto:", suggested);
+  if (!newLabel?.trim()) return;
+
+  const state = currentEditorState();
+  const body = buildDuplicateProjectPayload({
+    label: state.label,
+    workflowId: state.workflowId,
+    prompt: state.prompt,
+    settings: state.settings,
+    library: state.library,
+    files: state.files,
+    batchDraft: exportBatchDraftForProject()
+  }, { newLabel: newLabel.trim() });
+
+  const response = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Duplicazione fallita");
+  assertPersistedBatchMatches(body.batchDraft, data.batchDraft);
+  await activatePersistedProject(data);
+  add(`Progetto duplicato: ${data.label}`, "system");
+}
+
+async function activatePersistedProject(data) {
   config.projects = await (await fetch("/api/projects")).json();
-  draft.id = data.id;
-  draft.label = data.label;
-  draft.saved = true;
-  draft.library = normalizeProject(data).library;
-  draft.files = { ...(data.files || {}) };
   refreshProjectSelect(data.id);
-  $("projectLabel").value = data.label;
-  bindBatchProjectKey(data.id);
-  markBaselineFromDraft();
-  clearRecoveryDraft();
-  ensureAutosaveController().reset(SAVE_STATUS.SAVED);
-  setSaveStatus(SAVE_STATUS.SAVED, { clock: clockLabel() });
+  await loadProjectById(data.id);
 }
 
 async function ingestFiles(fileList, { groupId = null } = {}) {
@@ -1864,6 +1891,14 @@ $("projectSave").onclick = async () => {
     setSaveStatus(SAVE_STATUS.ERROR);
     add(`Errore salvataggio: ${error.message}`, "system");
     persistRecoveryIfNeeded();
+  }
+};
+$("projectSaveAs").onclick = async () => {
+  try {
+    await duplicateCurrentProject();
+  } catch (error) {
+    setSaveStatus(SAVE_STATUS.ERROR);
+    showAppNotice(`Errore duplicazione: ${error.message}`, { kind: "error" });
   }
 };
 $("projectDelete").onclick = async () => {
