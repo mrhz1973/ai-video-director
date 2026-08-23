@@ -61,6 +61,16 @@ test("prompt text is not used as an asset resolver", () => {
   assert.doesNotMatch(source, /parseFilename|extractFilename|filenameFromPrompt|prompt.*\.png|match\(.*\.png/);
 });
 
+test("batch preflight wires library into validateBatchDraft for orphan overrides", () => {
+  const start = source.indexOf("function validateCurrentBatch(");
+  const end = source.indexOf("\nfunction payloadFor", start);
+  assert.ok(start >= 0 && end > start);
+  const body = source.slice(start, end);
+  assert.match(body, /library/);
+  assert.match(body, /attachmentRoles/);
+  assert.match(body, /unavailableFilenames/);
+});
+
 test("resolve helper used by payload matches pure merge semantics", () => {
   const shared = { firstImage: "frame-shared.png" };
   assert.deepEqual(

@@ -581,9 +581,10 @@ function updateQueueButton() {
 }
 
 function validateCurrentBatch(snapshot) {
-  const { unavailableFilenames } = getBatchAssetContext();
+  const { library, unavailableFilenames } = getBatchAssetContext();
   const roleLabels = { ...(snapshot.roleLabels || {}) };
-  for (const role of snapshot.attachmentRoles || []) {
+  const attachmentRoles = Array.isArray(snapshot.attachmentRoles) ? snapshot.attachmentRoles : [];
+  for (const role of attachmentRoles) {
     if (role?.key && !roleLabels[role.key]) roleLabels[role.key] = role.label || role.key;
   }
   return validateBatchDraft({
@@ -592,6 +593,8 @@ function validateCurrentBatch(snapshot) {
     sharedFiles: snapshot.files,
     requiredKeys: snapshot.requiredKeys,
     roleLabels,
+    attachmentRoles,
+    library,
     unavailableFiles: unavailableFilenames,
     unsupportedVideoRoles: snapshot.unsupportedVideoRoles,
     megapixelsMin: snapshot.megapixelsMin,

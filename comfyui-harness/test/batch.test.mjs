@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clampBatchCount,
+  collectUnavailableExplicitBatchOverrides,
   createBatchItems,
   duplicateBatchItem,
+  isExplicitBatchFileOverrideAvailable,
   moveBatchItem,
   removeBatchItem,
   resolveBatchItemFiles,
@@ -11,6 +13,7 @@ import {
   summarizeBatchJobs,
   validateBatchDraft
 } from "../public/batch-core.mjs";
+import { createGroup, createMember } from "../lib/projects.mjs";
 
 test("batch count clamps to 2–8 and four-item draft increments seed", () => {
   assert.equal(clampBatchCount(1), 2);
@@ -145,6 +148,108 @@ test("stale explicit binding fails closed", () => {
   assert.equal(result.valid, false);
   assert.match(result.errors.join(" "), /Job 1: input First Frame non disponibile/);
   assert.ok(!result.errors.some(error => /Job 2:/.test(error)));
+});
+
+test("orphan explicit override absent from library fails closed without shared fallback", () => {
+  const library = {
+    elements: [createGroup({
+      label: "Frames",
+      members: [createMember({ filename: "frame-a.png", originalName: "frame-a.png", type: "image" })]
+    })],
+    locations: [],
+    objects: [],
+    audio: []
+  };
+  const attachmentRoles = [{ key: "firstImage", label: "First Frame", accept: "image/*" }];
+  const items = createBatchItems({ prompt: "ok", seed: 1, duration: 10, steps: 20, megapixels: 0.3, aspect: "16:9" }, 2);
+  items[0].files = { firstImage: "frame-gone.png" };
+  // Job 2 inherits shared frame-a.png which remains in the library.
+
+  assert.equal(
+    isExplicitBatchFileOverrideAvailable({
+      filename: "frame-gone.png",
+      roleKey: "firstImage",
+      library,
+      attachmentRoles
+    }),
+    false
+  );
+  assert.ok(collectUnavailableExplicitBatchOverrides({
+    items,
+    attachmentRoles,
+    library
+  }).has("frame-gone.png"));
+
+  const result = validateBatchDraft({
+    items,
+    sharedFiles: { firstImage: "frame-a.png" },
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" },
+    attachmentRoles,
+    library,
+    unavailableFiles: new Set()
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(" "), /Job 1: input First Frame non disponibile/);
+  assert.ok(!result.errors.some(error => /Job 2:/.test(error)));
+  assert.equal(resolveBatchItemFiles(items[0], { firstImage: "frame-a.png" }).firstImage, "frame-gone.png");
+});
+
+test("explicit incompatible media kind for role fails closed", () => {
+  const library = {
+    elements: [createGroup({
+      label: "Frames",
+      members: [createMember({ filename: "frame-a.png", originalName: "frame-a.png", type: "image" })]
+    })],
+    locations: [],
+    objects: [],
+    audio: [createGroup({
+      label: "Beds",
+      members: [createMember({ filename: "bed.wav", originalName: "bed.wav", type: "audio" })]
+    })]
+  };
+  const attachmentRoles = [{ key: "firstImage", label: "First Frame", accept: "image/*" }];
+  const items = createBatchItems({ prompt: "ok", seed: 1, duration: 10, steps: 20, megapixels: 0.3, aspect: "16:9" }, 2);
+  items[0].files = { firstImage: "bed.wav" };
+  const result = validateBatchDraft({
+    items,
+    sharedFiles: { firstImage: "frame-a.png" },
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" },
+    attachmentRoles,
+    library
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.errors.join(" "), /Job 1: input First Frame non disponibile/);
+  assert.ok(!result.errors.some(error => /Job 2:/.test(error)));
+});
+
+test("valid explicit library asset and inherited shared asset both pass", () => {
+  const library = {
+    elements: [createGroup({
+      label: "Frames",
+      members: [
+        createMember({ filename: "frame-a.png", originalName: "frame-a.png", type: "image" }),
+        createMember({ filename: "frame-b.png", originalName: "frame-b.png", type: "image" })
+      ]
+    })],
+    locations: [],
+    objects: [],
+    audio: []
+  };
+  const attachmentRoles = [{ key: "firstImage", label: "First Frame", accept: "image/*" }];
+  const items = createBatchItems({ prompt: "ok", seed: 1, duration: 10, steps: 20, megapixels: 0.3, aspect: "16:9" }, 2);
+  items[0].files = { firstImage: "frame-b.png" };
+  const result = validateBatchDraft({
+    items,
+    sharedFiles: { firstImage: "frame-a.png" },
+    requiredKeys: ["firstImage"],
+    roleLabels: { firstImage: "First Frame" },
+    attachmentRoles,
+    library
+  });
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
 });
 
 test("sequential submit sends exactly once per item in deterministic order", async () => {
