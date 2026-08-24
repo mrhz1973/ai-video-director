@@ -8,6 +8,7 @@
 - OUTPUT cards: Apri video, Mostra nella cartella, Scarica MP4; archive-permission status stays truthful.
 - Director endpoints: `POST /api/show-in-folder`, `GET /api/download-mp4` (exact bytes, no transcode) under configured `comfyOutputDirectory`.
 - **PR #60 review blockers**: SCENA/BATCH first-frame preview synced to effective `firstImage` (item override → shared); Windows launcher derives `<comfyRoot>/ComfyUI/output` via `H3_COMFY_OUTPUT_DIRECTORY`; reveal/download require `promptId` + Comfy `/history` match + realpath containment (fail-closed); behavioral MP4/authority tests.
+- **PR #60 second-pass**: future queued CODA jobs expose human input-role selectors (inherit shared / per-job override) until claim; raw `item.files` JSON stays under Dettagli tecnici only.
 
 ## 2026-08-24 — v0.13.0
 

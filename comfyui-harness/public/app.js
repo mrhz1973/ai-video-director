@@ -143,6 +143,7 @@ import {
   importBatchQueueFromProject,
   initBatchQueueUi,
   isBatchQueueArmed,
+  setBatchQueueAssetContextProvider,
   syncBatchQueuePlanToServer,
   getBatchQueueRuntimeView
 } from "./batch-queue-ui.mjs";
@@ -2182,7 +2183,7 @@ initBatchQueueUi({
     if (draft.saved && draft.id) noteEditorChange();
   }
 });
-setBatchAssetContextProvider(() => {
+function batchAssetContext() {
   const unavailable = new Set();
   for (const member of listAllMembers(draft.library)) {
     const status = availabilityOf(member.filename, member.subfolder || "");
@@ -2199,7 +2200,9 @@ setBatchAssetContextProvider(() => {
     unavailableFilenames: unavailable,
     availability: draft.availability
   };
-});
+}
+setBatchAssetContextProvider(batchAssetContext);
+setBatchQueueAssetContextProvider(batchAssetContext);
 $("batchLegacyRecover")?.addEventListener("click", () => {
   if (!pendingLegacyBatchCandidate?.draft || !draft.saved || !draft.id) return;
   // Baseline stays as the server project (no Batch) so recovery is dirty until PUT.

@@ -28,6 +28,11 @@ import {
 import { buildSessionOutputRecords, upsertSessionOutputs, notifySessionOutputsChanged } from "./session-outputs.mjs";
 import { canArmMultiBatchQueue, getSharedCoordinator } from "./queue-coordinator.mjs";
 import { formatQueueBatchStopFeedback } from "./execution-lane-client.mjs";
+import {
+  appendQueueJobInputSection,
+  buildSavedQueueJobItem,
+  cloneQueueJobDraft
+} from "./batch-queue-job-input.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -41,6 +46,7 @@ let feedbackNode = null;
 let queueOwnershipControllable = false;
 let queueInterruptPending = false;
 let queueStopPending = false;
+let assetContextProvider = null;
 const reconstructedPromptIds = new Set();
 
 const ENTRY_STATE_LABELS = {
@@ -417,7 +423,7 @@ function appendJobEditor(container, entry, jobIndex) {
     ["megapixels", "number"],
     ["aspect", "text"]
   ];
-  const draftItem = { ...item };
+  const draftItem = cloneQueueJobDraft(item);
   for (const [field, type] of fields) {
     const label = document.createElement("label");
     label.textContent = field;
@@ -430,13 +436,14 @@ function appendJobEditor(container, entry, jobIndex) {
     label.append(input);
     body.append(label);
   }
-  const filesLabel = document.createElement("label");
-  filesLabel.textContent = "First-frame / ruoli (solo lettura)";
-  const filesHint = document.createElement("code");
-  const fileNames = Object.values(item.files || {}).filter(Boolean).map(String);
-  filesHint.textContent = fileNames.length ? fileNames.join(", ") : "—";
-  filesLabel.append(filesHint);
-  body.append(filesLabel);
+  const { library, availability } = getQueueAssetContext();
+  appendQueueJobInputSection(document, body, {
+    source: entry.snapshot?.source,
+    item,
+    library,
+    draftItem,
+    availability
+  });
   const tech = document.createElement("details");
   tech.className = "batch-queue-tech-details";
   const techSummary = document.createElement("summary");
@@ -456,7 +463,7 @@ function appendJobEditor(container, entry, jobIndex) {
   saveBtn.textContent = "Salva job";
   saveBtn.addEventListener("click", () => {
     const items = entry.snapshot.items.map((jobItem, idx) => (
-      idx === jobIndex ? { ...jobItem, ...draftItem, files: item.files || {} } : jobItem
+      idx === jobIndex ? buildSavedQueueJobItem(jobItem, draftItem) : jobItem
     ));
     void updateEntry(entry.queueEntryId, {
       snapshot: { ...entry.snapshot, items }
@@ -465,6 +472,18 @@ function appendJobEditor(container, entry, jobIndex) {
   body.append(saveBtn);
   details.append(body);
   container.append(details);
+}
+
+function getQueueAssetContext() {
+  const ctx = assetContextProvider?.() || {};
+  return {
+    library: ctx.library || { groups: [] },
+    availability: ctx.availability && typeof ctx.availability === "object" ? ctx.availability : {}
+  };
+}
+
+export function setBatchQueueAssetContextProvider(fn) {
+  assetContextProvider = typeof fn === "function" ? fn : null;
 }
 
 function renderEntryCard(entry, index, entries) {

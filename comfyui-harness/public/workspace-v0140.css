@@ -168,6 +168,34 @@
   margin: 0.35rem 0 0;
 }
 
+.batch-queue-job-inputs {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.batch-queue-job-inputs-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #c9d3dc;
+}
+
+.batch-queue-job-input-role {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.batch-queue-job-input-role select {
+  max-width: 100%;
+}
+
+.batch-queue-effective-input {
+  font-size: 0.72rem;
+  color: #9eabb8;
+}
+
 .session-clip-actions {
   display: flex;
   flex-wrap: wrap;
