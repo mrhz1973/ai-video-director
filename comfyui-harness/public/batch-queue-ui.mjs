@@ -6,16 +6,26 @@ import {
   BATCH_QUEUE_FAILURE_POLICY,
   QUEUE_ENTRY_STATE,
   appendQueueEntry,
-  cancelQueueEntry,
   createQueueEntryFromDraft,
   defaultQueueEntryName,
-  isActiveQueueEntryState,
   normalizeBatchQueuePlan,
   serializeBatchQueuePlan,
   summarizeQueuePlan,
   validateQueueCapacity
 } from "../lib/batch-queue-plan.mjs";
 import { QUEUE_OVERALL_STATE } from "../lib/batch-queue-plan.mjs";
+import {
+  buildQueueSessionOutputRecords,
+  selectCompletedQueueJobsForSession
+} from "../lib/batch-queue-session.mjs";
+import {
+  batchCurrentInterruptActionable,
+  batchCurrentInterruptConfirmMessage,
+  batchStopActionable,
+  batchStopConfirmMessage,
+  findActiveBatchJob
+} from "./runtime-interrupt-ui.mjs";
+import { upsertSessionOutputs } from "./session-outputs.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -26,6 +36,10 @@ let pollTimer = null;
 let projectIdProvider = () => "";
 let onDirty = null;
 let feedbackNode = null;
+let queueOwnershipControllable = false;
+let queueInterruptPending = false;
+let queueStopPending = false;
+const reconstructedPromptIds = new Set();
 
 const ENTRY_STATE_LABELS = {
   [QUEUE_ENTRY_STATE.QUEUED]: "IN CODA",
@@ -53,6 +67,21 @@ function setFeedback(message, kind = "neutral") {
   feedbackNode.dataset.kind = kind;
 }
 
+function applyRuntimeView(view) {
+  runtimeView = view;
+  if (!view?.entries?.length || !plan) return;
+  plan = {
+    ...plan,
+    revision: view.revision ?? plan.revision,
+    failurePolicy: view.failurePolicy || plan.failurePolicy,
+    entries: plan.entries.map(local => {
+      const live = view.entries.find(entry => entry.queueEntryId === local.queueEntryId);
+      if (!live) return local;
+      return { ...local, ...live, snapshot: local.snapshot || live.snapshot };
+    })
+  };
+}
+
 export function exportBatchQueueForProject() {
   return serializeBatchQueuePlan(plan);
 }
@@ -63,6 +92,7 @@ export function exportBatchQueueForPersistence() {
 
 export function importBatchQueueFromProject(raw = null) {
   plan = normalizeBatchQueuePlan(raw);
+  reconstructedPromptIds.clear();
   renderQueueUi();
   return { restored: Boolean(plan), count: plan?.entries?.length || 0 };
 }
@@ -90,10 +120,143 @@ export async function syncBatchQueuePlanToServer() {
     const response = await fetch("/api/batch-queue/sync", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectId, plan: exportBatchQueueForProject() })
+      body: JSON.stringify({
+        projectId,
+        plan: exportBatchQueueForProject(),
+        expectedRevision: plan?.revision ?? null
+      })
     });
-    if (response.ok) runtimeView = await response.json();
+    const data = await response.json();
+    if (response.ok) applyRuntimeView(data);
+    else if (data.code === "stale-revision") {
+      setFeedback(data.error || "Revisione coda non aggiornata.", "error");
+    }
   } catch { /* reconnect on poll */ }
+}
+
+async function refreshQueueOwnership() {
+  const batchId = runtimeView?.currentBatchId;
+  if (!batchId || !runtimeView?.currentEntryId) {
+    queueOwnershipControllable = false;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/runtime/ownership?batchId=${encodeURIComponent(batchId)}`);
+    const data = await response.json();
+    queueOwnershipControllable = Boolean(data.controllable);
+  } catch {
+    queueOwnershipControllable = false;
+  }
+}
+
+function queueRuntimeJobs() {
+  return (runtimeView?.entryJobs || []).map(job => ({
+    index: job.index,
+    label: job.label || `Job ${job.index + 1}`,
+    promptId: job.promptId,
+    state: job.state
+  }));
+}
+
+function renderQueueInterruptControls() {
+  const controls = $("batchQueueInterruptControls");
+  const btnCurrent = $("batchQueueInterruptCurrent");
+  const btnStop = $("batchQueueInterruptAll");
+  if (!controls || !btnCurrent || !btnStop) return;
+  const jobs = queueRuntimeJobs();
+  const currentAction = batchCurrentInterruptActionable({
+    jobs,
+    ownershipControllable: queueOwnershipControllable,
+    interruptPending: queueInterruptPending
+  });
+  const stopAction = batchStopActionable({
+    jobs,
+    ownershipControllable: queueOwnershipControllable,
+    stopPending: queueStopPending
+  });
+  const visible = Boolean(runtimeView?.currentEntryId && runtimeView?.currentBatchId);
+  controls.hidden = !visible || (!currentAction.visible && !stopAction.visible);
+  btnCurrent.hidden = !currentAction.visible;
+  btnCurrent.disabled = !currentAction.enabled;
+  btnStop.hidden = !stopAction.visible;
+  btnStop.disabled = !stopAction.enabled;
+}
+
+async function interruptCurrentQueueBatchJob() {
+  const batchId = runtimeView?.currentBatchId;
+  const jobs = queueRuntimeJobs();
+  const active = findActiveBatchJob(jobs);
+  if (!batchId || !active?.promptId || queueInterruptPending) return;
+  if (!confirm(batchCurrentInterruptConfirmMessage(active.label))) return;
+  queueInterruptPending = true;
+  renderQueueInterruptControls();
+  try {
+    const response = await fetch("/api/runtime/interrupt-batch-current", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ batchId, expectedPromptId: active.promptId })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Interruzione non disponibile.");
+    setFeedback(`Interruzione richiesta per ${active.label}. I job successivi del batch continueranno.`, "ok");
+  } catch (error) {
+    setFeedback(error.message, "error");
+  } finally {
+    queueInterruptPending = false;
+    renderQueueInterruptControls();
+  }
+}
+
+async function stopCurrentQueueBatch() {
+  const batchId = runtimeView?.currentBatchId;
+  const projectId = currentProjectId();
+  if (!batchId || queueStopPending) return;
+  if (!confirm(batchStopConfirmMessage())) return;
+  queueStopPending = true;
+  renderQueueInterruptControls();
+  try {
+    const active = findActiveBatchJob(queueRuntimeJobs());
+    const response = await fetch("/api/runtime/stop-batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        batchId,
+        projectId,
+        expectedRunningPromptId: active?.promptId || null
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Interruzione batch non disponibile.");
+    setFeedback("Batch corrente interrotto. La coda multi-batch è in pausa.", "warn");
+    await fetchRuntime();
+  } catch (error) {
+    setFeedback(error.message, "error");
+  } finally {
+    queueStopPending = false;
+    renderQueueInterruptControls();
+  }
+}
+
+async function reconcileQueueSessionOutputs() {
+  const accepted = runtimeView?.acceptedJobs || [];
+  if (!accepted.length) return;
+  const historyByPromptId = {};
+  for (const job of accepted) {
+    if (!job.promptId || reconstructedPromptIds.has(job.promptId)) continue;
+    if (job.state === "completed" || job.historyState === "completed") {
+      historyByPromptId[job.promptId] = "completed";
+    }
+  }
+  const ready = selectCompletedQueueJobsForSession({
+    acceptedJobs: accepted,
+    historyByPromptId,
+    existingPromptIds: reconstructedPromptIds
+  });
+  if (!ready.length) return;
+  const records = buildQueueSessionOutputRecords(ready);
+  if (!records.length) return;
+  for (const record of records) reconstructedPromptIds.add(record.promptId);
+  upsertSessionOutputs(records, { storage: sessionStorage });
 }
 
 async function fetchRuntime() {
@@ -104,7 +267,11 @@ async function fetchRuntime() {
   }
   try {
     const response = await fetch(`/api/batch-queue/runtime?projectId=${encodeURIComponent(projectId)}`);
-    if (response.ok) runtimeView = await response.json();
+    if (response.ok) {
+      applyRuntimeView(await response.json());
+      await refreshQueueOwnership();
+      await reconcileQueueSessionOutputs();
+    }
   } catch { /* ignore */ }
   window.dispatchEvent(new CustomEvent("h3-batch-queue-runtime", { detail: runtimeView }));
   renderQueueUi();
@@ -121,13 +288,14 @@ function stopPolling() {
   pollTimer = null;
 }
 
-function mergeRuntimeEntries() {
-  if (!plan?.entries?.length) return [];
-  const live = runtimeView?.entries || [];
-  return plan.entries.map(entry => {
-    const match = live.find(item => item.queueEntryId === entry.queueEntryId);
-    return match ? { ...entry, ...match, snapshot: entry.snapshot } : entry;
-  });
+function displayEntries() {
+  if (runtimeView?.authorityPresent && runtimeView.entries?.length) {
+    return runtimeView.entries.map(entry => {
+      const local = plan?.entries?.find(item => item.queueEntryId === entry.queueEntryId);
+      return { ...entry, snapshot: local?.snapshot || entry.snapshot };
+    });
+  }
+  return plan?.entries || [];
 }
 
 function renderSummary(entries) {
@@ -155,7 +323,7 @@ function renderQueueControls(entries) {
   armBtn.hidden = armed || recovery || paused;
   armBtn.disabled = !hasQueued;
   resumeBtn.hidden = !recovery && !paused;
-  resumeBtn.disabled = !hasQueued && !recovery;
+  resumeBtn.disabled = recovery && entries.some(e => e.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED);
 
   if (policySelect && plan) {
     policySelect.value = plan.failurePolicy || BATCH_QUEUE_FAILURE_POLICY.STOP;
@@ -166,9 +334,68 @@ function renderQueueControls(entries) {
   if (banner) {
     banner.hidden = !recovery;
     banner.textContent = recovery
-      ? "CODA IN PAUSA — DIRECTOR RIAVVIATO. Il piano della coda è stato ripristinato, ma l'esecuzione automatica deve essere riattivata."
+      ? "CODA IN PAUSA — DIRECTOR RIAVVIATO. Il piano della coda è stato ripristinato, ma l'esecuzione automatica deve essere riattivata dopo aver risolto i batch in RECUPERO RICHIESTO."
       : "";
   }
+}
+
+function appendJobEditor(container, entry, jobIndex) {
+  const item = entry.snapshot?.items?.[jobIndex];
+  if (!item) return;
+  const details = document.createElement("details");
+  details.className = "batch-queue-job-editor";
+  const summary = document.createElement("summary");
+  summary.textContent = `Job ${jobIndex + 1}`;
+  details.append(summary);
+  const body = document.createElement("div");
+  body.className = "batch-queue-job-body";
+  const fields = [
+    ["prompt", "textarea"],
+    ["seed", "number"],
+    ["duration", "number"],
+    ["steps", "number"],
+    ["megapixels", "number"],
+    ["aspect", "text"]
+  ];
+  const draftItem = { ...item };
+  for (const [field, type] of fields) {
+    const label = document.createElement("label");
+    label.textContent = field;
+    const input = document.createElement(type === "textarea" ? "textarea" : "input");
+    if (type !== "textarea") input.type = type;
+    input.value = String(item[field] ?? "");
+    input.addEventListener("change", () => {
+      draftItem[field] = input.value;
+    });
+    label.append(input);
+    body.append(label);
+  }
+  const filesLabel = document.createElement("label");
+  filesLabel.textContent = "item.files (JSON)";
+  const filesInput = document.createElement("textarea");
+  filesInput.value = JSON.stringify(item.files || {}, null, 2);
+  filesInput.addEventListener("change", () => {
+    try {
+      draftItem.files = JSON.parse(filesInput.value || "{}");
+    } catch { /* ignore invalid json until save */ }
+  });
+  filesLabel.append(filesInput);
+  body.append(filesLabel);
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "secondary";
+  saveBtn.textContent = "Salva job";
+  saveBtn.addEventListener("click", () => {
+    const items = entry.snapshot.items.map((jobItem, idx) => (
+      idx === jobIndex ? { ...jobItem, ...draftItem } : jobItem
+    ));
+    void updateEntry(entry.queueEntryId, {
+      snapshot: { ...entry.snapshot, items }
+    });
+  });
+  body.append(saveBtn);
+  details.append(body);
+  container.append(details);
 }
 
 function renderEntryCard(entry, index, entries) {
@@ -183,12 +410,43 @@ function renderEntryCard(entry, index, entries) {
     : `${jobs.length} job`;
   const workflow = entry.snapshot?.source?.workflowLabel || entry.snapshot?.source?.workflowId || "—";
 
-  card.innerHTML = `
-    <div class="batch-queue-card-head">
-      <strong>${index + 1}. ${entry.name}</strong>
-      <span class="batch-queue-state">${ENTRY_STATE_LABELS[entry.state] || entry.state}</span>
-    </div>
-    <div class="batch-queue-card-meta">${jobProgress} · ${workflow}</div>`;
+  const head = document.createElement("div");
+  head.className = "batch-queue-card-head";
+  const title = document.createElement("strong");
+  title.textContent = `${index + 1}. ${entry.name}`;
+  const state = document.createElement("span");
+  state.className = "batch-queue-state";
+  state.textContent = ENTRY_STATE_LABELS[entry.state] || entry.state;
+  head.append(title, state);
+
+  const meta = document.createElement("div");
+  meta.className = "batch-queue-card-meta";
+  meta.textContent = `${jobProgress} · ${workflow}`;
+
+  const sourceMeta = document.createElement("div");
+  sourceMeta.className = "batch-queue-card-source";
+  const model = entry.snapshot?.source?.model || "—";
+  const sharedFiles = JSON.stringify(entry.snapshot?.source?.files || {});
+  sourceMeta.textContent = `Modello: ${model} · source.files: ${sharedFiles}`;
+
+  card.append(head, meta, sourceMeta);
+
+  if (entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED) {
+    const recoveryTools = document.createElement("div");
+    recoveryTools.className = "batch-queue-recovery-tools";
+    const completeBtn = document.createElement("button");
+    completeBtn.type = "button";
+    completeBtn.className = "secondary";
+    completeBtn.textContent = "Marca come completato";
+    completeBtn.addEventListener("click", () => { void resolveRecovery(entry.queueEntryId, "completed"); });
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "secondary";
+    cancelBtn.textContent = "Marca come annullato";
+    cancelBtn.addEventListener("click", () => { void resolveRecovery(entry.queueEntryId, "cancelled"); });
+    recoveryTools.append(completeBtn, cancelBtn);
+    card.append(recoveryTools);
+  }
 
   if (editable) {
     const tools = document.createElement("div");
@@ -198,28 +456,35 @@ function renderEntryCard(entry, index, entries) {
     up.className = "secondary";
     up.textContent = "↑";
     up.disabled = index === 0 || entries[index - 1]?.state !== QUEUE_ENTRY_STATE.QUEUED;
-    up.onclick = () => { void reorderEntry(index, index - 1); };
+    up.addEventListener("click", () => { void reorderEntry(index, index - 1); });
     const down = document.createElement("button");
     down.type = "button";
     down.className = "secondary";
     down.textContent = "↓";
     down.disabled = index >= entries.length - 1 || entries[index + 1]?.state !== QUEUE_ENTRY_STATE.QUEUED;
-    down.onclick = () => { void reorderEntry(index, index + 1); };
+    down.addEventListener("click", () => { void reorderEntry(index, index + 1); });
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "secondary";
     rename.textContent = "Rinomina";
-    rename.onclick = () => {
+    rename.addEventListener("click", () => {
       const next = prompt("Nome batch:", entry.name);
       if (next?.trim()) void updateEntry(entry.queueEntryId, { name: next.trim() });
-    };
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary";
     remove.textContent = "Rimuovi";
-    remove.onclick = () => { void cancelEntry(entry.queueEntryId); };
+    remove.addEventListener("click", () => { void cancelEntry(entry.queueEntryId); });
     tools.append(up, down, rename, remove);
     card.append(tools);
+
+    const editorWrap = document.createElement("div");
+    editorWrap.className = "batch-queue-entry-editor";
+    for (let jobIndex = 0; jobIndex < jobs.length; jobIndex += 1) {
+      appendJobEditor(editorWrap, entry, jobIndex);
+    }
+    card.append(editorWrap);
   }
   return card;
 }
@@ -228,7 +493,7 @@ function renderQueueUi() {
   const list = $("batchQueueList");
   const section = $("batchQueueSection");
   if (!list || !section) return;
-  const entries = mergeRuntimeEntries();
+  const entries = displayEntries();
   list.replaceChildren();
   if (!entries.length) {
     section.hidden = false;
@@ -238,12 +503,14 @@ function renderQueueUi() {
     list.append(empty);
     renderSummary([]);
     renderQueueControls([]);
+    renderQueueInterruptControls();
     return;
   }
   section.hidden = false;
   entries.forEach((entry, index) => list.append(renderEntryCard(entry, index, entries)));
   renderSummary(entries);
   renderQueueControls(entries);
+  renderQueueInterruptControls();
 }
 
 async function reorderEntry(fromIndex, toIndex) {
@@ -256,8 +523,7 @@ async function reorderEntry(fromIndex, toIndex) {
   });
   const data = await response.json();
   if (!response.ok) return setFeedback(data.error || "Riordino rifiutato.", "error");
-  runtimeView = data;
-  if (data.entries) plan = { ...plan, revision: data.revision, entries: data.entries };
+  applyRuntimeView(data);
   notifyDirty();
   renderQueueUi();
 }
@@ -272,15 +538,7 @@ async function updateEntry(queueEntryId, patch) {
   });
   const data = await response.json();
   if (!response.ok) return setFeedback(data.error || "Modifica rifiutata.", "error");
-  runtimeView = data;
-  const match = data.entries?.find(e => e.queueEntryId === queueEntryId);
-  if (match && plan) {
-    plan = {
-      ...plan,
-      revision: data.revision,
-      entries: plan.entries.map(e => e.queueEntryId === queueEntryId ? { ...e, ...match, snapshot: e.snapshot } : e)
-    };
-  }
+  applyRuntimeView(data);
   notifyDirty();
   renderQueueUi();
 }
@@ -295,8 +553,22 @@ async function cancelEntry(queueEntryId) {
   });
   const data = await response.json();
   if (!response.ok) return setFeedback(data.error || "Annullamento rifiutato.", "error");
-  runtimeView = data;
-  if (data.entries) plan = { ...plan, revision: data.revision, entries: data.entries };
+  applyRuntimeView(data);
+  notifyDirty();
+  renderQueueUi();
+}
+
+async function resolveRecovery(queueEntryId, resolution) {
+  const projectId = currentProjectId();
+  if (!projectId || !plan) return;
+  const response = await fetch("/api/batch-queue/resolve-recovery", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId, queueEntryId, resolution, expectedRevision: plan.revision })
+  });
+  const data = await response.json();
+  if (!response.ok) return setFeedback(data.error || "Risoluzione rifiutata.", "error");
+  applyRuntimeView(data);
   notifyDirty();
   renderQueueUi();
 }
@@ -334,7 +606,7 @@ async function armQueue() {
   });
   const data = await response.json();
   if (!response.ok) return setFeedback(data.error || "Avvio coda rifiutato.", "error");
-  runtimeView = data;
+  applyRuntimeView(data);
   setFeedback("Coda Batch armata. Esecuzione sequenziale avviata.", "ok");
   renderQueueUi();
   window.dispatchEvent(new CustomEvent("h3-batch-queue-armed"));
@@ -346,12 +618,15 @@ async function resumeQueue() {
   const response = await fetch("/api/batch-queue/resume", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId, plan: exportBatchQueueForProject() })
+    body: JSON.stringify({
+      projectId,
+      plan: exportBatchQueueForProject(),
+      expectedRevision: plan?.revision
+    })
   });
   const data = await response.json();
   if (!response.ok) return setFeedback(data.error || "Ripresa rifiutata.", "error");
-  runtimeView = data;
-  if (data.entries) plan = { ...plan, entries: data.entries, revision: data.revision };
+  applyRuntimeView(data);
   setFeedback("Coda ripresa.", "ok");
   renderQueueUi();
   window.dispatchEvent(new CustomEvent("h3-batch-queue-armed"));
@@ -378,6 +653,10 @@ function createUi() {
       <button type="button" id="batchQueueArm">AVVIA CODA</button>
       <button type="button" id="batchQueueResume" hidden>RIPRENDI CODA</button>
     </div>
+    <div id="batchQueueInterruptControls" class="batch-queue-interrupt-controls" hidden>
+      <button type="button" class="secondary" id="batchQueueInterruptCurrent">Interrompi job corrente</button>
+      <button type="button" class="danger" id="batchQueueInterruptAll">INTERROMPI BATCH</button>
+    </div>
     <div id="batchQueueList" class="batch-queue-list"></div>
     <p id="batchQueueFeedback" class="batch-queue-feedback"></p>`;
   mount.append(section);
@@ -390,6 +669,8 @@ function createUi() {
   });
   $("batchQueueArm")?.addEventListener("click", () => { void armQueue(); });
   $("batchQueueResume")?.addEventListener("click", () => { void resumeQueue(); });
+  $("batchQueueInterruptCurrent")?.addEventListener("click", () => { void interruptCurrentQueueBatchJob(); });
+  $("batchQueueInterruptAll")?.addEventListener("click", () => { void stopCurrentQueueBatch(); });
 }
 
 export function initBatchQueueUi({ getProjectId, onPlanDirty } = {}) {
@@ -408,3 +689,5 @@ export function bindBatchQueueProject(projectId = "") {
   void projectId;
   void fetchRuntime();
 }
+
+export { displayEntries as displayQueueEntriesForTests };

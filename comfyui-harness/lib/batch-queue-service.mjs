@@ -23,6 +23,7 @@ import {
   entryBatchTerminalFromJobs,
   isLaneSafe,
   mergeRuntimePublicView,
+  resolveCurrentJobIndex,
   selectNextQueuedEntry
 } from "./batch-queue-runtime.mjs";
 import {
@@ -32,6 +33,10 @@ import {
   executeEntryJobs,
   initEntryRuntimeJobs
 } from "./batch-queue-executor.mjs";
+import {
+  mergeIncomingPlanWithRuntime,
+  resolveRecoveryEntryInPlan
+} from "./batch-queue-reconcile.mjs";
 
 const TICK_MS = 3000;
 
@@ -68,7 +73,75 @@ export function createBatchQueueRuntimeService({
   function publicView(projectId) {
     const bucket = getBucket(projectId);
     if (!bucket) return mergeRuntimePublicView({ plan: null, runtime: null });
-    return mergeRuntimePublicView({ plan: bucket.plan, runtime: bucket.runtime });
+    syncPlanEntryStatesFromRuntime(bucket);
+    return mergeRuntimePublicView({
+      plan: bucket.plan,
+      runtime: enrichRuntimeForPublic(bucket)
+    });
+  }
+
+  function enrichRuntimeForPublic(bucket) {
+    if (!bucket?.runtime) return null;
+    const runtime = bucket.runtime;
+    const currentEntry = bucket.plan?.entries?.find(entry => entry.queueEntryId === runtime.currentEntryId);
+    const entryJobs = runtime.entryJobs || [];
+    const acceptedJobs = buildAcceptedJobsList(bucket);
+    return {
+      ...runtime,
+      entries: bucket.plan?.entries,
+      entryJobs,
+      acceptedJobs,
+      currentEntryName: currentEntry?.name || null,
+      currentEntryOrder: currentEntry?.order ?? null
+    };
+  }
+
+  function buildAcceptedJobsList(bucket) {
+    const out = [];
+    const runtime = bucket?.runtime;
+    if (!runtime || !bucket.plan) return out;
+    const pushJob = (entry, job, historyState = "pending") => {
+      if (!job?.promptId) return;
+      out.push({
+        queueRunId: runtime.queueRunId,
+        queueEntryId: entry.queueEntryId,
+        queueBatchName: entry.name,
+        queueJobId: job.queueJobId,
+        batchId: entry.queueEntryId === runtime.currentEntryId ? runtime.currentBatchId : null,
+        jobIndex: job.index,
+        promptId: job.promptId,
+        state: job.state,
+        historyState,
+        source: "batch",
+        item: job.item,
+        workflowId: entry.snapshot?.source?.workflowId || "",
+        workflowLabel: entry.snapshot?.source?.workflowLabel || "",
+        model: entry.snapshot?.source?.model || ""
+      });
+    };
+    if (runtime.entryJobs?.length && runtime.currentEntryId) {
+      const entry = bucket.plan.entries.find(e => e.queueEntryId === runtime.currentEntryId);
+      for (const job of runtime.entryJobs) pushJob(entry, job, job.state);
+    }
+    for (const [entryId, jobs] of Object.entries(runtime.entryStates || {})) {
+      const entry = bucket.plan.entries.find(e => e.queueEntryId === entryId);
+      if (!entry || entryId === runtime.currentEntryId) continue;
+      for (const job of jobs) pushJob(entry, job, job.state);
+    }
+    return out;
+  }
+
+  function syncPlanEntryStatesFromRuntime(bucket) {
+    if (!bucket?.runtime?.currentEntryId || !bucket.plan) return;
+    const entryIndex = bucket.plan.entries.findIndex(entry => entry.queueEntryId === bucket.runtime.currentEntryId);
+    if (entryIndex < 0) return;
+    const entry = bucket.plan.entries[entryIndex];
+    if (entry.state === QUEUE_ENTRY_STATE.SUBMITTING || entry.state === QUEUE_ENTRY_STATE.RUNNING) {
+      return;
+    }
+    if (bucket.runtime.entryJobs?.length) {
+      bucket.plan.entries[entryIndex] = { ...entry, state: QUEUE_ENTRY_STATE.RUNNING, everClaimed: true };
+    }
   }
 
   function syncEntryStatesFromRuntime(bucket) {
@@ -96,6 +169,9 @@ export function createBatchQueueRuntimeService({
     let jobs = applyHistoryStates(runtime.entryJobs, historyByPromptId);
     jobs = applyActivePrompt(jobs, activePromptId);
     runtime.entryJobs = jobs;
+    runtime.currentJobIndex = resolveCurrentJobIndex(jobs, activePromptId);
+    runtime.entryStates = runtime.entryStates || {};
+    runtime.entryStates[runtime.currentEntryId] = jobs;
   }
 
   async function finalizeCurrentEntry(bucket, { pauseRequested = false } = {}) {
@@ -105,12 +181,22 @@ export function createBatchQueueRuntimeService({
     const entryIndex = bucket.plan.entries.findIndex(entry => entry.queueEntryId === entryId);
     if (entryIndex < 0) return;
     const jobs = runtime.entryJobs || [];
-    const entryState = entryBatchTerminalFromJobs(jobs);
-    bucket.plan.entries[entryIndex] = { ...bucket.plan.entries[entryIndex], state: entryState };
+    const submitFailed = Boolean(runtime.lastSubmitFailure);
+    const userCancelled = Boolean(runtime.userCancelledCurrentEntry);
+    const entryState = entryBatchTerminalFromJobs(jobs, { submitFailed, userCancelled });
+    bucket.plan.entries[entryIndex] = {
+      ...bucket.plan.entries[entryIndex],
+      state: entryState,
+      everClaimed: true
+    };
+    runtime.entryStates = runtime.entryStates || {};
+    runtime.entryStates[entryId] = jobs;
     runtime.currentEntryId = null;
     runtime.currentBatchId = null;
     runtime.currentJobIndex = null;
     runtime.entryJobs = null;
+    runtime.lastSubmitFailure = null;
+    runtime.userCancelledCurrentEntry = false;
     runtime.overallState = decideQueueAfterEntryTerminal({
       failurePolicy: bucket.plan.failurePolicy,
       entryState,
@@ -144,7 +230,7 @@ export function createBatchQueueRuntimeService({
     bucket.runtime.overallState = QUEUE_OVERALL_STATE.RUNNING;
     log("batch_queue_entry_claim", { entry_id: next.queueEntryId.slice(0, 8), batch_id: batchId.slice(0, 8) });
 
-    const { jobs: submittedJobs } = await executeEntryJobs({
+    const { jobs: submittedJobs, submitResult } = await executeEntryJobs({
       entry: claim.entry,
       jobs,
       submittedMap: bucket.runtime.submittedMap,
@@ -172,7 +258,32 @@ export function createBatchQueueRuntimeService({
       }
     });
     bucket.runtime.entryJobs = submittedJobs;
-    bucket.plan.entries[entryIndex] = { ...bucket.plan.entries[entryIndex], state: QUEUE_ENTRY_STATE.RUNNING };
+    bucket.runtime.lastSubmitFailure = submitResult.failure || null;
+    if (submitResult.failure && !submitResult.accepted.length) {
+      bucket.plan.entries[entryIndex] = {
+        ...bucket.plan.entries[entryIndex],
+        state: QUEUE_ENTRY_STATE.FAILED,
+        everClaimed: true
+      };
+      bucket.runtime.entryStates = bucket.runtime.entryStates || {};
+      bucket.runtime.entryStates[next.queueEntryId] = submittedJobs;
+      bucket.runtime.currentEntryId = null;
+      bucket.runtime.currentBatchId = null;
+      bucket.runtime.currentJobIndex = null;
+      bucket.runtime.entryJobs = null;
+      bucket.runtime.overallState = decideQueueAfterEntryTerminal({
+        failurePolicy: bucket.plan.failurePolicy,
+        entryState: QUEUE_ENTRY_STATE.FAILED,
+        pauseRequested: false
+      });
+      return;
+    }
+    bucket.plan.entries[entryIndex] = {
+      ...bucket.plan.entries[entryIndex],
+      state: QUEUE_ENTRY_STATE.RUNNING,
+      everClaimed: true
+    };
+    bucket.runtime.currentJobIndex = resolveCurrentJobIndex(submittedJobs, null);
   }
 
   async function tickProject(projectId) {
@@ -215,21 +326,27 @@ export function createBatchQueueRuntimeService({
   }
 
   return {
-    syncPlan({ projectId, plan }) {
+    syncPlan({ projectId, plan, expectedRevision = null }) {
       const bucket = getBucket(projectId);
       const normalized = normalizeBatchQueuePlan(plan);
       const capacity = normalized ? validateQueueCapacity(normalized.entries) : { ok: true };
       if (!capacity.ok) return capacity;
       if (bucket.runtime?.queueRunId) {
-        bucket.plan = normalized;
-        return { ok: true, view: publicView(projectId) };
+        const merged = mergeIncomingPlanWithRuntime({
+          serverPlan: bucket.plan,
+          incomingPlan: normalized,
+          expectedRevision
+        });
+        if (!merged.ok) return merged;
+        bucket.plan = merged.plan;
+        return { ok: true, view: publicView(projectId), merged: merged.merged };
       }
       if (normalized) {
         bucket.plan = {
           ...normalized,
           entries: normalized.entries.map(entry => (
             entry.state === QUEUE_ENTRY_STATE.SUBMITTING || entry.state === QUEUE_ENTRY_STATE.RUNNING
-              ? { ...entry, state: QUEUE_ENTRY_STATE.RECOVERY_REQUIRED }
+              ? { ...entry, state: QUEUE_ENTRY_STATE.RECOVERY_REQUIRED, everClaimed: true }
               : entry
           ))
         };
@@ -293,22 +410,56 @@ export function createBatchQueueRuntimeService({
       }
     },
 
-    async resume({ projectId, plan }) {
+    async resume({ projectId, plan, expectedRevision = null }) {
       const bucket = getBucket(projectId);
       if (bucket.runtime?.queueRunId && bucket.runtime.armed) {
+        if (bucket.runtime.overallState === QUEUE_OVERALL_STATE.PAUSED
+          || bucket.runtime.overallState === QUEUE_OVERALL_STATE.PAUSED_FAILURE) {
+          bucket.runtime.overallState = QUEUE_OVERALL_STATE.WAITING;
+          bucket.runtime.pauseRequested = false;
+          await tickProject(projectId);
+          return { ok: true, view: publicView(projectId) };
+        }
         return { ok: true, status: "already-armed", view: publicView(projectId) };
       }
-      const normalized = normalizeBatchQueuePlan(plan);
-      const resetEntries = (normalized?.entries || []).map(entry => (
-        entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED
-          ? { ...entry, state: QUEUE_ENTRY_STATE.QUEUED }
-          : entry
-      ));
+      const sync = this.syncPlan({ projectId, plan, expectedRevision });
+      if (!sync.ok) return sync;
+      const normalized = bucket.plan;
+      const hasRecovery = normalized?.entries?.some(entry => entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED);
+      if (hasRecovery) {
+        bucket.runtime = bucket.runtime || {};
+        bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+        return {
+          ok: false,
+          code: "recovery-unresolved",
+          error: "Risolvi i batch in RECUPERO RICHIESTO prima di riprendere la coda.",
+          view: publicView(projectId)
+        };
+      }
+      const hasExecutable = normalized?.entries?.some(entry => entry.state === QUEUE_ENTRY_STATE.QUEUED);
+      if (!hasExecutable) {
+        return { ok: false, code: "nothing-to-run", error: "Nessun batch eseguibile in coda." };
+      }
       return this.arm({
         projectId,
-        plan: normalized ? { ...normalized, entries: resetEntries } : plan,
+        plan: normalized,
         failurePolicy: normalized?.failurePolicy
       });
+    },
+
+    resolveRecoveryEntry({ projectId, queueEntryId, resolution, expectedRevision }) {
+      const bucket = getBucket(projectId);
+      if (!bucket?.plan) return { ok: false, code: "no-plan", error: "Coda non presente." };
+      if (bucket.runtime?.currentEntryId === queueEntryId) {
+        return { ok: false, code: "immutable", error: "Batch in esecuzione." };
+      }
+      if (Number(expectedRevision) !== Number(bucket.plan.revision)) {
+        return { ok: false, code: "stale-revision", error: "Revisione coda non aggiornata." };
+      }
+      const result = resolveRecoveryEntryInPlan(bucket.plan, queueEntryId, resolution);
+      if (!result.ok) return result;
+      bucket.plan = result.plan;
+      return { ok: true, view: publicView(projectId) };
     },
 
     updateEntry({ projectId, queueEntryId, patch, expectedRevision }) {
@@ -362,7 +513,26 @@ export function createBatchQueueRuntimeService({
       return { ok: true, view: publicView(projectId) };
     },
 
-    onFullBatchStop(projectId) {
+    onFullBatchStop(projectId, { batchId = null } = {}) {
+      const bucket = getBucket(projectId);
+      if (bucket?.runtime?.currentEntryId && bucket.plan) {
+        const entryId = bucket.runtime.currentEntryId;
+        if (!batchId || bucket.runtime.currentBatchId === batchId) {
+          const entryIndex = bucket.plan.entries.findIndex(entry => entry.queueEntryId === entryId);
+          if (entryIndex >= 0) {
+            bucket.plan.entries[entryIndex] = {
+              ...bucket.plan.entries[entryIndex],
+              state: QUEUE_ENTRY_STATE.CANCELLED,
+              everClaimed: true
+            };
+          }
+          bucket.runtime.userCancelledCurrentEntry = true;
+          bucket.runtime.currentEntryId = null;
+          bucket.runtime.currentBatchId = null;
+          bucket.runtime.currentJobIndex = null;
+          bucket.runtime.entryJobs = null;
+        }
+      }
       return this.pauseQueue({ projectId, reason: "full-batch-stop" });
     },
 

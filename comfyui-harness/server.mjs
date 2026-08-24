@@ -315,7 +315,7 @@ const server = http.createServer(async (req, res) => {
           batchId: input.batchId,
           expectedRunningPromptId: input.expectedRunningPromptId
         });
-        if (input.projectId) batchQueueRuntime.onFullBatchStop(input.projectId);
+        if (input.projectId) batchQueueRuntime.onFullBatchStop(input.projectId, { batchId: input.batchId });
         return json(res, 200, result);
       } catch (error) {
         logger.error("batch_stop_rejected", { code: error.code, reason: error.message });
@@ -328,7 +328,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/batch-queue/sync") {
       const input = await readJsonBody(req);
-      const result = batchQueueRuntime.syncPlan({ projectId: input.projectId, plan: input.plan });
+      const result = batchQueueRuntime.syncPlan({
+        projectId: input.projectId,
+        plan: input.plan,
+        expectedRevision: input.expectedRevision
+      });
       if (!result.ok) return json(res, 409, result);
       return json(res, 200, result.view);
     }
@@ -344,7 +348,17 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/batch-queue/resume") {
       const input = await readJsonBody(req);
-      const result = await batchQueueRuntime.resume({ projectId: input.projectId, plan: input.plan });
+      const result = await batchQueueRuntime.resume({
+        projectId: input.projectId,
+        plan: input.plan,
+        expectedRevision: input.expectedRevision
+      });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/resolve-recovery") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.resolveRecoveryEntry(input);
       if (!result.ok) return json(res, 409, result);
       return json(res, 200, result.view);
     }

@@ -61,6 +61,23 @@ export function isTerminalQueueEntryState(state) {
   ].includes(String(state || ""));
 }
 
+export function persistableQueueEntryState(state) {
+  if (state === QUEUE_ENTRY_STATE.SUBMITTING || state === QUEUE_ENTRY_STATE.RUNNING) {
+    return QUEUE_ENTRY_STATE.RECOVERY_REQUIRED;
+  }
+  return String(state || QUEUE_ENTRY_STATE.QUEUED);
+}
+
+export function entryEverClaimed(state) {
+  return [
+    QUEUE_ENTRY_STATE.SUBMITTING,
+    QUEUE_ENTRY_STATE.RUNNING,
+    QUEUE_ENTRY_STATE.COMPLETED,
+    QUEUE_ENTRY_STATE.FAILED,
+    QUEUE_ENTRY_STATE.RECOVERY_REQUIRED
+  ].includes(String(state || ""));
+}
+
 export function defaultQueueEntryName(order) {
   return `Batch ${String(order).padStart(2, "0")}`;
 }
@@ -125,6 +142,7 @@ export function normalizeQueueEntry(raw = {}, index = 0) {
     name: String(entry.name || defaultQueueEntryName(index + 1)),
     order: Number(entry.order) || index + 1,
     createdAt: Number(entry.createdAt) || Date.now(),
+    everClaimed: Boolean(entry.everClaimed) || entryEverClaimed(entry.state),
     state: isTerminalQueueEntryState(entry.state) || isActiveQueueEntryState(entry.state)
       ? String(entry.state)
       : QUEUE_ENTRY_STATE.QUEUED,
@@ -167,7 +185,8 @@ export function serializeBatchQueuePlan(plan, { bumpRevision = false } = {}) {
       name: entry.name,
       order: entry.order,
       createdAt: entry.createdAt,
-      state: isActiveQueueEntryState(entry.state) ? QUEUE_ENTRY_STATE.QUEUED : entry.state,
+      state: persistableQueueEntryState(entry.state),
+      everClaimed: entryEverClaimed(entry.state) || Boolean(entry.everClaimed),
       snapshot: serializeBatchDraft({
         source: entry.snapshot.source,
         items: entry.snapshot.items.map(({ queueJobId, ...item }) => item),

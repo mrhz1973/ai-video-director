@@ -125,7 +125,8 @@ import {
   importBatchQueueFromProject,
   initBatchQueueUi,
   isBatchQueueArmed,
-  syncBatchQueuePlanToServer
+  syncBatchQueuePlanToServer,
+  getBatchQueueRuntimeView
 } from "./batch-queue-ui.mjs";
 import { showAppNotice } from "./notify.mjs";
 import {
@@ -1664,6 +1665,7 @@ async function loadProjectById(id) {
 
     const batchResult = await restoreProjectBatch(normalized);
     importBatchQueueFromProject(normalized.batchQueue || null);
+    void getBatchQueueRuntimeView();
     void syncBatchQueuePlanToServer();
     const missingAssetCount = Object.entries(normalized.files || {}).filter(([, filename]) => {
       if (!filename) return false;

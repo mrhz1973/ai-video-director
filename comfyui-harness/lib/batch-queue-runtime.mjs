@@ -16,9 +16,12 @@ export function isLaneSafe({ running = 0, pending = 0 } = {}) {
 }
 
 export function selectNextQueuedEntry(entries = []) {
-  return [...entries]
-    .sort((a, b) => a.order - b.order)
-    .find(entry => entry.state === QUEUE_ENTRY_STATE.QUEUED) || null;
+  const sorted = [...entries].sort((a, b) => a.order - b.order);
+  for (const entry of sorted) {
+    if (entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED) return null;
+    if (entry.state === QUEUE_ENTRY_STATE.QUEUED) return entry;
+  }
+  return null;
 }
 
 export function claimEntryAtomic(entry) {
@@ -31,19 +34,37 @@ export function claimEntryAtomic(entry) {
   };
 }
 
-export function entryBatchTerminalFromJobs(jobs = []) {
+export function entryBatchTerminalFromJobs(jobs = [], {
+  submitFailed = false,
+  userCancelled = false
+} = {}) {
+  if (submitFailed) return QUEUE_ENTRY_STATE.FAILED;
   if (!jobs.length) return QUEUE_ENTRY_STATE.FAILED;
+  if (userCancelled) return QUEUE_ENTRY_STATE.CANCELLED;
   const allCompleted = jobs.every(job => job.state === "completed");
   if (allCompleted) return QUEUE_ENTRY_STATE.COMPLETED;
   const hasError = jobs.some(job => job.state === "error");
   const hasInterrupted = jobs.some(job => job.state === "interrupted");
   const allCancelled = jobs.every(job => job.state === "cancelled" || job.state === "not-submitted");
-  if (allCancelled) return QUEUE_ENTRY_STATE.CANCELLED;
+  const anyAccepted = jobs.some(job => job.promptId);
+  if (allCancelled && !anyAccepted) return QUEUE_ENTRY_STATE.CANCELLED;
   if (hasError) return QUEUE_ENTRY_STATE.FAILED;
   if (hasInterrupted && jobs.every(job => ["completed", "interrupted", "cancelled", "not-submitted"].includes(job.state))) {
     return QUEUE_ENTRY_STATE.COMPLETED;
   }
   return QUEUE_ENTRY_STATE.FAILED;
+}
+
+export function resolveCurrentJobIndex(jobs = [], activePromptId = null) {
+  if (!jobs.length) return null;
+  if (activePromptId) {
+    const idx = jobs.findIndex(job => job.promptId === activePromptId);
+    if (idx >= 0) return idx;
+  }
+  const runningIdx = jobs.findIndex(job => job.state === "running");
+  if (runningIdx >= 0) return runningIdx;
+  const pendingIdx = jobs.findIndex(job => job.state === "pending" && job.promptId);
+  return pendingIdx >= 0 ? pendingIdx : null;
 }
 
 export function decideQueueAfterEntryTerminal({
@@ -123,6 +144,10 @@ export function mergeRuntimePublicView({
     currentEntryId: runtime?.currentEntryId || null,
     currentBatchId: runtime?.currentBatchId || null,
     currentJobIndex: runtime?.currentJobIndex ?? null,
+    currentEntryName: runtime?.currentEntryName || null,
+    currentEntryOrder: runtime?.currentEntryOrder ?? null,
+    entryJobs: runtime?.entryJobs || [],
+    acceptedJobs: runtime?.acceptedJobs || [],
     entries,
     summary,
     recoveryMessage: runtime?.overallState === QUEUE_OVERALL_STATE.RECOVERY_REQUIRED
