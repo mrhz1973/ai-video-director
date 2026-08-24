@@ -276,7 +276,8 @@ export function createQueueCoordinator({ submit } = {}) {
         ? {
           ownerId: String(next.ownerId),
           kind: String(next.kind),
-          leaseToken: String(next.leaseToken)
+          leaseToken: String(next.leaseToken),
+          ...(next.pageSessionId ? { pageSessionId: String(next.pageSessionId) } : {})
         }
         : null;
       return laneReservation ? { ...laneReservation } : null;

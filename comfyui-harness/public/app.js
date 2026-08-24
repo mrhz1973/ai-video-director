@@ -72,9 +72,12 @@ import {
 import {
   EXECUTION_LANE_KIND,
   bindExecutionLaneUnloadRelease,
+  executionLaneSubmitHeaders,
+  getPageSessionId,
   reconcileExecutionLaneAfterReload,
   releaseExecutionLane,
   reserveExecutionLane,
+  setPageSessionId,
   startExecutionLaneHeartbeat,
   stopExecutionLaneHeartbeat
 } from "./execution-lane-client.mjs";
@@ -159,12 +162,10 @@ let coordinator;
 coordinator = setSharedCoordinator(createQueueCoordinator({
   async submit(payload) {
     const lane = coordinator.getLaneReservation?.();
-    const headers = { "content-type": "application/json" };
-    if (lane?.ownerId) {
-      headers["x-h3-lane-owner"] = lane.ownerId;
-      headers["x-h3-lane-kind"] = lane.kind;
-      if (lane.leaseToken) headers["x-h3-lane-lease"] = lane.leaseToken;
-    }
+    const headers = {
+      "content-type": "application/json",
+      ...executionLaneSubmitHeaders(lane)
+    };
     const response = await fetch("/api/queue", {
       method: "POST",
       headers,
@@ -801,7 +802,8 @@ async function submitSingleRender({ action }) {
     coordinator.setLaneReservation?.({
       ownerId,
       kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
-      leaseToken: reserved.leaseToken
+      leaseToken: reserved.leaseToken,
+      pageSessionId: getPageSessionId()
     });
     startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
     return armed;
@@ -817,7 +819,8 @@ async function submitSingleRender({ action }) {
   coordinator.setLaneReservation?.({
     ownerId,
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
-    leaseToken: reserved.leaseToken
+    leaseToken: reserved.leaseToken,
+    pageSessionId: getPageSessionId()
   });
   try {
     return await coordinator.tryImmediateGenerate(queueBody);
@@ -1081,6 +1084,12 @@ async function handleMessage(event) {
 function connect() {
   events?.close();
   events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
+  events.addEventListener("page-session", event => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data?.pageSessionId) setPageSessionId(data.pageSessionId);
+    } catch { /* ignore */ }
+  });
   events.addEventListener("connection", event => {
     const state = JSON.parse(event.data).state;
     applyConnection(state);

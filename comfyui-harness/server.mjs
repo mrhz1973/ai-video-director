@@ -37,6 +37,7 @@ import { createRuntimeOwnershipRegistry } from "./lib/runtime-ownership.mjs";
 import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
 import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
 import { createExecutionLaneRegistry } from "./lib/execution-lane.mjs";
+import { createPageSessionRegistry } from "./lib/page-session.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
@@ -51,7 +52,8 @@ const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
-const executionLane = createExecutionLaneRegistry();
+const pageSessions = createPageSessionRegistry();
+const executionLane = createExecutionLaneRegistry({ pageSessions });
 const runtimeControl = createRuntimeControlService({
   comfyUrl: comfy,
   ownershipRegistry: runtimeOwnership,
@@ -354,7 +356,8 @@ const server = http.createServer(async (req, res) => {
       const result = executionLane.reserve({
         kind: input.kind,
         ownerId: input.ownerId,
-        projectId: input.projectId
+        projectId: input.projectId,
+        pageSessionId: input.pageSessionId
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -363,7 +366,8 @@ const server = http.createServer(async (req, res) => {
       const result = executionLane.release({
         ownerId: input.ownerId,
         kind: input.kind,
-        leaseToken: input.leaseToken
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -372,7 +376,8 @@ const server = http.createServer(async (req, res) => {
       const result = executionLane.transferKind({
         ownerId: input.ownerId,
         kind: input.kind,
-        leaseToken: input.leaseToken
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -380,7 +385,8 @@ const server = http.createServer(async (req, res) => {
       const input = await readJsonBody(req);
       const result = executionLane.heartbeat({
         ownerId: input.ownerId,
-        leaseToken: input.leaseToken
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -502,8 +508,11 @@ const server = http.createServer(async (req, res) => {
       const clientId = url.searchParams.get("clientId");
       if (!clientId) return json(res, 400, { error: "Missing clientId" });
       res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
+      // Server-issued page session: never accept client-supplied pageSessionId.
+      const pageSessionId = pageSessions.open();
       res.write(": connected\n\n");
-      logger.info("sse_bridge_open", { client_id: shortId(clientId) });
+      res.write(`event: page-session\ndata: ${JSON.stringify({ pageSessionId })}\n\n`);
+      logger.info("sse_bridge_open", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
       const upstream = new WebSocket(`${comfy.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`);
       const sendEvent = (event, data) => { if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
       const subscribeLogs = async enabled => {
@@ -523,17 +532,18 @@ const server = http.createServer(async (req, res) => {
       });
       upstream.addEventListener("message", event => { if (typeof event.data === "string" && !res.destroyed) res.write(`data: ${event.data}\n\n`); });
       upstream.addEventListener("close", () => {
-        logger.info("sse_bridge_close", { client_id: shortId(clientId) });
+        logger.info("sse_bridge_close", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
         subscribeLogs(false);
         sendEvent("connection", { state: "closed" });
       });
       upstream.addEventListener("error", () => {
-        logger.error("sse_bridge_error", { client_id: shortId(clientId) });
+        logger.error("sse_bridge_error", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
         sendEvent("connection", { state: "error" });
       });
       const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": heartbeat\n\n"); }, 15000);
       req.on("close", () => {
         clearInterval(heartbeat);
+        pageSessions.close(pageSessionId);
         subscribeLogs(false);
         if (upstream.readyState < 2) upstream.close();
       });
@@ -581,10 +591,12 @@ const server = http.createServer(async (req, res) => {
       const laneOwner = String(req.headers["x-h3-lane-owner"] || "").trim();
       const laneKind = String(req.headers["x-h3-lane-kind"] || "").trim() || null;
       const laneLease = String(req.headers["x-h3-lane-lease"] || "").trim() || null;
+      const lanePageSession = String(req.headers["x-h3-page-session"] || "").trim() || null;
       const laneGate = executionLane.assertSubmitAllowed({
         ownerId: laneOwner || null,
         kind: laneKind,
-        leaseToken: laneLease
+        leaseToken: laneLease,
+        pageSessionId: lanePageSession
       });
       if (!laneGate.ok) {
         logger.error("queue_rejected", { reason: "execution_lane", code: laneGate.code });

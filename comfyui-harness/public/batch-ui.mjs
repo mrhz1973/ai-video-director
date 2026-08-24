@@ -35,6 +35,8 @@ import {
 } from "./queue-coordinator.mjs";
 import {
   EXECUTION_LANE_KIND,
+  executionLaneSubmitHeaders,
+  getPageSessionId,
   releaseExecutionLane,
   reserveExecutionLane,
   startExecutionLaneHeartbeat,
@@ -839,7 +841,8 @@ async function runSequentialBatch(snapshot) {
     lane = {
       ownerId: lane.ownerId,
       kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
-      leaseToken: transferred.leaseToken || lane.leaseToken
+      leaseToken: transferred.leaseToken || lane.leaseToken,
+      pageSessionId: getPageSessionId()
     };
     coord?.setLaneReservation?.(lane);
   } else if (!lane || lane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
@@ -850,7 +853,12 @@ async function runSequentialBatch(snapshot) {
       projectId: null
     });
     if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
-    lane = { ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH, leaseToken: reserved.leaseToken };
+    lane = {
+      ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: reserved.leaseToken,
+      pageSessionId: getPageSessionId()
+    };
     coord?.setLaneReservation?.(lane);
   }
 
@@ -869,16 +877,7 @@ async function runSequentialBatch(snapshot) {
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
     const snapshotItems = items.map(item => cloneBatchItemSnapshot(item));
-    const laneHeaders = () => {
-      const current = coord?.getLaneReservation?.();
-      if (!current) return {};
-      const headers = {
-        "x-h3-lane-owner": current.ownerId,
-        "x-h3-lane-kind": current.kind
-      };
-      if (current.leaseToken) headers["x-h3-lane-lease"] = current.leaseToken;
-      return headers;
-    };
+    const laneHeaders = () => executionLaneSubmitHeaders(coord?.getLaneReservation?.());
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
       const response = await fetch("/api/queue", {
@@ -1007,7 +1006,8 @@ async function queueBatch() {
       coord.setLaneReservation?.({
         ownerId,
         kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
-        leaseToken: reserved.leaseToken
+        leaseToken: reserved.leaseToken,
+        pageSessionId: getPageSessionId()
       });
       startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
       setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");

@@ -1,5 +1,8 @@
 /**
  * Browser client for server in-memory execution-lane reservation (Issue #47).
+ *
+ * pageSessionId is memory-only (from SSE `page-session` event). Never treat
+ * sessionStorage-copied credentials as sufficient for destructive lane ops.
  */
 
 import { EXECUTION_LANE_KIND, isFutureExecutionLaneKind } from "../lib/execution-lane.mjs";
@@ -7,6 +10,24 @@ import { EXECUTION_LANE_KIND, isFutureExecutionLaneKind } from "../lib/execution
 export { EXECUTION_LANE_KIND, isFutureExecutionLaneKind };
 
 const SESSION_LANE_KEY = "h3ExecutionLane";
+
+/** @type {string|null} Server-issued SSE page session — memory only. */
+let memoryPageSessionId = null;
+
+export function getPageSessionId() {
+  return memoryPageSessionId;
+}
+
+/** Called when SSE issues a fresh page-session event. Never load from storage. */
+export function setPageSessionId(pageSessionId) {
+  const next = pageSessionId == null ? null : String(pageSessionId).trim() || null;
+  memoryPageSessionId = next;
+  return memoryPageSessionId;
+}
+
+export function clearPageSessionId() {
+  memoryPageSessionId = null;
+}
 
 export function readStoredExecutionLane(storage = sessionStorage) {
   try {
@@ -29,6 +50,7 @@ export function writeStoredExecutionLane(lane, storage = sessionStorage) {
     storage.removeItem(SESSION_LANE_KEY);
     return;
   }
+  // Intentionally omit pageSessionId — it must not travel via copied storage.
   storage.setItem(SESSION_LANE_KEY, JSON.stringify({
     ownerId: String(lane.ownerId),
     kind: String(lane.kind),
@@ -40,11 +62,16 @@ export function clearStoredExecutionLane(storage = sessionStorage) {
   storage.removeItem(SESSION_LANE_KEY);
 }
 
+function withPageSession(body = {}) {
+  const pageSessionId = getPageSessionId();
+  return pageSessionId ? { ...body, pageSessionId } : { ...body };
+}
+
 export async function reserveExecutionLane({ kind, ownerId, projectId = null } = {}) {
   const response = await fetch("/api/execution-lane/reserve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, ownerId, projectId })
+    body: JSON.stringify(withPageSession({ kind, ownerId, projectId }))
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -62,15 +89,27 @@ export async function reserveExecutionLane({ kind, ownerId, projectId = null } =
     ok: true,
     reservation: data.reservation || null,
     leaseToken,
+    pageSessionId: getPageSessionId(),
     status: data.status
   };
 }
 
-export async function releaseExecutionLane({ ownerId, kind = null, leaseToken = null } = {}) {
+export async function releaseExecutionLane({
+  ownerId,
+  kind = null,
+  leaseToken = null,
+  pageSessionId = null
+} = {}) {
+  const body = {
+    ownerId,
+    kind,
+    leaseToken,
+    pageSessionId: pageSessionId != null ? pageSessionId : getPageSessionId()
+  };
   const response = await fetch("/api/execution-lane/release", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId, kind, leaseToken })
+    body: JSON.stringify(body)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -86,11 +125,22 @@ export async function releaseExecutionLane({ ownerId, kind = null, leaseToken = 
   return { ok: true, status: data.status || "released" };
 }
 
-export async function transferExecutionLaneKind({ ownerId, kind, leaseToken = null } = {}) {
+export async function transferExecutionLaneKind({
+  ownerId,
+  kind,
+  leaseToken = null,
+  pageSessionId = null
+} = {}) {
+  const body = {
+    ownerId,
+    kind,
+    leaseToken,
+    pageSessionId: pageSessionId != null ? pageSessionId : getPageSessionId()
+  };
   const response = await fetch("/api/execution-lane/transfer", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId, kind, leaseToken })
+    body: JSON.stringify(body)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -106,11 +156,20 @@ export async function transferExecutionLaneKind({ ownerId, kind, leaseToken = nu
   return { ok: true, reservation: data.reservation || null, leaseToken: nextLease };
 }
 
-export async function heartbeatExecutionLane({ ownerId, leaseToken = null } = {}) {
+export async function heartbeatExecutionLane({
+  ownerId,
+  leaseToken = null,
+  pageSessionId = null
+} = {}) {
+  const body = {
+    ownerId,
+    leaseToken,
+    pageSessionId: pageSessionId != null ? pageSessionId : getPageSessionId()
+  };
   const response = await fetch("/api/execution-lane/heartbeat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId, leaseToken })
+    body: JSON.stringify(body)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -124,7 +183,7 @@ export async function heartbeatExecutionLane({ ownerId, leaseToken = null } = {}
   return { ok: true, reservation: data.reservation || null };
 }
 
-/** Reclaim uses server-authoritative stale policy only — no client staleAfterMs. */
+/** Reclaim uses server connection-loss policy only — no client staleAfterMs. */
 export async function reclaimStaleExecutionLane({ requesterId = null } = {}) {
   const response = await fetch("/api/execution-lane/reclaim-stale", {
     method: "POST",
@@ -152,9 +211,9 @@ export async function getExecutionLane() {
 }
 
 /**
- * On reload: local future intent is gone by design. Release any stored future
- * reservation for this tab so server authority cannot remain orphaned.
- * Does not restore execution intent.
+ * On reload: local future intent is gone by design.
+ * Attempt release only with the live memory pageSession (not storage-copied alone).
+ * Does not restore execution intent. Orphans clear via SSE disconnect + reclaim.
  */
 export async function reconcileExecutionLaneAfterReload({
   hasLocalFutureIntent = false,
@@ -169,9 +228,20 @@ export async function reconcileExecutionLaneAfterReload({
     clearStoredExecutionLane(storage);
     return { ok: true, status: "ignored-kind", stored };
   }
-  const released = await releaseExecutionLane(stored);
+  const pageSessionId = getPageSessionId();
+  if (!pageSessionId) {
+    // No live page session yet — cannot authorize release with copied storage alone.
+    clearStoredExecutionLane(storage);
+    return { ok: true, status: "cleared-local-await-session", stored };
+  }
+  const released = await releaseExecutionLane({ ...stored, pageSessionId });
   clearStoredExecutionLane(storage);
-  return { ok: true, status: "released-orphan", released, stored };
+  return {
+    ok: true,
+    status: released.ok ? "released-orphan" : "cleared-local-only",
+    released,
+    stored
+  };
 }
 
 let heartbeatTimer = null;
@@ -179,7 +249,13 @@ let heartbeatTimer = null;
 export function startExecutionLaneHeartbeat(ownerId, { intervalMs = 10_000, leaseToken = null } = {}) {
   stopExecutionLaneHeartbeat();
   if (!ownerId || !leaseToken) return;
-  const tick = () => { void heartbeatExecutionLane({ ownerId, leaseToken }); };
+  const tick = () => {
+    void heartbeatExecutionLane({
+      ownerId,
+      leaseToken,
+      pageSessionId: getPageSessionId()
+    });
+  };
   tick();
   heartbeatTimer = setInterval(tick, intervalMs);
   if (heartbeatTimer.unref) heartbeatTimer.unref();
@@ -194,9 +270,10 @@ export function stopExecutionLaneHeartbeat() {
 export function bindExecutionLaneUnloadRelease() {
   const handler = () => {
     const stored = readStoredExecutionLane();
-    if (!stored || !isFutureExecutionLaneKind(stored.kind)) return;
+    const pageSessionId = getPageSessionId();
+    if (!stored || !pageSessionId || !isFutureExecutionLaneKind(stored.kind)) return;
     try {
-      const body = JSON.stringify(stored);
+      const body = JSON.stringify({ ...stored, pageSessionId });
       if (navigator.sendBeacon) {
         navigator.sendBeacon("/api/execution-lane/release", new Blob([body], { type: "application/json" }));
       }
@@ -204,6 +281,20 @@ export function bindExecutionLaneUnloadRelease() {
   };
   window.addEventListener("pagehide", handler);
   return () => window.removeEventListener("pagehide", handler);
+}
+
+/** Headers for /api/queue lane gate. */
+export function executionLaneSubmitHeaders(lane = null) {
+  const current = lane || null;
+  if (!current?.ownerId) return {};
+  const headers = {
+    "x-h3-lane-owner": current.ownerId,
+    "x-h3-lane-kind": current.kind
+  };
+  if (current.leaseToken) headers["x-h3-lane-lease"] = current.leaseToken;
+  const pageSessionId = current.pageSessionId || getPageSessionId();
+  if (pageSessionId) headers["x-h3-page-session"] = pageSessionId;
+  return headers;
 }
 
 /** Pure helper for batch-queue-ui stop feedback contract. */

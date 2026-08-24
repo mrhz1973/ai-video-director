@@ -13,6 +13,7 @@ import {
   createExecutionLaneRegistry,
   EXECUTION_LANE_KIND
 } from "../lib/execution-lane.mjs";
+import { createPageSessionRegistry } from "../lib/page-session.mjs";
 
 const sampleSource = {
   workflowId: "minimax-h3-i2v",
@@ -90,32 +91,58 @@ function mockService(overrides = {}) {
 
 test("pass5: dead future owner is atomically reclaimed by normal reserve", () => {
   let now = 1_000;
-  const lane = createExecutionLaneRegistry({ now: () => now, futureStaleMs: 1_000 });
-  const dead = lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId: "dead-tab" });
+  const pageSessions = createPageSessionRegistry({ now: () => now, disconnectGraceMs: 1_000 });
+  const lane = createExecutionLaneRegistry({ now: () => now, pageSessions });
+  const deadPage = pageSessions.open();
+  const dead = lane.reserve({
+    kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+    ownerId: "dead-tab",
+    pageSessionId: deadPage
+  });
   assert.equal(dead.ok, true);
   assert.ok(dead.leaseToken);
   assert.equal(lane.get()?.ownerId, "dead-tab");
 
-  // Silence past server threshold — no manual reclaim, no Director restart.
+  // Connection loss + grace — not JS heartbeat silence alone.
+  pageSessions.close(deadPage);
   now = 3_000;
-  const next = lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "fresh-tab" });
+  const freshPage = pageSessions.open();
+  const next = lane.reserve({
+    kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+    ownerId: "fresh-tab",
+    pageSessionId: freshPage
+  });
   assert.equal(next.ok, true, next.error || next.code);
   assert.equal(lane.get()?.ownerId, "fresh-tab");
   assert.equal(lane.get()?.kind, EXECUTION_LANE_KIND.QUEUED_NEXT);
   assert.notEqual(next.leaseToken, dead.leaseToken);
   // Old intent is not restored — dead lease cannot heartbeat/release.
-  assert.equal(lane.heartbeat({ ownerId: "dead-tab", leaseToken: dead.leaseToken }).ok, false);
-  assert.equal(lane.release({ ownerId: "dead-tab", leaseToken: dead.leaseToken }).ok, false);
+  assert.equal(lane.heartbeat({
+    ownerId: "dead-tab",
+    leaseToken: dead.leaseToken,
+    pageSessionId: deadPage
+  }).ok, false);
+  assert.equal(lane.release({
+    ownerId: "dead-tab",
+    leaseToken: dead.leaseToken,
+    pageSessionId: deadPage
+  }).ok, false);
   assert.equal(lane.get()?.ownerId, "fresh-tab");
 });
 
 test("pass5: client cannot shrink stale timeout via staleAfterMs=0", () => {
   let now = 0;
-  const lane = createExecutionLaneRegistry({ now: () => now, futureStaleMs: 5_000 });
-  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "live-owner" });
+  const pageSessions = createPageSessionRegistry({ now: () => now, disconnectGraceMs: 5_000 });
+  const lane = createExecutionLaneRegistry({ now: () => now, pageSessions });
+  const page = pageSessions.open();
+  const reserved = lane.reserve({
+    kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+    ownerId: "live-owner",
+    pageSessionId: page
+  });
   assert.equal(reserved.ok, true);
   now = 10;
-  // Even if a client still sends staleAfterMs:0, reclaimStale ignores it.
+  // Even if a client still sends staleAfterMs:0, reclaimStale ignores it; live page stays.
   const forced = lane.reclaimStale({ requesterId: "attacker", staleAfterMs: 0 });
   assert.equal(forced.ok, false);
   assert.equal(forced.code, "still-alive");
@@ -130,17 +157,22 @@ test("pass5: client cannot shrink stale timeout via staleAfterMs=0", () => {
 });
 
 test("pass5: identical ownerId+kind second reserve is lane-busy; lease required to submit", () => {
-  const lane = createExecutionLaneRegistry();
+  const pageSessions = createPageSessionRegistry();
+  const lane = createExecutionLaneRegistry({ pageSessions });
+  const pageA = pageSessions.open();
   const a = lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
-    ownerId: "same-owner"
+    ownerId: "same-owner",
+    pageSessionId: pageA
   });
   assert.equal(a.ok, true);
   assert.ok(a.leaseToken);
 
+  const pageB = pageSessions.open();
   const b = lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
-    ownerId: "same-owner"
+    ownerId: "same-owner",
+    pageSessionId: pageB
   });
   assert.equal(b.ok, false);
   assert.equal(b.code, "lane-busy");
@@ -154,12 +186,20 @@ test("pass5: identical ownerId+kind second reserve is lane-busy; lease required 
   assert.equal(lane.assertSubmitAllowed({
     ownerId: "same-owner",
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
-    leaseToken: "forged-lease"
+    leaseToken: "forged-lease",
+    pageSessionId: pageA
   }).ok, false);
   assert.equal(lane.assertSubmitAllowed({
     ownerId: "same-owner",
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
-    leaseToken: a.leaseToken
+    leaseToken: a.leaseToken,
+    pageSessionId: pageB
+  }).ok, false);
+  assert.equal(lane.assertSubmitAllowed({
+    ownerId: "same-owner",
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: a.leaseToken,
+    pageSessionId: pageA
   }).ok, true);
 
   // Public snapshot never leaks leaseToken.

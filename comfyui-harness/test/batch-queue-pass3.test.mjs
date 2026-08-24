@@ -289,7 +289,8 @@ test("pass3: cross-tab queuedNext vs multi-queue — only one owns future lane",
   const reservedA = lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-a",
-    projectId: "p1"
+    projectId: "p1",
+    pageSessionId: lane.pageSessions.open()
   });
   assert.equal(reservedA.ok, true);
   assert.equal(clientA.armQueuedNext({ prompt: "next", seed: 1 }).ok, true);
@@ -319,7 +320,8 @@ test("pass3: cross-tab multi-queue vs deferredBatch — inverse order", async ()
   const reservedLegacy = lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-a",
-    projectId: "p1"
+    projectId: "p1",
+    pageSessionId: lane.pageSessions.open()
   });
   assert.equal(reservedLegacy.ok, false);
   assert.equal(reservedLegacy.code, "lane-busy");
@@ -348,7 +350,12 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
 
   // Legacy owns future lane first.
   clientLegacy.markQueue({ running: 1, pending: 0 });
-  const reservedLegacy = lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "tab-legacy" });
+  const legacyPage = lane.pageSessions.open();
+  const reservedLegacy = lane.reserve({
+    kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+    ownerId: "tab-legacy",
+    pageSessionId: legacyPage
+  });
   assert.equal(reservedLegacy.ok, true);
   assert.equal(clientLegacy.armQueuedNext({ prompt: "L", seed: 1 }).ok, true);
 
@@ -360,7 +367,8 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
   lane.release({
     ownerId: "tab-legacy",
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
-    leaseToken: reservedLegacy.leaseToken
+    leaseToken: reservedLegacy.leaseToken,
+    pageSessionId: legacyPage
   });
   clientLegacy.cancelQueuedNext();
   assert.equal((await service.arm({ projectId: "p-race", plan })).ok, true);

@@ -2,15 +2,21 @@
  * Server in-memory global ComfyUI execution-lane reservation (Issue #47).
  * Not persisted — Director restart clears authority (fail-closed).
  *
- * Future browser intents (queued-next / deferred-batch) require heartbeats.
- * Stale FUTURE reservations are atomically reclaimed on the next reserve()
- * after the server-authoritative silence window (no client-tunable TTL).
- * Active / multi-queue / immediate-single kinds are not stale-reclaimable.
+ * Browser FUTURE intents bind to a server-issued pageSessionId (SSE connection).
+ * JS heartbeat silence alone never makes a live page stealable.
+ * FUTURE reclaim is allowed only after server-visible connection loss + grace.
  *
- * Authority is an opaque in-memory leaseToken — ownerId alone is not enough.
+ * Destructive ops require leaseToken + matching pageSessionId.
+ * Opaque lease in sessionStorage is insufficient without the live page session.
+ *
+ * MULTI_BATCH_QUEUE is server-owned (pageSessionId null).
  */
 
 import { randomUUID } from "node:crypto";
+import {
+  createPageSessionRegistry,
+  PAGE_SESSION_DISCONNECT_GRACE_MS
+} from "./page-session.mjs";
 
 export const EXECUTION_LANE_KIND = Object.freeze({
   QUEUED_NEXT: "queued-next",
@@ -20,8 +26,10 @@ export const EXECUTION_LANE_KIND = Object.freeze({
   IMMEDIATE_SINGLE: "immediate-single"
 });
 
-/** Default silence before a future intent may be reclaimed (not a blind short TTL on live work). */
+/** @deprecated Heartbeat silence is not reclaim authority; kept for telemetry only. */
 export const FUTURE_LANE_STALE_MS = 45_000;
+
+export { PAGE_SESSION_DISCONNECT_GRACE_MS };
 
 const FUTURE_KINDS = new Set([
   EXECUTION_LANE_KIND.QUEUED_NEXT,
@@ -32,14 +40,21 @@ export function isFutureExecutionLaneKind(kind) {
   return FUTURE_KINDS.has(String(kind || ""));
 }
 
+function isServerOwnedKind(kind) {
+  return String(kind || "") === EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE;
+}
+
 export function createExecutionLaneRegistry({
   now = () => Date.now(),
+  pageSessions = createPageSessionRegistry({ now }),
   futureStaleMs = FUTURE_LANE_STALE_MS
 } = {}) {
+  void futureStaleMs; // retained for API compat; not used as reclaim authority
   /** @type {null | {
    *   kind: string,
    *   ownerId: string,
    *   projectId: string|null,
+   *   pageSessionId: string|null,
    *   reservedAt: number,
    *   lastHeartbeatAt: number,
    *   generation: number,
@@ -54,26 +69,27 @@ export function createExecutionLaneRegistry({
     return { ...rest };
   }
 
-  function silentMs(at = now()) {
-    if (!reservation) return 0;
-    const anchor = reservation.lastHeartbeatAt || reservation.reservedAt;
-    return Math.max(0, at - anchor);
-  }
-
-  function isStaleFuture() {
-    return Boolean(
-      reservation
-      && isFutureExecutionLaneKind(reservation.kind)
-      && silentMs() >= futureStaleMs
-    );
-  }
-
   function leaseMatches(leaseToken) {
     const token = String(leaseToken || "").trim();
     return Boolean(token && reservation && reservation.leaseToken === token);
   }
 
-  function requireOwnerAndLease({ ownerId, leaseToken } = {}) {
+  function pageSessionMatches(pageSessionId) {
+    if (!reservation) return false;
+    if (reservation.pageSessionId == null) {
+      // Server-owned reservation: only server paths (null/empty page session).
+      return pageSessionId == null || String(pageSessionId).trim() === "";
+    }
+    return String(pageSessionId || "").trim() === reservation.pageSessionId;
+  }
+
+  function isFutureReclaimable() {
+    if (!reservation || !isFutureExecutionLaneKind(reservation.kind)) return false;
+    if (!reservation.pageSessionId) return true;
+    return !pageSessions.isProtected(reservation.pageSessionId);
+  }
+
+  function requireOwnerLeaseAndPage({ ownerId, leaseToken, pageSessionId } = {}) {
     const nextOwner = String(ownerId || "").trim();
     if (!reservation) {
       return { ok: false, code: "empty", error: "Nessuna lane riservata." };
@@ -94,39 +110,63 @@ export function createExecutionLaneRegistry({
         reservation: publicSnapshot()
       };
     }
+    if (!pageSessionMatches(pageSessionId)) {
+      return {
+        ok: false,
+        code: "invalid-page-session",
+        error: "Page session non corrispondente alla reservation.",
+        reservation: publicSnapshot()
+      };
+    }
     return { ok: true };
   }
 
   return {
     get: publicSnapshot,
+    pageSessions,
 
-    reserve({ kind, ownerId, projectId = null } = {}) {
+    reserve({ kind, ownerId, projectId = null, pageSessionId = null } = {}) {
       const nextKind = String(kind || "").trim();
       const nextOwner = String(ownerId || "").trim();
       if (!nextKind || !nextOwner) {
         return { ok: false, code: "invalid-reservation", error: "kind e ownerId sono obbligatori." };
       }
-      // Atomic stale FUTURE recovery: clear dead browser intent before granting.
-      if (isStaleFuture()) {
+
+      const serverOwned = isServerOwnedKind(nextKind);
+      const nextPage = pageSessionId == null ? null : String(pageSessionId).trim() || null;
+
+      if (!serverOwned) {
+        if (!nextPage || !pageSessions.isConnected(nextPage)) {
+          return {
+            ok: false,
+            code: "page-session-required",
+            error: "Serve una page session SSE viva per riservare la lane."
+          };
+        }
+      }
+
+      // Atomic FUTURE recovery only after server-visible connection loss (+ grace).
+      if (isFutureReclaimable()) {
         reservation = null;
       }
+
       if (reservation) {
-        // Same ownerId+kind is still lane-busy — ownership is the lease, not the string.
         return {
           ok: false,
           code: "lane-busy",
           error: "Esiste già un job/batch in attesa o una Coda Batch attiva. Attendi o annullalo prima.",
           reservation: publicSnapshot(),
-          reclaimable: isFutureExecutionLaneKind(reservation.kind)
-            && silentMs() >= futureStaleMs
+          reclaimable: isFutureReclaimable()
         };
       }
+
       const ts = now();
       const leaseToken = randomUUID();
       reservation = {
         kind: nextKind,
         ownerId: nextOwner,
         projectId: projectId == null ? null : String(projectId),
+        pageSessionId: serverOwned ? null : nextPage,
         reservedAt: ts,
         lastHeartbeatAt: ts,
         generation: 1,
@@ -135,16 +175,17 @@ export function createExecutionLaneRegistry({
       return { ok: true, reservation: publicSnapshot(), leaseToken };
     },
 
-    heartbeat({ ownerId, leaseToken } = {}) {
-      const gate = requireOwnerAndLease({ ownerId, leaseToken });
+    /** Secondary telemetry only — does not authorize reclaim. */
+    heartbeat({ ownerId, leaseToken, pageSessionId } = {}) {
+      const gate = requireOwnerLeaseAndPage({ ownerId, leaseToken, pageSessionId });
       if (!gate.ok) return gate;
       reservation.lastHeartbeatAt = now();
       return { ok: true, reservation: publicSnapshot() };
     },
 
-    release({ ownerId, kind = null, leaseToken } = {}) {
+    release({ ownerId, kind = null, leaseToken, pageSessionId } = {}) {
       if (!reservation) return { ok: true, status: "empty" };
-      const gate = requireOwnerAndLease({ ownerId, leaseToken });
+      const gate = requireOwnerLeaseAndPage({ ownerId, leaseToken, pageSessionId });
       if (!gate.ok) return gate;
       if (kind != null && String(kind) !== reservation.kind) {
         return { ok: false, code: "kind-mismatch", error: "Kind non corrispondente.", reservation: publicSnapshot() };
@@ -155,13 +196,16 @@ export function createExecutionLaneRegistry({
 
     /**
      * Atomically change kind for the same owner (e.g. deferred-batch → active-batch).
-     * Avoids a release/reserve race window with other clients. Lease stays the same.
+     * Lease and pageSession stay the same.
      */
-    transferKind({ ownerId, kind, leaseToken } = {}) {
-      const gate = requireOwnerAndLease({ ownerId, leaseToken });
+    transferKind({ ownerId, kind, leaseToken, pageSessionId } = {}) {
+      const gate = requireOwnerLeaseAndPage({ ownerId, leaseToken, pageSessionId });
       if (!gate.ok) return gate;
       const nextKind = String(kind || "").trim();
       if (!nextKind) return { ok: false, code: "invalid-reservation", error: "kind obbligatorio." };
+      if (isServerOwnedKind(nextKind)) {
+        return { ok: false, code: "invalid-transfer", error: "Transfer verso multi-batch non consentito." };
+      }
       const ts = now();
       reservation = {
         ...reservation,
@@ -174,9 +218,8 @@ export function createExecutionLaneRegistry({
     },
 
     /**
-     * Reclaim a future browser intent whose heartbeat went silent (F5 / tab close / crash).
-     * Staleness is always server-authoritative — client staleAfterMs is ignored.
-     * Does not restore execution intent. Active/multi/immediate kinds are never reclaimed this way.
+     * Reclaim FUTURE intent after owning page connection is dead past grace.
+     * Does not restore execution intent. Active/multi/immediate never reclaimed here.
      */
     reclaimStale({ requesterId = null } = {}) {
       if (!reservation) return { ok: true, status: "empty" };
@@ -188,15 +231,12 @@ export function createExecutionLaneRegistry({
           reservation: publicSnapshot()
         };
       }
-      const silent = silentMs();
-      if (silent < futureStaleMs) {
+      if (!isFutureReclaimable()) {
         return {
           ok: false,
           code: "still-alive",
-          error: "La reservation futura è ancora viva (heartbeat recente).",
-          reservation: publicSnapshot(),
-          silentMs: silent,
-          staleAfterMs: futureStaleMs
+          error: "La page session proprietaria è ancora viva (connessione SSE o grace).",
+          reservation: publicSnapshot()
         };
       }
       const previous = publicSnapshot();
@@ -205,13 +245,12 @@ export function createExecutionLaneRegistry({
         ok: true,
         status: "reclaimed",
         previous,
-        requesterId: requesterId == null ? null : String(requesterId),
-        silentMs: silent
+        requesterId: requesterId == null ? null : String(requesterId)
       };
     },
 
-    /** Whether /api/queue may accept a submit for this lane owner + lease. */
-    assertSubmitAllowed({ ownerId, kind = null, leaseToken = null } = {}) {
+    /** Whether /api/queue may accept a submit for this lane owner + lease + page. */
+    assertSubmitAllowed({ ownerId, kind = null, leaseToken = null, pageSessionId = null } = {}) {
       if (!reservation) return { ok: true, status: "lane-empty" };
       const nextOwner = String(ownerId || "").trim();
       if (!nextOwner || reservation.ownerId !== nextOwner) {
@@ -230,6 +269,14 @@ export function createExecutionLaneRegistry({
           reservation: publicSnapshot()
         };
       }
+      if (!pageSessionMatches(pageSessionId)) {
+        return {
+          ok: false,
+          code: "invalid-page-session",
+          error: "Page session non corrispondente alla reservation.",
+          reservation: publicSnapshot()
+        };
+      }
       if (kind != null && String(kind) !== reservation.kind) {
         return {
           ok: false,
@@ -241,7 +288,6 @@ export function createExecutionLaneRegistry({
       return { ok: true, reservation: publicSnapshot() };
     },
 
-    /** Test/helper: wipe in-memory authority. */
     clear() {
       reservation = null;
     }

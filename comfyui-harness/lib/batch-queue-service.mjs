@@ -76,7 +76,8 @@ export function createBatchQueueRuntimeService({
     executionLane.release({
       ownerId,
       kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
-      leaseToken
+      leaseToken,
+      pageSessionId: null
     });
   }
 
@@ -546,7 +547,8 @@ export function createBatchQueueRuntimeService({
           executionLane.release({
             ownerId: laneOwnerId,
             kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
-            leaseToken: laneLeaseToken
+            leaseToken: laneLeaseToken,
+            pageSessionId: null
           });
         }
         throw error;
