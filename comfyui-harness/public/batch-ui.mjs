@@ -43,6 +43,10 @@ import {
   batchStopConfirmMessage,
   findActiveBatchJob
 } from "./runtime-interrupt-ui.mjs";
+import {
+  addCurrentBatchToQueue,
+  isBatchQueueArmed
+} from "./batch-queue-ui.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -286,6 +290,22 @@ export function getBatchEditorSummary() {
     count: items.length,
     hasDraft: Boolean(items.length && source),
     submitted
+  };
+}
+
+/** Validates and returns the current prepared Batch as an independent queue snapshot. */
+export function getCurrentBatchSnapshotForQueue() {
+  const snapshot = collectSourceSnapshot();
+  if (snapshot.error) return { ok: false, error: snapshot.error };
+  const validation = validateCurrentBatch(snapshot);
+  if (!validation.valid) return { ok: false, error: validation.errors.join(" ") };
+  return {
+    ok: true,
+    draft: {
+      version: 1,
+      source,
+      items: batchItemsForExport()
+    }
   };
 }
 
@@ -547,6 +567,7 @@ function createUi() {
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
         <button type="button" class="secondary" id="batchReset">Reset</button>
+        <button type="button" class="secondary" id="batchAddToQueue">Aggiungi alla coda</button>
         <button type="button" id="batchQueue">Avvia batch</button>
       </div>
       <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
@@ -607,6 +628,12 @@ function createUi() {
     renderBatch();
     setFeedback("Batch svuotato. Nessuna generazione avviata.");
   };
+  $("batchAddToQueue")?.addEventListener("click", async () => {
+    const prepared = getCurrentBatchSnapshotForQueue();
+    if (!prepared.ok) return setFeedback(prepared.error, "error");
+    const result = await addCurrentBatchToQueue(prepared.draft);
+    if (!result.ok) setFeedback(result.error || "Impossibile aggiungere alla coda.", "error");
+  });
   $("batchQueue").onclick = queueBatch;
 }
 
@@ -737,7 +764,8 @@ function updateQueueButton() {
     pending: queue.pending,
     queuedNext: coord?.getQueuedNext?.() || null,
     deferredBatch: coord?.getDeferredBatch?.() || null,
-    batchActive: Boolean(coord?.snapshot?.().batchActive)
+    batchActive: Boolean(coord?.snapshot?.().batchActive),
+    batchQueueArmed: isBatchQueueArmed()
   });
   button.disabled = action.disabled;
   button.textContent = action.label;
@@ -1183,6 +1211,9 @@ async function init() {
   loadDraftFromLocalStorage();
   loadRuntime();
   window.addEventListener("h3-queue-sample", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-armed", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-changed", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-runtime", () => updateQueueButton());
   window.addEventListener("h3-deferred-batch-cancel", () => {
     setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
     updateQueueButton();

@@ -35,6 +35,10 @@ import {
 } from "./lib/gpu-power-helper.mjs";
 import { createRuntimeOwnershipRegistry } from "./lib/runtime-ownership.mjs";
 import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
+import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
+import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
+import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
+import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -49,6 +53,69 @@ const runtimeOwnership = createRuntimeOwnershipRegistry();
 const runtimeControl = createRuntimeControlService({
   comfyUrl: comfy,
   ownershipRegistry: runtimeOwnership,
+  logger
+});
+
+const batchQueueRuntime = createBatchQueueRuntimeService({
+  submitJob: async (input, meta = {}) => {
+    const { preset, workflow } = await loadPreset(input.workflowId);
+    const files = resolveBatchItemFiles(
+      { files: input.files },
+      input.sharedFiles || {}
+    );
+    const result = await submitWorkflowToComfy({
+      input: { ...input, files },
+      preset,
+      workflow,
+      comfyUrl: comfy
+    });
+    if (!result.ok || !result.data?.prompt_id) {
+      const error = new Error(result.data?.error || "Queue submission failed");
+      error.status = result.status || 502;
+      throw error;
+    }
+    return result.data;
+  },
+  fetchQueueCounts: async () => {
+    const response = await fetch(`${comfy}/queue`);
+    const data = await response.json();
+    return {
+      running: Array.isArray(data.queue_running) ? data.queue_running.length : 0,
+      pending: Array.isArray(data.queue_pending) ? data.queue_pending.length : 0
+    };
+  },
+  fetchHistoryState: async promptId => {
+    try {
+      const response = await fetch(`${comfy}/history/${encodeURIComponent(promptId)}`);
+      if (!response.ok) return "running";
+      const data = await response.json();
+      const entry = data[promptId];
+      if (!entry) return "running";
+      const messages = entry.status?.messages || [];
+      const types = messages.map(item => item[0]);
+      if (types.includes("execution_success")) return "completed";
+      if (types.includes("execution_interrupted")) return "interrupted";
+      if (types.includes("execution_error")) return "failed";
+      return "running";
+    } catch {
+      return "running";
+    }
+  },
+  fetchActivePromptId: async () => {
+    const response = await fetch(`${comfy}/queue`);
+    const data = await response.json();
+    const running = Array.isArray(data.queue_running) ? data.queue_running : [];
+    return running.length ? extractPromptIdFromQueueEntry(running[0]) : null;
+  },
+  registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
+    runtimeOwnership.register(promptId, {
+      kind: "batch",
+      batchId,
+      batchIndex,
+      clientId: queueRunId,
+      queueEntryId
+    });
+  },
   logger
 });
 
@@ -248,11 +315,62 @@ const server = http.createServer(async (req, res) => {
           batchId: input.batchId,
           expectedRunningPromptId: input.expectedRunningPromptId
         });
+        if (input.projectId) batchQueueRuntime.onFullBatchStop(input.projectId);
         return json(res, 200, result);
       } catch (error) {
         logger.error("batch_stop_rejected", { code: error.code, reason: error.message });
         return json(res, error.status || 409, { error: error.message, code: error.code || "batch-stop-rejected" });
       }
+    }
+    if (req.method === "GET" && url.pathname === "/api/batch-queue/runtime") {
+      const projectId = url.searchParams.get("projectId") || "";
+      return json(res, 200, batchQueueRuntime.getRuntime(projectId));
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/sync") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.syncPlan({ projectId: input.projectId, plan: input.plan });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/arm") {
+      const input = await readJsonBody(req);
+      const result = await batchQueueRuntime.arm({
+        projectId: input.projectId,
+        plan: input.plan,
+        failurePolicy: input.failurePolicy
+      });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/resume") {
+      const input = await readJsonBody(req);
+      const result = await batchQueueRuntime.resume({ projectId: input.projectId, plan: input.plan });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/update-entry") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.updateEntry(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/reorder") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.reorder(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/cancel-entry") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.cancelEntry(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/pause") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.pauseQueue({ projectId: input.projectId, reason: input.reason });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
     }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {

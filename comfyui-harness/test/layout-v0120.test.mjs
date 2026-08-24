@@ -8,11 +8,7 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const batch = readFileSync(new URL("../public/batch-ui.mjs", import.meta.url), "utf8");
 
-test("v0.12.0 package version", () => {
-  assert.equal(pkg.version, "0.12.0");
-});
-
-test("single interrupt control is present in monitor", () => {
+test("v0.12.0 interrupt layout preserved", () => {
   assert.equal((html.match(/id="interruptSingleRender"/g) || []).length, 1);
   assert.match(html, />INTERROMPI RENDER</);
 });

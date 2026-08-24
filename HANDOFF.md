@@ -75,9 +75,13 @@ Setup/operations guide: `docs/COMFYUI_H3_SETUP.md`
 Canonical branch: `main`
 Historical merged pull request: #1
 Harness implementation: existing Node.js application in `comfyui-harness/`
-Known package version: 0.12.0 (feature branch `feature/runtime-safe-interrupt-v0120`)
+Known package version: 0.13.0 (feature branch `feature/multi-batch-queue-v0130`)
 
-## Current harness UX focus (v0.12.0)
+## Current harness UX focus (v0.13.0)
+
+- **CODA BATCH** (Issue #47): persistent multi-Batch queue (max 50) with server-side sequential scheduler; **Aggiungi alla coda**, **AVVIA CODA**, **RIPRENDI CODA**; plan in `batchQueue`, runtime authority fail-closed after Director restart. See `docs/BATCH_QUEUE_RUNTIME.md`.
+
+## Prior harness UX (v0.12.0)
 
 - **INTERROMPI RENDER** stops the owned Single Render after live queue + ownership verification (Issue #51).
 - **Interrompi job corrente** interrupts only the running Batch job; later Batch jobs already queued in ComfyUI continue.

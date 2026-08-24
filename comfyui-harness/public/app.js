@@ -119,6 +119,14 @@ import {
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
 } from "./batch-ui.mjs";
+import {
+  exportBatchQueueForPersistence,
+  exportBatchQueueForProject,
+  importBatchQueueFromProject,
+  initBatchQueueUi,
+  isBatchQueueArmed,
+  syncBatchQueuePlanToServer
+} from "./batch-queue-ui.mjs";
 import { showAppNotice } from "./notify.mjs";
 import {
   buildSingleJobCompletionAttribution,
@@ -209,7 +217,8 @@ function hideLegacyBatchRecover() {
 function editorSnapshotWithBatch() {
   return projectEditorSnapshot({
     ...currentEditorState(),
-    batchDraft: exportBatchDraftForProject()
+    batchDraft: exportBatchDraftForProject(),
+    batchQueue: exportBatchQueueForProject()
   });
 }
 
@@ -1067,6 +1076,7 @@ function queueSample() {
     queuedNext: state.queuedNext,
     deferredBatch: state.deferredBatch,
     batchActive: state.batchActive,
+    batchQueueArmed: isBatchQueueArmed(),
     lockOwner: state.lockOwner
   };
 }
@@ -1653,6 +1663,8 @@ async function loadProjectById(id) {
     if (modelResult.warning) add(modelResult.warning, "system");
 
     const batchResult = await restoreProjectBatch(normalized);
+    importBatchQueueFromProject(normalized.batchQueue || null);
+    void syncBatchQueuePlanToServer();
     const missingAssetCount = Object.entries(normalized.files || {}).filter(([, filename]) => {
       if (!filename) return false;
       const member = findMemberByFilename(normalized.library, filename);
@@ -1784,7 +1796,8 @@ function payloadFromEditor() {
     settings: state.settings,
     library: state.library,
     files: state.files,
-    batchDraft: exportBatchDraftForPersistence()
+    batchDraft: exportBatchDraftForPersistence(),
+    batchQueue: exportBatchQueueForPersistence()
   };
 }
 
@@ -1838,7 +1851,8 @@ async function duplicateCurrentProject() {
     settings: state.settings,
     library: state.library,
     files: state.files,
-    batchDraft: exportBatchDraftForProject()
+    batchDraft: exportBatchDraftForProject(),
+    batchQueue: exportBatchQueueForProject()
   }, { newLabel: newLabel.trim() });
 
   const response = await fetch("/api/projects", {
@@ -2033,6 +2047,12 @@ if (recovery && !$("project").value) {
 persistenceReady = true;
 setBatchPersistenceHook(() => {
   if (draft.saved && draft.id) noteEditorChange();
+});
+initBatchQueueUi({
+  getProjectId: () => draft.id || $("project")?.value || "",
+  onPlanDirty: () => {
+    if (draft.saved && draft.id) noteEditorChange();
+  }
 });
 setBatchAssetContextProvider(() => {
   const unavailable = new Set();

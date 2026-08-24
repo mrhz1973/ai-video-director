@@ -82,8 +82,12 @@ export function resolveGenerateAction({
   queuedNext = null,
   deferredBatch = null,
   batchActive = false,
+  batchQueueArmed = false,
   lockOwner = QUEUE_OWNER.NONE
 } = {}) {
+  if (batchQueueArmed) {
+    return { action: "blocked", label: SINGLE_RENDER_ACTION_LABELS.blocked, disabled: true, reason: "Coda Batch attiva." };
+  }
   if (queuedNext) {
     return { action: "queued", label: SINGLE_RENDER_ACTION_LABELS.queued, disabled: true, reason: "Prossimo job già in attesa" };
   }
@@ -113,8 +117,12 @@ export function resolveBatchQueueAction({
   pending = 0,
   queuedNext = null,
   deferredBatch = null,
-  batchActive = false
+  batchActive = false,
+  batchQueueArmed = false
 } = {}) {
+  if (batchQueueArmed) {
+    return { action: "blocked", label: BATCH_EXECUTION_LABELS.blocked(preparedCount), disabled: true, reason: "Coda Batch attiva." };
+  }
   if (submitting) return { action: "submitting", label: BATCH_EXECUTION_LABELS.submitting, disabled: true };
   if (submitted || batchActive) return { action: "submitted", label: BATCH_EXECUTION_LABELS.submitted, disabled: true };
   if (deferredBatch) return { action: "waiting", label: BATCH_EXECUTION_LABELS.waiting, disabled: true };

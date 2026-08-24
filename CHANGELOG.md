@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-24 — v0.13.0
+
+- **Multi-Batch queue** (Issue #47): **CODA BATCH** — persist up to **50** ordered Batch snapshots in project `batchQueue`; explicit **AVVIA CODA** / **RIPRENDI CODA** arms server-side sequential scheduler (`createBatchQueueRuntimeService`). One Batch active at a time; browser may close while Director runs the queue.
+- **Aggiungi alla coda** deep-clones the prepared Batch editor snapshot without mutating the source draft. Future queued batches remain editable until claimed (`queued` → `submitting`).
+- Fail-closed after Director restart: plan restores; runtime `queueRunId` authority is **not** persisted or auto-restored. **Genera singolo** / **Avvia batch** blocked while queue armed. v0.12 ownership-safe interruption preserved.
+- Reference: `docs/BATCH_QUEUE_RUNTIME.md`. Closes #47.
+
 ## 2026-08-24 — v0.12.0
 
 - **Runtime interruption** (Issue #51): ownership-safe **INTERROMPI RENDER** (Single), **Interrompi job corrente**, and **INTERROMPI BATCH** controls using audited ComfyUI `POST /interrupt` and selective `POST /queue` `{ delete: [...] }` — never whole-queue clear.
