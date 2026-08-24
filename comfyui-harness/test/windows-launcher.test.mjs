@@ -304,7 +304,9 @@ test("both already healthy -> idempotent success", async () => {
   assert.equal(spawns.length, 0);
   assert.equal(result.comfy.action, ACTION.REUSE);
   assert.equal(result.director.action, ACTION.REUSE);
-  assert.equal(browsers.length, 1);
+  assert.equal(browsers.length, 2);
+  assert.match(browsers[0], /8787/);
+  assert.match(browsers[1], /8188/);
   await rm(path.dirname(configPath), { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
@@ -334,6 +336,10 @@ test("browser opens only after both health gates", async () => {
       sleepFn: async () => {}
     }
   });
+  const openEvents = events.filter(item => item.startsWith("open:"));
+  assert.equal(openEvents.length, 2);
+  assert.match(openEvents[0], /8787/);
+  assert.match(openEvents[1], /8188/);
   const openIndex = events.findIndex(item => item.startsWith("open:"));
   const lastDirectorProbe = events.findLastIndex(item => item.startsWith("director-probe-"));
   assert.ok(openIndex > lastDirectorProbe);

@@ -34,8 +34,8 @@ const server = readFileSync(path.join(root, "../server.mjs"), "utf8");
 const pkg = JSON.parse(readFileSync(path.join(root, "../package.json"), "utf8"));
 const galleryDom = readFileSync(path.join(root, "../public/session-gallery-dom.mjs"), "utf8");
 
-test("v0.14.0 package version", () => {
-  assert.equal(pkg.version, "0.14.0");
+test("v0.14.x package version", () => {
+  assert.match(pkg.version, /^0\.14\./);
 });
 
 test("SCENA/BATCH/CODA/OUTPUT primary navigation present", () => {

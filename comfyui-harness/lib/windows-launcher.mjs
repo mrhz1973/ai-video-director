@@ -200,6 +200,25 @@ export function shouldOpenBrowser({
   return Boolean(openBrowser && comfyHealthy && directorHealthy);
 }
 
+/** Normalize launcher browser targets (Director first, then ComfyUI). */
+export function buildLauncherBrowserUrls(directorBaseUrl, comfyBaseUrl) {
+  const directorUrl = `${String(directorBaseUrl || "").replace(/\/$/, "")}/`;
+  const comfyUrl = `${String(comfyBaseUrl || "").replace(/\/$/, "")}/`;
+  return { directorUrl, comfyUrl };
+}
+
+/** Presentation-only: open Director then ComfyUI in the default browser. */
+export function openLauncherBrowserPages({
+  directorBaseUrl,
+  comfyBaseUrl,
+  openBrowserFn
+} = {}) {
+  const urls = buildLauncherBrowserUrls(directorBaseUrl, comfyBaseUrl);
+  openBrowserFn(urls.directorUrl);
+  openBrowserFn(urls.comfyUrl);
+  return urls;
+}
+
 export async function probeHttp(url, { fetchFn = fetch, timeoutMs = 5000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
