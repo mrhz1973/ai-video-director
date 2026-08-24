@@ -31,8 +31,10 @@ export function canArmQueuedNext({
   queuedNext = null,
   deferredBatch = null,
   batchActive = false,
+  batchQueueArmed = false,
   lockOwner = QUEUE_OWNER.NONE
 } = {}) {
+  if (batchQueueArmed) return false;
   if (queuedNext) return false;
   if (deferredBatch) return false;
   if (batchActive) return false;
@@ -46,13 +48,33 @@ export function canArmDeferredBatch({
   queuedNext = null,
   deferredBatch = null,
   batchActive = false,
+  batchQueueArmed = false,
   preparedCount = 0
 } = {}) {
+  if (batchQueueArmed) return false;
   if (queuedNext) return false;
   if (deferredBatch) return false;
   if (batchActive) return false;
   if (Number(preparedCount) < 2) return false;
   return isSingleActiveRender({ running, pending });
+}
+
+export function canArmMultiBatchQueue({
+  queuedNext = null,
+  deferredBatch = null,
+  batchActive = false,
+  lockOwner = QUEUE_OWNER.NONE
+} = {}) {
+  if (queuedNext || deferredBatch || batchActive
+    || lockOwner === QUEUE_OWNER.ACTIVE_BATCH
+    || lockOwner === QUEUE_OWNER.DEFERRED_BATCH) {
+    return {
+      ok: false,
+      code: "legacy-intent",
+      error: "Esiste già un job/batch in attesa. Attendi o annullalo prima di avviare la Coda Batch."
+    };
+  }
+  return { ok: true };
 }
 
 export const SINGLE_RENDER_ACTION_LABELS = Object.freeze({
@@ -190,6 +212,7 @@ export function createQueueCoordinator({ submit } = {}) {
   let lockOwner = QUEUE_OWNER.NONE;
   let queuedNext = null;
   let deferredBatch = null;
+  let batchQueueArmed = false;
   let batchActive = false;
   let lastQueue = { running: 0, pending: 0 };
   let submitCount = 0;
@@ -243,6 +266,13 @@ export function createQueueCoordinator({ submit } = {}) {
       return () => listeners.delete(listener);
     },
     snapshot,
+    setBatchQueueArmed(value) {
+      batchQueueArmed = Boolean(value);
+      return batchQueueArmed;
+    },
+    isBatchQueueArmed() {
+      return Boolean(batchQueueArmed);
+    },
     getQueuedNext() {
       return queuedNext ? { ...queuedNext, snapshot: { ...queuedNext.snapshot } } : null;
     },
@@ -250,14 +280,9 @@ export function createQueueCoordinator({ submit } = {}) {
       return deferredBatch ? { ...deferredBatch } : null;
     },
     armQueuedNext(snapshotPayload = {}) {
+      if (batchQueueArmed) return { ok: false, reason: "batch-queue-armed" };
       const queue = lastQueue;
-      if (!canArmQueuedNext({
-        ...queue,
-        queuedNext,
-        deferredBatch,
-        batchActive,
-        lockOwner
-      })) {
+      if (!canArmQueuedNext({ ...queue, queuedNext, deferredBatch, batchActive, batchQueueArmed, lockOwner })) {
         return { ok: false, reason: queuedNext ? "already-armed" : "not-eligible" };
       }
       const copy = JSON.parse(JSON.stringify(snapshotPayload));
@@ -295,14 +320,9 @@ export function createQueueCoordinator({ submit } = {}) {
       return { ok: true, queuedNext: this.getQueuedNext() };
     },
     armDeferredBatch({ items = [], snapshot: batchSnapshot = {}, submitAll } = {}) {
+      if (batchQueueArmed) return { ok: false, reason: "batch-queue-armed" };
       if (typeof submitAll !== "function") return { ok: false, reason: "submitAll-required" };
-      if (!canArmDeferredBatch({
-        ...lastQueue,
-        queuedNext,
-        deferredBatch,
-        batchActive,
-        preparedCount: items.length
-      })) {
+      if (!canArmDeferredBatch({ ...lastQueue, queuedNext, deferredBatch, batchActive, batchQueueArmed, preparedCount: items.length })) {
         return { ok: false, reason: deferredBatch ? "already-armed" : "not-eligible" };
       }
       deferredBatch = {

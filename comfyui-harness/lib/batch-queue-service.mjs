@@ -13,7 +13,8 @@ import {
   normalizeBatchQueuePlan,
   reorderQueueEntries,
   updateQueueEntry,
-  validateQueueCapacity
+  validateQueueCapacity,
+  serializeBatchQueuePlan
 } from "./batch-queue-plan.mjs";
 import {
   claimEntryAtomic,
@@ -46,6 +47,7 @@ export function createBatchQueueRuntimeService({
   fetchHistoryState,
   fetchActivePromptId,
   registerOwnership,
+  persistDescriptivePlan = null,
   logger = null,
   now = () => Date.now()
 } = {}) {
@@ -59,6 +61,14 @@ export function createBatchQueueRuntimeService({
 
   function log(event, fields = {}) {
     logger?.info?.(event, fields);
+  }
+
+  async function checkpointDescriptivePlan(bucket, reason = "") {
+    if (typeof persistDescriptivePlan !== "function" || !bucket?.plan) return;
+    const projectId = bucket.runtime?.projectId || bucket.projectId;
+    if (!projectId) return;
+    const plan = serializeBatchQueuePlan(bucket.plan);
+    await persistDescriptivePlan({ projectId, plan, reason });
   }
 
   function getBucket(projectId) {
@@ -203,6 +213,7 @@ export function createBatchQueueRuntimeService({
       pauseRequested
     });
     log("batch_queue_entry_terminal", { entry_id: entryId.slice(0, 8), state: entryState });
+    await checkpointDescriptivePlan(bucket, "terminal");
   }
 
   async function startNextEntry(bucket) {
@@ -229,6 +240,7 @@ export function createBatchQueueRuntimeService({
     bucket.runtime.entryJobs = jobs;
     bucket.runtime.overallState = QUEUE_OVERALL_STATE.RUNNING;
     log("batch_queue_entry_claim", { entry_id: next.queueEntryId.slice(0, 8), batch_id: batchId.slice(0, 8) });
+    await checkpointDescriptivePlan(bucket, "claim");
 
     const { jobs: submittedJobs, submitResult } = await executeEntryJobs({
       entry: claim.entry,
@@ -265,6 +277,7 @@ export function createBatchQueueRuntimeService({
         state: QUEUE_ENTRY_STATE.FAILED,
         everClaimed: true
       };
+      await checkpointDescriptivePlan(bucket, "submit-failure");
       bucket.runtime.entryStates = bucket.runtime.entryStates || {};
       bucket.runtime.entryStates[next.queueEntryId] = submittedJobs;
       bucket.runtime.currentEntryId = null;

@@ -25,7 +25,8 @@ import {
   batchStopConfirmMessage,
   findActiveBatchJob
 } from "./runtime-interrupt-ui.mjs";
-import { upsertSessionOutputs } from "./session-outputs.mjs";
+import { buildSessionOutputRecords, upsertSessionOutputs, notifySessionOutputsChanged } from "./session-outputs.mjs";
+import { canArmMultiBatchQueue, getSharedCoordinator } from "./queue-coordinator.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -69,6 +70,9 @@ function setFeedback(message, kind = "neutral") {
 
 function applyRuntimeView(view) {
   runtimeView = view;
+  try {
+    getSharedCoordinator()?.setBatchQueueArmed?.(Boolean(runtimeView?.armed && runtimeView?.authorityPresent));
+  } catch { /* ignore */ }
   if (!view?.entries?.length || !plan) return;
   plan = {
     ...plan,
@@ -253,10 +257,23 @@ async function reconcileQueueSessionOutputs() {
     existingPromptIds: reconstructedPromptIds
   });
   if (!ready.length) return;
-  const records = buildQueueSessionOutputRecords(ready);
-  if (!records.length) return;
-  for (const record of records) reconstructedPromptIds.add(record.promptId);
-  upsertSessionOutputs(records, { storage: sessionStorage });
+  const allRecords = [];
+  for (const job of ready) {
+    try {
+      const outResponse = await fetch(`/api/outputs?promptId=${encodeURIComponent(job.promptId)}`);
+      const out = await outResponse.json();
+      if (!outResponse.ok || !Array.isArray(out) || !out.length) continue;
+      const records = buildQueueSessionOutputRecordsFromOutputs(out, job, buildSessionOutputRecords);
+      if (!records.length) continue;
+      allRecords.push(...records);
+      reconstructedPromptIds.add(job.promptId);
+    } catch {
+      /* keep trying on next poll */
+    }
+  }
+  if (!allRecords.length) return;
+  upsertSessionOutputs(sessionStorage, allRecords);
+  notifySessionOutputsChanged();
 }
 
 async function fetchRuntime() {
@@ -403,7 +420,7 @@ function renderEntryCard(entry, index, entries) {
   card.className = "batch-queue-card";
   card.dataset.entryId = entry.queueEntryId;
   const jobs = entry.snapshot?.items || [];
-  const editable = entry.state === QUEUE_ENTRY_STATE.QUEUED && !isBatchQueueArmed();
+  const editable = entry.state === QUEUE_ENTRY_STATE.QUEUED;
   const isCurrent = runtimeView?.currentEntryId === entry.queueEntryId;
   const jobProgress = isCurrent && runtimeView?.currentJobIndex != null
     ? `Job ${Number(runtimeView.currentJobIndex) + 1} / ${jobs.length}`
@@ -593,6 +610,15 @@ async function armQueue() {
   const projectId = currentProjectId();
   if (!projectId || !plan?.entries?.length) {
     return setFeedback("Nessun batch in coda.", "error");
+  }
+  const coord = getSharedCoordinator?.();
+  const legacyGate = canArmMultiBatchQueue({
+    queuedNext: coord?.getQueuedNext?.() || null,
+    deferredBatch: coord?.getDeferredBatch?.() || null,
+    batchActive: Boolean(coord?.snapshot?.()?.batchActive)
+  });
+  if (!legacyGate.ok) {
+    return setFeedback(legacyGate.error, "error");
   }
   await syncBatchQueuePlanToServer();
   const response = await fetch("/api/batch-queue/arm", {

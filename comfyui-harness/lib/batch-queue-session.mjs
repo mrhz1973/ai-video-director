@@ -1,5 +1,6 @@
 /**
- * Queue runtime → CLIP SESSIONE reconstruction helpers (Issue #47 blockers).
+ * Queue runtime → CLIP SESSIONE reconstruction helpers.
+ * Metadata only until real /api/outputs rows are attached.
  */
 
 export function queueSessionOutputKey(promptId) {
@@ -22,7 +23,7 @@ export function selectCompletedQueueJobsForSession({
   return out;
 }
 
-export function buildQueueSessionOutputRecord(job) {
+export function buildQueueSessionJobMeta(job = {}) {
   const item = job.item || {};
   const promptId = String(job.promptId || "").trim();
   if (!promptId) return null;
@@ -30,7 +31,7 @@ export function buildQueueSessionOutputRecord(job) {
     promptId,
     source: "batch",
     jobLabel: `Job ${Number(job.jobIndex) + 1}`,
-    jobIndex: Number(job.jobIndex),
+    jobIndex: Number.isFinite(Number(job.jobIndex)) ? Number(job.jobIndex) : null,
     batchTotal: null,
     workflowId: job.workflowId || "",
     workflowLabel: job.workflowLabel || "",
@@ -40,16 +41,35 @@ export function buildQueueSessionOutputRecord(job) {
     megapixels: item.megapixels == null ? "" : String(item.megapixels),
     aspect: item.aspect == null ? "" : String(item.aspect),
     steps: item.steps == null ? "" : String(item.steps),
-    queueEntryId: job.queueEntryId,
-    queueBatchName: job.queueBatchName,
-    queueJobId: job.queueJobId,
-    completedAt: Date.now(),
-    available: true
+    queueEntryId: job.queueEntryId || "",
+    queueBatchName: job.queueBatchName || "",
+    queueJobId: job.queueJobId || "",
+    completedAt: Date.now()
   };
 }
 
+/**
+ * Build playable CLIP SESSIONE records from authoritative output rows + job meta.
+ * Without filename/url rows this returns [] (fail-closed).
+ */
+export function buildQueueSessionOutputRecordsFromOutputs(outputItems, job, buildSessionOutputRecords) {
+  if (typeof buildSessionOutputRecords !== "function") {
+    throw new Error("buildSessionOutputRecords required");
+  }
+  const meta = buildQueueSessionJobMeta(job);
+  if (!meta) return [];
+  const items = Array.isArray(outputItems) ? outputItems : [];
+  if (!items.length) return [];
+  return buildSessionOutputRecords(items, meta);
+}
+
+/** @deprecated metadata-only records are not playable; use buildQueueSessionOutputRecordsFromOutputs */
+export function buildQueueSessionOutputRecord(job) {
+  return buildQueueSessionJobMeta(job);
+}
+
 export function buildQueueSessionOutputRecords(jobs = []) {
-  return jobs.map(buildQueueSessionOutputRecord).filter(Boolean);
+  return jobs.map(buildQueueSessionJobMeta).filter(Boolean);
 }
 
 export function escapeQueueDisplayText(value = "") {

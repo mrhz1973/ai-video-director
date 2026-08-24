@@ -6,6 +6,7 @@
 - **Aggiungi alla coda** deep-clones the prepared Batch editor snapshot without mutating the source draft. Future queued batches remain editable until claimed (`queued` → `submitting`).
 - Fail-closed after Director restart: plan restores; runtime `queueRunId` authority is **not** persisted or auto-restored. **Genera singolo** / **Avvia batch** blocked while queue armed. v0.12 ownership-safe interruption preserved.
 - **PR #57 review blockers**: F5/reconcile merge preserves live server entry states (no completed/running → queued downgrade); stale revision rejected for structural edits but authority-safe F5 reconnect allowed; **RECUPERO RICHIESTO** no longer auto-requeued on **RIPRENDI CODA**; per-job queued snapshot editing; v0.12 interrupt wired for current queue Batch; CLIP SESSIONE reconstruction from server runtime metadata; submit failure → `failed` (not `cancelled`); `currentJobIndex` tracks active prompt; queue cards use safe DOM `textContent`.
+- **PR #57 second-pass**: reconnect CLIP SESSIONE now fetches real `/api/outputs` rows (filename/url) before upsert; future queued Batches stay editable while the queue is armed; server durable descriptive checkpoints (no execution authority) survive Director restart without browser; multi-queue arm refuses legacy `queuedNext`/`deferredBatch`; `update-entry` applies semantic snapshot validation.
 - Reference: `docs/BATCH_QUEUE_RUNTIME.md`. Closes #47.
 
 ## 2026-08-24 — v0.12.0

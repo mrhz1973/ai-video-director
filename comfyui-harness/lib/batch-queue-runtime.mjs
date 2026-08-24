@@ -30,7 +30,7 @@ export function claimEntryAtomic(entry) {
   }
   return {
     ok: true,
-    entry: { ...entry, state: QUEUE_ENTRY_STATE.SUBMITTING }
+    entry: { ...entry, state: QUEUE_ENTRY_STATE.SUBMITTING, everClaimed: true }
   };
 }
 

@@ -72,7 +72,10 @@ export function normalizeSessionOutput(raw = null) {
     url,
     completedAt: Number(raw.completedAt) || Date.now(),
     available: raw.available !== false,
-    archive: archive && (archive.filename || archive.folderLabel) ? archive : null
+    archive: archive && (archive.filename || archive.folderLabel) ? archive : null,
+    queueEntryId: String(raw.queueEntryId || "").trim(),
+    queueBatchName: String(raw.queueBatchName || "").trim(),
+    queueJobId: String(raw.queueJobId || "").trim()
   };
 }
 
@@ -100,7 +103,10 @@ export function buildSessionOutputRecords(items = [], meta = {}) {
       url: item?.url,
       completedAt,
       available: true,
-      archive: meta.archive || null
+      archive: meta.archive || null,
+      queueEntryId: meta.queueEntryId,
+      queueBatchName: meta.queueBatchName,
+      queueJobId: meta.queueJobId
     }))
     .filter(Boolean);
 }

@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { normalizeBatchDraft, serializeBatchDraft, assertNoExecutionAuthority } from "./batch-draft.mjs";
+import { validateQueueBatchSnapshot } from "./batch-queue-validate.mjs";
 
 export const MAX_BATCH_QUEUE_ENTRIES = 50;
 export const BATCH_QUEUE_PLAN_VERSION = 1;
@@ -174,9 +175,8 @@ export function normalizeBatchQueuePlan(raw = null) {
 export function serializeBatchQueuePlan(plan, { bumpRevision = false } = {}) {
   const normalized = normalizeBatchQueuePlan(plan);
   if (!normalized) return null;
-  assertNoQueuePlanAuthority(normalized);
   const revision = bumpRevision ? normalized.revision + 1 : normalized.revision;
-  return {
+  const out = {
     version: normalized.version,
     failurePolicy: normalized.failurePolicy,
     revision,
@@ -194,6 +194,8 @@ export function serializeBatchQueuePlan(plan, { bumpRevision = false } = {}) {
       })
     }))
   };
+  assertNoQueuePlanAuthority(out);
+  return out;
 }
 
 export function assertNoQueuePlanAuthority(raw = null) {
@@ -293,8 +295,9 @@ export function updateQueueEntry(plan, queueEntryId, patch = {}) {
   const next = { ...entry };
   if (patch.name != null) next.name = String(patch.name).trim() || next.name;
   if (patch.snapshot) {
-    const snap = normalizeBatchDraft(patch.snapshot);
-    if (!snap) return { ok: false, code: "invalid-snapshot", error: "Snapshot non valido." };
+    const validated = validateQueueBatchSnapshot(patch.snapshot);
+    if (!validated.ok) return validated;
+    const snap = validated.snapshot;
     next.snapshot = {
       ...snap,
       items: snap.items.map((item, jobIndex) => ({

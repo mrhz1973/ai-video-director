@@ -107,7 +107,7 @@ const batchQueueRuntime = createBatchQueueRuntimeService({
     const running = Array.isArray(data.queue_running) ? data.queue_running : [];
     return running.length ? extractPromptIdFromQueueEntry(running[0]) : null;
   },
-  registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
+    registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
     runtimeOwnership.register(promptId, {
       kind: "batch",
       batchId,
@@ -116,6 +116,42 @@ const batchQueueRuntime = createBatchQueueRuntimeService({
       queueEntryId
     });
   },
+  persistDescriptivePlan: async ({ projectId, plan }) => {
+    if (!projectId || !plan) return;
+    try {
+      const current = await projectStore.read(projectId);
+      await projectStore.update(projectId, { ...current, batchQueue: plan });
+    } catch (error) {
+      logger?.error?.("batch_queue_checkpoint_failed", {
+        project_id: String(projectId).slice(0, 8),
+        reason: error.message
+      });
+    }
+  },
+  persistDescriptivePlan: async ({ projectId, plan }) => {
+
+    if (!projectId || !plan) return;
+
+    try {
+
+      const current = await projectStore.read(projectId);
+
+      await projectStore.update(projectId, { ...current, batchQueue: plan });
+
+    } catch (error) {
+
+      logger?.error?.("batch_queue_checkpoint_failed", {
+
+        project_id: String(projectId).slice(0, 8),
+
+        reason: error.message
+
+      });
+
+    }
+
+  },
+
   logger
 });
 
