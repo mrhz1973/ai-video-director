@@ -8,11 +8,11 @@ const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 const batch = readFileSync(new URL("../public/batch-ui.mjs", import.meta.url), "utf8");
 const queueUi = readFileSync(new URL("../public/batch-queue-ui.mjs", import.meta.url), "utf8");
 
-test("v0.13.0 package version", () => {
-  assert.equal(pkg.version, "0.13.0");
+test("package version is at least v0.13 lineage", () => {
+  assert.match(pkg.version, /^0\.1[34]\./);
 });
 
-test("CODA BATCH section wired in client", () => {
+test("CODA section wired in client", () => {
   assert.match(queueUi, /batchQueueSection/);
   assert.match(queueUi, /batchQueueArm/);
   assert.match(queueUi, /batchQueueFailurePolicy/);
@@ -24,10 +24,11 @@ test("batch queue API routes wired in client", () => {
   assert.match(app, /isBatchQueueArmed/);
 });
 
-test("Genera singolo Avvia batch and Aggiungi alla coda preserved", () => {
-  assert.match(html, /id="send"[^>]*>Genera singolo</);
-  assert.match(batch, /id="batchQueue">Avvia batch</);
-  assert.match(batch, /id="batchAddToQueue">Aggiungi alla coda</);
+test("Genera singolo, Aggiungi alla coda, and advanced Avvia batch preserved", () => {
+  assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
+  assert.match(batch, /id="batchQueue"/);
+  assert.match(batch, /Avvia questo Batch immediatamente/);
+  assert.match(batch, /id="batchAddToQueue">\+ AGGIUNGI ALLA CODA</);
 });
 
 test("v0.12 runtime interrupt controls still present", () => {

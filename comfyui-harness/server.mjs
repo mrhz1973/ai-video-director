@@ -1,5 +1,5 @@
 import http from "node:http";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,12 @@ import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
 import { createExecutionLaneRegistry } from "./lib/execution-lane.mjs";
 import { createPageSessionRegistry } from "./lib/page-session.mjs";
 import { createResolvePromptState } from "./lib/prompt-settlement.mjs";
+import {
+  ComfyOutputPathError,
+  isMp4Filename,
+  resolveSafeComfyOutputPath
+} from "./lib/comfy-output-path.mjs";
+import { showComfyOutputInFolder } from "./lib/comfy-output-actions.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
@@ -50,6 +56,10 @@ const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
 const projectDir = path.resolve(root, config.projectDirectory || "./projects");
+/** Optional absolute/relative path to ComfyUI's output folder for reveal/download. */
+const comfyOutputDirectory = config.comfyOutputDirectory
+  ? path.resolve(root, config.comfyOutputDirectory)
+  : null;
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
@@ -609,6 +619,68 @@ const server = http.createServer(async (req, res) => {
         json(res, 502, { error: "View fetch failed" });
       }
       return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/show-in-folder") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      try {
+        const result = await showComfyOutputInFolder({
+          outputRoot: comfyOutputDirectory,
+          filename: input.filename,
+          subfolder: input.subfolder || "",
+          type: input.type || "output"
+        });
+        logger.info("show_in_folder", { filename: String(input.filename || "").slice(0, 64) });
+        return json(res, 200, result);
+      } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
+        logger.error("show_in_folder", { reason: error.message });
+        return json(res, 500, { error: "Show in folder failed", code: "show-in-folder-failed" });
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/download-mp4") {
+      try {
+        const filename = url.searchParams.get("filename") || "";
+        const subfolder = url.searchParams.get("subfolder") || "";
+        if (!isMp4Filename(filename)) {
+          return json(res, 400, {
+            error: "Only authoritative .mp4 outputs can use Scarica MP4.",
+            code: "not-mp4"
+          });
+        }
+        const resolved = resolveSafeComfyOutputPath(comfyOutputDirectory, {
+          filename,
+          subfolder,
+          type: "output"
+        });
+        const info = await stat(resolved.absolutePath);
+        if (!info.isFile()) {
+          return json(res, 404, { error: "Output file not found.", code: "file-not-found" });
+        }
+        res.writeHead(200, {
+          "content-type": "video/mp4",
+          "content-disposition": `attachment; filename="${resolved.filename.replace(/"/g, "")}"`,
+          "content-length": String(info.size),
+          "cache-control": "no-store"
+        });
+        createReadStream(resolved.absolutePath).pipe(res);
+        return;
+      } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
+        if (error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+          return json(res, 404, { error: "Output file not found.", code: "file-not-found" });
+        }
+        logger.error("download_mp4", { reason: error.message });
+        return json(res, 500, { error: "Download failed", code: "download-failed" });
+      }
     }
     if (req.method === "POST" && url.pathname === "/api/queue") {
       const laneOwner = String(req.headers["x-h3-lane-owner"] || "").trim();

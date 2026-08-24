@@ -577,10 +577,13 @@ function createUi() {
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
         <button type="button" class="secondary" id="batchReset">Reset</button>
-        <button type="button" class="secondary" id="batchAddToQueue">Aggiungi alla coda</button>
-        <button type="button" id="batchQueue">Avvia batch</button>
+        <button type="button" id="batchAddToQueue">+ AGGIUNGI ALLA CODA</button>
+        <details class="batch-advanced-actions">
+          <summary>⋯ Avanzate</summary>
+          <button type="button" class="secondary" id="batchQueue">⋯ Avvia questo Batch immediatamente</button>
+        </details>
       </div>
-      <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
+      <p id="batchFeedback" class="batch-feedback">Prepara i job qui, poi aggiungili alla Coda. Nessuna modifica avvia una generazione.</p>
       <div id="batchRuntimeList" class="batch-runtime-list"></div>
     </details>`;
   if (mount.id === "batchMount") mount.appendChild(section);

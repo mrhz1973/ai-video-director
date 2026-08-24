@@ -14,7 +14,7 @@ function countId(id) {
 
 function composerSection() {
   const start = html.indexOf('<div class="composer" id="promptComposer">');
-  const end = html.indexOf('<section class="generation-grid quick-generation"');
+  const end = html.indexOf('id="scenaFirstFrame"');
   assert.ok(start >= 0 && end > start);
   return html.slice(start, end);
 }
@@ -39,7 +39,7 @@ test("Cronologia appears exactly once", () => {
 
 test("Genera singolo appears exactly once", () => {
   assert.equal(countId("send"), 1);
-  assert.match(html, /id="send"[^>]*>Genera singolo</);
+  assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
 });
 
 test("all three prompt action buttons share the same container", () => {
@@ -96,5 +96,5 @@ test("frontend bootstrap regression from v0.8.4 still passes", () => {
 test("v085 stylesheet is loaded and package version is 0.11.0", () => {
   assert.match(html, /workspace-v085\.css/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.13.0");
+  assert.match(pkg.version, /^0\.1[34]\./);
 });

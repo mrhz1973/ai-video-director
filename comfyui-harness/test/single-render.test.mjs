@@ -260,13 +260,14 @@ test("Batch submit remains behind queueBatch only", () => {
   assert.doesNotMatch(queueFn, /prepareSingleRenderPayload|submitSingleRender/);
 });
 
-test("UI: Genera singolo, Batch opzionale, Avvia batch, helper copy", () => {
-  assert.match(html, /id="send"[^>]*>Genera singolo</);
+test("UI: Genera singolo, Batch heading, advanced Avvia batch, helper copy", () => {
+  assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
   assert.match(html, /Non modifica il Batch/);
-  assert.equal(BATCH_OPTIONAL_HEADING, "Batch — opzionale");
+  assert.equal(BATCH_OPTIONAL_HEADING, "BATCH — job preparati");
   assert.match(batchUi, /\$\{BATCH_OPTIONAL_HEADING\}/);
   assert.match(batchUi, /Genera singolo.*crea sempre una sola clip/);
-  assert.match(batchUi, /id="batchQueue">Avvia batch</);
+  assert.match(batchUi, /id="batchQueue"/);
+  assert.match(batchUi, /Avvia questo Batch immediatamente/);
 });
 
 test("resolveGenerateAction labels say Genera singolo", () => {

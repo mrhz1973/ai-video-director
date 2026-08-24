@@ -502,6 +502,25 @@ function renderSessionGallery() {
       onPreviewError: clip => {
         markSessionOutputUnavailable(sessionStorage, clip.id);
         notifySessionOutputsChanged();
+      },
+      onShowInFolder: clip => {
+        void fetch("/api/show-in-folder", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            filename: clip.filename,
+            subfolder: clip.subfolder || "",
+            type: "output"
+          })
+        }).then(async response => {
+          if (response.ok) return;
+          const data = await response.json().catch(() => ({}));
+          const status = $("outputStatus");
+          if (status) {
+            status.textContent = data.error || "Impossibile aprire la cartella ComfyUI.";
+            status.dataset.state = "error";
+          }
+        }).catch(() => {});
       }
     }));
   }

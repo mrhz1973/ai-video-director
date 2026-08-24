@@ -31,12 +31,30 @@ function appendCodeLine(doc, parent, label, codeText) {
   parent.append(line);
 }
 
+function sourceAttributionLabel(item) {
+  if (item.queueEntryId || item.queueBatchName) {
+    const name = item.queueBatchName ? ` · ${item.queueBatchName}` : "";
+    return `Queue Batch${name}`;
+  }
+  if (item.source === "batch") return "Batch";
+  return "Single";
+}
+
+function buildDownloadUrl(item) {
+  const params = new URLSearchParams();
+  params.set("filename", String(item.filename || ""));
+  if (item.subfolder) params.set("subfolder", String(item.subfolder));
+  params.set("type", "output");
+  return `/api/download-mp4?${params.toString()}`;
+}
+
 /**
  * Build one gallery card using only createElement / textContent / append.
  * Trusted output URLs may be assigned to href/src; labels are never parsed as HTML.
  */
 export function createSessionClipCard(doc, item, {
-  onPreviewError = null
+  onPreviewError = null,
+  onShowInFolder = null
 } = {}) {
   const card = doc.createElement("article");
   card.className = `session-clip${item.available === false ? " unavailable" : ""}`;
@@ -49,6 +67,9 @@ export function createSessionClipCard(doc, item, {
   const strong = doc.createElement("strong");
   strong.textContent = label;
   meta.append(strong);
+
+  appendSep(doc, meta);
+  meta.append(doc.createTextNode(sourceAttributionLabel(item)));
 
   const settings = formatSessionClipSettingsLine(item);
   if (settings) {
@@ -76,6 +97,11 @@ export function createSessionClipCard(doc, item, {
   if (item.archive?.filename) {
     const folder = item.archive.folderLabel ? `${item.archive.folderLabel} / ` : "";
     appendCodeLine(doc, paths, "Copia archivio", `${folder}${item.archive.filename}`);
+  } else {
+    const archiveStatus = doc.createElement("div");
+    archiveStatus.className = "session-clip-archive-status";
+    archiveStatus.textContent = "copia archivio non creata · originale ComfyUI disponibile";
+    paths.append(archiveStatus);
   }
 
   const actions = doc.createElement("div");
@@ -85,13 +111,33 @@ export function createSessionClipCard(doc, item, {
     flag.className = "session-clip-unavailable-flag";
     flag.textContent = "Non disponibile";
     actions.append(flag);
-  } else if (item.url) {
-    const link = doc.createElement("a");
-    link.href = item.url;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "Apri video";
-    actions.append(link);
+  } else {
+    if (item.url) {
+      const open = doc.createElement("a");
+      open.href = item.url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.textContent = "Apri video";
+      actions.append(open);
+    }
+    const show = doc.createElement("button");
+    show.type = "button";
+    show.className = "secondary session-clip-show-folder";
+    show.textContent = "Mostra nella cartella";
+    show.addEventListener("click", () => {
+      if (typeof onShowInFolder === "function") onShowInFolder(item);
+    });
+    actions.append(show);
+
+    const isMp4 = /\.mp4$/i.test(String(item.filename || ""));
+    if (isMp4) {
+      const download = doc.createElement("a");
+      download.href = buildDownloadUrl(item);
+      download.textContent = "Scarica MP4";
+      download.download = String(item.filename || "clip.mp4");
+      download.className = "session-clip-download";
+      actions.append(download);
+    }
   }
 
   const nodes = [meta];
@@ -103,6 +149,8 @@ export function createSessionClipCard(doc, item, {
     video.playsInline = true;
     video.preload = "metadata";
     video.controls = true;
+    try { video.setAttribute("controlsList", "nodownload"); } catch { /* mock DOM */ }
+    video.controlsList = "nodownload";
     if (typeof onPreviewError === "function") {
       video.addEventListener?.("error", () => onPreviewError(item));
     }

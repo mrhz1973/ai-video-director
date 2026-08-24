@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-24 — v0.14.0
+
+- Harness primary workflow navigation: **SCENA · BATCH · CODA · OUTPUT** (Issue #59).
+- BATCH promotes **+ AGGIUNGI ALLA CODA**; immediate Avvia batch remains under advanced overflow.
+- CODA shows human Batch/Job summaries; raw `item.files` / `source.files` JSON only under **Dettagli tecnici**.
+- OUTPUT cards: Apri video, Mostra nella cartella, Scarica MP4; archive-permission status stays truthful.
+- Director endpoints: `POST /api/show-in-folder`, `GET /api/download-mp4` (exact bytes, no transcode) under configured `comfyOutputDirectory`.
+
 ## 2026-08-24 — v0.13.0
 
 - **Multi-Batch queue** (Issue #47): **CODA BATCH** — persist up to **50** ordered Batch snapshots in project `batchQueue`; explicit **AVVIA CODA** / **RIPRENDI CODA** arms server-side sequential scheduler (`createBatchQueueRuntimeService`). One Batch active at a time; browser may close while Director runs the queue.

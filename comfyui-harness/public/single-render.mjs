@@ -14,7 +14,8 @@ export { BATCH_EXECUTION_LABELS, SINGLE_RENDER_ACTION_LABELS };
 
 export const SINGLE_RENDER_KIND = "single";
 
-export const BATCH_OPTIONAL_HEADING = "Batch — opzionale";
+export const BATCH_OPTIONAL_HEADING = "BATCH — job preparati";
+
 
 export function singleRenderSideEffects() {
   return Object.freeze({
