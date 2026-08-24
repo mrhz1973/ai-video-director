@@ -14,7 +14,7 @@ import {
   assertNoQueuePlanAuthority,
   normalizeBatchQueuePlan,
   serializeBatchQueuePlan
-} from "./batch-queue-plan.mjs";
+} from "./batch-queue-plan-core.mjs";
 
 function cloneBatchDraftForDuplicate(batchDraft = null) {
   const normalized = normalizeBatchDraft(batchDraft);

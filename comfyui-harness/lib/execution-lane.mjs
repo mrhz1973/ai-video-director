@@ -25,17 +25,24 @@ import {
   PAGE_SESSION_RECONNECT_WINDOW_MS,
   PAGE_SESSION_LIFECYCLE
 } from "./page-session.mjs";
+import {
+  EXECUTION_LANE_KIND,
+  FUTURE_LANE_STALE_MS,
+  PROMPT_STATE,
+  TERMINAL_PROMPT_STATES,
+  isFutureExecutionLaneKind,
+  isInFlightExecutionLaneKind,
+  terminalPromptIdFromComfyMessage
+} from "./execution-lane-kinds.mjs";
 
-export const EXECUTION_LANE_KIND = Object.freeze({
-  QUEUED_NEXT: "queued-next",
-  DEFERRED_BATCH: "deferred-batch",
-  ACTIVE_BATCH: "active-batch",
-  MULTI_BATCH_QUEUE: "multi-batch-queue",
-  IMMEDIATE_SINGLE: "immediate-single"
-});
-
-/** @deprecated Heartbeat silence is not reclaim authority; kept for telemetry only. */
-export const FUTURE_LANE_STALE_MS = 45_000;
+export {
+  EXECUTION_LANE_KIND,
+  FUTURE_LANE_STALE_MS,
+  PROMPT_STATE,
+  isFutureExecutionLaneKind,
+  isInFlightExecutionLaneKind,
+  terminalPromptIdFromComfyMessage
+};
 
 export {
   PAGE_SESSION_DISCONNECT_GRACE_MS,
@@ -43,57 +50,8 @@ export {
   PAGE_SESSION_LIFECYCLE
 };
 
-export const PROMPT_STATE = Object.freeze({
-  RUNNING: "running",
-  COMPLETED: "completed",
-  INTERRUPTED: "interrupted",
-  FAILED: "failed",
-  UNKNOWN: "unknown"
-});
-
-const FUTURE_KINDS = new Set([
-  EXECUTION_LANE_KIND.QUEUED_NEXT,
-  EXECUTION_LANE_KIND.DEFERRED_BATCH
-]);
-
-const IN_FLIGHT_KINDS = new Set([
-  EXECUTION_LANE_KIND.ACTIVE_BATCH,
-  EXECUTION_LANE_KIND.IMMEDIATE_SINGLE
-]);
-
-const TERMINAL_COMFY_TYPES = new Set([
-  "execution_success",
-  "execution_error",
-  "execution_interrupted"
-]);
-
-const TERMINAL_PROMPT_STATES = new Set([
-  PROMPT_STATE.COMPLETED,
-  PROMPT_STATE.INTERRUPTED,
-  PROMPT_STATE.FAILED
-]);
-
-export function isFutureExecutionLaneKind(kind) {
-  return FUTURE_KINDS.has(String(kind || ""));
-}
-
-export function isInFlightExecutionLaneKind(kind) {
-  return IN_FLIGHT_KINDS.has(String(kind || ""));
-}
-
 function isServerOwnedKind(kind) {
   return String(kind || "") === EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE;
-}
-
-export function terminalPromptIdFromComfyMessage(message) {
-  let parsed = message;
-  if (typeof message === "string") {
-    try { parsed = JSON.parse(message); } catch { return null; }
-  }
-  const type = parsed?.type || parsed?.event;
-  if (!TERMINAL_COMFY_TYPES.has(String(type || ""))) return null;
-  const promptId = parsed?.data?.prompt_id || parsed?.prompt_id;
-  return promptId ? String(promptId) : null;
 }
 
 export function createExecutionLaneRegistry({

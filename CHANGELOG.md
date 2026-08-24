@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-08-24 — v0.14.2
+
+- Fix frontend bootstrap regression: browser module graph no longer transitively imports Node-only modules (`node:crypto`) via `execution-lane.mjs` and `batch-queue-plan.mjs`. Shared pure definitions moved to `execution-lane-kinds.mjs` and `batch-queue-plan-core.mjs`; server UUID generation unchanged.
+
 ## 2026-08-24 — v0.14.1
 
 - Windows launcher: when `openBrowser` is true and startup succeeds, open **both** AI Video Director (`8787`) and ComfyUI (`8188`) in the default browser (Director first). `openBrowser=false` opens neither. No service lifecycle changes.
