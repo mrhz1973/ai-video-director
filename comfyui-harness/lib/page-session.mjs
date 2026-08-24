@@ -1,5 +1,5 @@
 /**
- * Server-issued top-level page sessions (Issue #47 / seventh pass).
+ * Server-issued top-level page sessions (Issue #47 / eighth pass).
  * In-memory only — never persisted to project JSON.
  *
  * Distinguishes:
@@ -7,20 +7,42 @@
  * - pageSessionId: opaque server authority bound to that document
  * - connectionGeneration: individual SSE transport; stale close must not kill a live reattach
  *
+ * Lifecycle after last SSE transport drops:
+ *   CONNECTED → RECONNECTABLE (within abandonAfterMs) → ABANDONED
+ *
+ * FUTURE execution authority remains protected while CONNECTED or RECONNECTABLE
+ * so a competing reserve cannot steal during a transport outage before reattach.
+ * A dead document past abandonAfterMs becomes ABANDONED and reclaimable.
+ *
  * Reconnects of the SAME pageInstanceId reattach the SAME pageSession.
- * A new/duplicated document mints a different pageInstanceId and gets a new session.
- * Clients must not persist pageInstanceId in sessionStorage.
  */
 
 import { randomUUID } from "node:crypto";
 
-/** Grace after the last live SSE transport drops before the page is unprotected. */
+/** Soft transport window (compat export); authority uses reconnect/abandon window. */
 export const PAGE_SESSION_DISCONNECT_GRACE_MS = 5_000;
+
+/**
+ * After the last SSE drops, same-document reconnect remains protected for this long.
+ * Competing FUTURE reserves must not steal during this reconnectable window.
+ */
+export const PAGE_SESSION_RECONNECT_WINDOW_MS = 60_000;
+
+export const PAGE_SESSION_LIFECYCLE = Object.freeze({
+  CONNECTED: "connected",
+  RECONNECTABLE: "reconnectable",
+  ABANDONED: "abandoned",
+  UNKNOWN: "unknown"
+});
 
 export function createPageSessionRegistry({
   now = () => Date.now(),
-  disconnectGraceMs = PAGE_SESSION_DISCONNECT_GRACE_MS
+  /** @deprecated use abandonAfterMs — kept as alias for test harnesses */
+  disconnectGraceMs = null,
+  abandonAfterMs = PAGE_SESSION_RECONNECT_WINDOW_MS
 } = {}) {
+  const abandonMs = disconnectGraceMs != null ? Number(disconnectGraceMs) : Number(abandonAfterMs);
+
   /** @type {Map<string, {
    *   id: string,
    *   pageInstanceId: string,
@@ -32,6 +54,16 @@ export function createPageSessionRegistry({
   const bySessionId = new Map();
   /** @type {Map<string, string>} pageInstanceId → pageSessionId */
   const byInstanceId = new Map();
+
+  function lifecycleOf(session) {
+    if (!session) return PAGE_SESSION_LIFECYCLE.UNKNOWN;
+    if (session.connected) return PAGE_SESSION_LIFECYCLE.CONNECTED;
+    if (session.disconnectedAt == null) return PAGE_SESSION_LIFECYCLE.ABANDONED;
+    if ((now() - session.disconnectedAt) < abandonMs) {
+      return PAGE_SESSION_LIFECYCLE.RECONNECTABLE;
+    }
+    return PAGE_SESSION_LIFECYCLE.ABANDONED;
+  }
 
   return {
     /**
@@ -51,7 +83,8 @@ export function createPageSessionRegistry({
             pageSessionId: session.id,
             pageInstanceId: instance,
             connectionGeneration: session.connectionGeneration,
-            reattached: true
+            reattached: true,
+            lifecycle: PAGE_SESSION_LIFECYCLE.CONNECTED
           };
         }
       }
@@ -70,7 +103,8 @@ export function createPageSessionRegistry({
         pageSessionId: id,
         pageInstanceId: instance,
         connectionGeneration: 1,
-        reattached: false
+        reattached: false,
+        lifecycle: PAGE_SESSION_LIFECYCLE.CONNECTED
       };
     },
 
@@ -99,21 +133,28 @@ export function createPageSessionRegistry({
       return Boolean(session?.connected);
     },
 
+    getLifecycle(pageSessionId) {
+      return lifecycleOf(bySessionId.get(String(pageSessionId || "").trim()));
+    },
+
     /**
      * True while the document must retain execution authority:
-     * a live SSE transport, or still inside post-disconnect grace.
+     * CONNECTED or RECONNECTABLE (not yet ABANDONED).
      */
     isProtected(pageSessionId) {
-      const session = bySessionId.get(String(pageSessionId || "").trim());
-      if (!session) return false;
-      if (session.connected) return true;
-      if (session.disconnectedAt == null) return false;
-      return (now() - session.disconnectedAt) < disconnectGraceMs;
+      const life = this.getLifecycle(pageSessionId);
+      return life === PAGE_SESSION_LIFECYCLE.CONNECTED
+        || life === PAGE_SESSION_LIFECYCLE.RECONNECTABLE;
+    },
+
+    isAbandoned(pageSessionId) {
+      return this.getLifecycle(pageSessionId) === PAGE_SESSION_LIFECYCLE.ABANDONED;
     },
 
     get(pageSessionId) {
       const session = bySessionId.get(String(pageSessionId || "").trim());
-      return session ? { ...session } : null;
+      if (!session) return null;
+      return { ...session, lifecycle: lifecycleOf(session) };
     },
 
     getByInstance(pageInstanceId) {

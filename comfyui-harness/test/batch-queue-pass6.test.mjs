@@ -35,10 +35,10 @@ function harness({ now: initial = 1_000, disconnectGraceMs = 1_000 } = {}) {
   };
 }
 
-test("pass6 A–E: JS heartbeat silence does not steal live page FUTURE lane", () => {
+test("pass6 A–E: JS heartbeat silence does not steal live page FUTURE lane", async () => {
   const h = harness({ disconnectGraceMs: 1_000 });
   const pageA = h.pageSessions.open();
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-a",
     pageSessionId: pageA
@@ -51,7 +51,7 @@ test("pass6 A–E: JS heartbeat silence does not steal live page FUTURE lane", (
   assert.equal(h.pageSessions.isProtected(pageA), true);
 
   const pageB = h.pageSessions.open();
-  const foreign = h.lane.reserve({
+  const foreign = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-b",
     pageSessionId: pageB
@@ -60,14 +60,14 @@ test("pass6 A–E: JS heartbeat silence does not steal live page FUTURE lane", (
   assert.equal(foreign.code, "lane-busy");
   assert.equal(h.lane.get()?.ownerId, "tab-a");
   assert.equal(h.lane.get()?.pageSessionId, pageA);
-  assert.equal(h.lane.reclaimStale({ requesterId: "tab-b" }).ok, false);
-  assert.equal(h.lane.reclaimStale({ requesterId: "tab-b" }).code, "still-alive");
+  assert.equal((await h.lane.reclaimStale({ requesterId: "tab-b" })).ok, false);
+  assert.equal((await h.lane.reclaimStale({ requesterId: "tab-b" })).code, "still-alive");
 });
 
-test("pass6 F–I: after owner connection loss, FUTURE becomes reclaimable once (no auto-submit)", () => {
+test("pass6 F–I: after owner connection loss, FUTURE becomes reclaimable once (no auto-submit)", async () => {
   const h = harness({ disconnectGraceMs: 1_000 });
   const pageA = h.pageSessions.open();
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-a",
     pageSessionId: pageA
@@ -79,17 +79,17 @@ test("pass6 F–I: after owner connection loss, FUTURE becomes reclaimable once 
   assert.equal(h.pageSessions.isConnected(pageA), false);
   // Still inside grace — not reclaimable yet.
   const pageEarly = h.pageSessions.open();
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "early",
     pageSessionId: pageEarly
-  }).ok, false);
+  })).ok, false);
 
   h.advance(1_001);
   assert.equal(h.pageSessions.isProtected(pageA), false);
 
   const pageB = h.pageSessions.open();
-  const next = h.lane.reserve({
+  const next = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-b",
     pageSessionId: pageB
@@ -98,11 +98,11 @@ test("pass6 F–I: after owner connection loss, FUTURE becomes reclaimable once 
   assert.equal(h.lane.get()?.ownerId, "tab-b");
   // Exactly one authority — second reserve busy.
   const pageC = h.pageSessions.open();
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "tab-c",
     pageSessionId: pageC
-  }).ok, false);
+  })).ok, false);
   // Stale intent is not auto-submitted (no coordinator arm here — authority only).
   assert.equal(h.lane.get()?.kind, EXECUTION_LANE_KIND.QUEUED_NEXT);
 });
@@ -110,7 +110,7 @@ test("pass6 F–I: after owner connection loss, FUTURE becomes reclaimable once 
 test("pass6: copied sessionStorage lease cannot control another page session", async () => {
   const h = harness();
   const pageA = h.pageSessions.open();
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "owner-a",
     pageSessionId: pageA
@@ -197,7 +197,7 @@ test("pass6: copied sessionStorage lease cannot control another page session", a
     ...copied,
     pageSessionId: pageB
   }).code, "invalid-page-session");
-  const abandoned = h.lane.reclaimStale();
+  const abandoned = await h.lane.reclaimStale();
   assert.equal(abandoned.ok, true, abandoned.error || abandoned.code);
   assert.equal(abandoned.status, "reclaimed");
   assert.equal(h.lane.get(), null);
@@ -209,7 +209,7 @@ test("pass6: copied sessionStorage lease cannot control another page session", a
 test("pass6: queued-next copied lease also cannot release owner page", async () => {
   const h = harness({ disconnectGraceMs: 500 });
   const pageA = h.pageSessions.open();
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "qn-a",
     pageSessionId: pageA
@@ -226,14 +226,14 @@ test("pass6: queued-next copied lease also cannot release owner page", async () 
   h.pageSessions.close(pageA);
   h.advance(501);
   const pageC = h.pageSessions.open();
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "qn-c",
     pageSessionId: pageC
-  }).ok, true);
+  })).ok, true);
 });
 
-test("pass6: production paths bind page-session + lease (audit)", () => {
+test("pass6: production paths bind page-session + lease (audit)", async () => {
   const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.match(server, /pageSessions\.attach\(/);
   assert.match(server, /event: page-session/);
@@ -267,7 +267,7 @@ test("pass6: production paths bind page-session + lease (audit)", () => {
   assert.match(service, /pageSessionId:\s*null/);
 });
 
-test("pass6: pageSessionId is never loaded from storage helpers", () => {
+test("pass6: pageSessionId is never loaded from storage helpers", async () => {
   clearPageSessionId();
   assert.equal(getPageSessionId(), null);
   setPageSessionId("live-from-sse");

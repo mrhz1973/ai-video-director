@@ -130,7 +130,7 @@ function memoryStorage() {
  */
 async function runDeferredLifecycle({ lane, ownerId, pageSessionId, submit }) {
   const events = [];
-  const reserved = lane.reserve({
+  const reserved = await lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId,
     pageSessionId
@@ -197,7 +197,7 @@ test("pass4: deferred lifecycle releases on thrown submit (no orphan)", async ()
 test("pass4: F5 clears stored deferredBatch future reservation without restoring intent", async () => {
   const { lane, pageSessionId } = openBrowserLane();
   const storage = memoryStorage();
-  const reserved = lane.reserve({
+  const reserved = await lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-def",
     pageSessionId
@@ -218,9 +218,9 @@ test("pass4: F5 clears stored deferredBatch future reservation without restoring
 });
 
 
-test("pass4: tab-loss deferred becomes reclaimable after page connection loss", () => {
+test("pass4: tab-loss deferred becomes reclaimable after page connection loss", async () => {
   const h = openBrowserLane({ disconnectGraceMs: 1_000, initialNow: 1_000 });
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-lost",
     pageSessionId: h.pageSessionId
@@ -236,40 +236,40 @@ test("pass4: tab-loss deferred becomes reclaimable after page connection loss", 
     pageSessionId: h.pageSessionId
   }).ok, true);
   h.advance(500);
-  assert.equal(h.lane.reclaimStale({ requesterId: "tab-b" }).ok, false);
-  assert.equal(h.lane.reclaimStale({ requesterId: "tab-b" }).code, "still-alive");
+  assert.equal((await h.lane.reclaimStale({ requesterId: "tab-b" })).ok, false);
+  assert.equal((await h.lane.reclaimStale({ requesterId: "tab-b" })).code, "still-alive");
 
   // Tab loss: SSE disconnect → reclaim after grace (not JS timer silence alone).
   h.pageSessions.close(h.pageSessionId);
   h.advance(1_001);
-  const reclaimed = h.lane.reclaimStale({ requesterId: "tab-b" });
+  const reclaimed = await h.lane.reclaimStale({ requesterId: "tab-b" });
   assert.equal(reclaimed.ok, true);
   assert.equal(reclaimed.status, "reclaimed");
   assert.equal(h.lane.get(), null);
 
   // Another client may now own the lane (server multi-batch needs no page session).
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
     ownerId: "multi-b"
-  }).ok, true);
+  })).ok, true);
 });
 
-test("pass4: active/multi kinds are never stale-reclaimed", () => {
+test("pass4: active/multi kinds are never stale-reclaimed", async () => {
   const h = openBrowserLane({ disconnectGraceMs: 1, initialNow: 0 });
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
     ownerId: "multi"
-  }).ok, true);
+  })).ok, true);
   h.advance(10_000);
-  const result = h.lane.reclaimStale({ requesterId: "other" });
+  const result = await h.lane.reclaimStale({ requesterId: "other" });
   assert.equal(result.ok, false);
   assert.equal(result.code, "not-reclaimable");
   assert.equal(h.lane.get()?.kind, EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE);
 });
 
-test("pass4: live future intent cannot be stolen by another client", () => {
+test("pass4: live future intent cannot be stolen by another client", async () => {
   const h = openBrowserLane({ disconnectGraceMs: 5_000, initialNow: 0 });
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "live-a",
     pageSessionId: h.pageSessionId
@@ -283,12 +283,12 @@ test("pass4: live future intent cannot be stolen by another client", () => {
   });
   h.advance(200);
   const pageB = h.pageSessions.open();
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "live-b",
     pageSessionId: pageB
-  }).ok, false);
-  assert.equal(h.lane.reclaimStale({ requesterId: "live-b" }).ok, false);
+  })).ok, false);
+  assert.equal((await h.lane.reclaimStale({ requesterId: "live-b" })).ok, false);
   assert.equal(h.lane.get()?.ownerId, "live-a");
 });
 
@@ -297,7 +297,7 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
   let pathCount = 0;
 
   // A wins with immediate single
-  const reservedA = h.lane.reserve({
+  const reservedA = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "single-a",
     pageSessionId: h.pageSessionId
@@ -329,11 +329,11 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
   multi2.setLane({ running: 1, pending: 0 });
   assert.equal((await multi2.service.arm({ projectId: "p-race-multi", plan })).ok, true);
   const pageB = lane2.pageSessions.open();
-  assert.equal(lane2.reserve({
+  assert.equal((await lane2.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "single-b",
     pageSessionId: pageB
-  }).ok, false);
+  })).ok, false);
   assert.equal(lane2.assertSubmitAllowed({
     ownerId: "single-b",
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
@@ -344,9 +344,9 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
   assert.equal(pathCount, 2);
 });
 
-test("pass4: /api/queue boundary rejects foreign lane owner while reservation held", () => {
+test("pass4: /api/queue boundary rejects foreign lane owner while reservation held", async () => {
   const lane = createExecutionLaneRegistry();
-  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE, ownerId: "multi" });
+  const reserved = await lane.reserve({ kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE, ownerId: "multi" });
   assert.equal(reserved.ok, true);
   assert.equal(lane.assertSubmitAllowed({ ownerId: null }).ok, false);
   assert.equal(lane.assertSubmitAllowed({
@@ -369,7 +369,7 @@ test("pass4: /api/queue boundary rejects foreign lane owner while reservation he
   }).ok, false);
 });
 
-test("pass4: stop UI feedback is truthful for HTTP 200 + queueCheckpointFailed", () => {
+test("pass4: stop UI feedback is truthful for HTTP 200 + queueCheckpointFailed", async () => {
   const ok = formatQueueBatchStopFeedback({ queueCheckpointFailed: false });
   assert.equal(ok.recoveryRequired, false);
   assert.match(ok.message, /pausa/i);
@@ -480,7 +480,7 @@ test("pass4: resume fails closed when recovery persist still unavailable", async
   assert.equal(submits.length, 0);
 });
 
-test("pass4: future kinds helper", () => {
+test("pass4: future kinds helper", async () => {
   assert.equal(isFutureExecutionLaneKind(EXECUTION_LANE_KIND.QUEUED_NEXT), true);
   assert.equal(isFutureExecutionLaneKind(EXECUTION_LANE_KIND.DEFERRED_BATCH), true);
   assert.equal(isFutureExecutionLaneKind(EXECUTION_LANE_KIND.IMMEDIATE_SINGLE), false);

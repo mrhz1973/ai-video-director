@@ -116,7 +116,7 @@ function mockService(overrides = {}) {
   };
 }
 
-test("pass3: batch-queue-ui imports live CLIP SESSIONE helper (dependency contract)", () => {
+test("pass3: batch-queue-ui imports live CLIP SESSIONE helper (dependency contract)", async () => {
   const contract = assertModuleDependencyContract({
     source: batchQueueUiSource,
     moduleSpecifier: "../lib/batch-queue-session.mjs",
@@ -140,7 +140,7 @@ test("pass3: batch-queue-ui imports live CLIP SESSIONE helper (dependency contra
   assert.equal(broken.code, "missing-import");
 });
 
-test("pass3: real reconnect path builds one playable CLIP SESSIONE row", () => {
+test("pass3: real reconnect path builds one playable CLIP SESSIONE row", async () => {
   const job = {
     promptId: "pid-reconnect-1",
     queueEntryId: "e1",
@@ -286,7 +286,7 @@ test("pass3: cross-tab queuedNext vs multi-queue — only one owns future lane",
   const clientB = createQueueCoordinator({ submit: async () => ({ prompt_id: "b" }) });
 
   clientA.markQueue({ running: 1, pending: 0 });
-  const reservedA = lane.reserve({
+  const reservedA = await lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-a",
     projectId: "p1",
@@ -317,7 +317,7 @@ test("pass3: cross-tab multi-queue vs deferredBatch — inverse order", async ()
 
   const clientA = createQueueCoordinator({ submit: async () => ({ prompt_id: "x" }) });
   clientA.markQueue({ running: 1, pending: 0 });
-  const reservedLegacy = lane.reserve({
+  const reservedLegacy = await lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-a",
     projectId: "p1",
@@ -351,7 +351,7 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
   // Legacy owns future lane first.
   clientLegacy.markQueue({ running: 1, pending: 0 });
   const legacyPage = lane.pageSessions.open();
-  const reservedLegacy = lane.reserve({
+  const reservedLegacy = await lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-legacy",
     pageSessionId: legacyPage
@@ -377,7 +377,7 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
   assert.equal(pathCount, 1);
 });
 
-test("pass3: server.mjs has a single persistDescriptivePlan and patch-only update", () => {
+test("pass3: server.mjs has a single persistDescriptivePlan and patch-only update", async () => {
   const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   const matches = server.match(/persistDescriptivePlan\s*:/g) || [];
   assert.equal(matches.length, 1);

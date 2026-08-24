@@ -89,12 +89,12 @@ function mockService(overrides = {}) {
   };
 }
 
-test("pass5: dead future owner is atomically reclaimed by normal reserve", () => {
+test("pass5: dead future owner is atomically reclaimed by normal reserve", async () => {
   let now = 1_000;
   const pageSessions = createPageSessionRegistry({ now: () => now, disconnectGraceMs: 1_000 });
   const lane = createExecutionLaneRegistry({ now: () => now, pageSessions });
   const deadPage = pageSessions.open();
-  const dead = lane.reserve({
+  const dead = await lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "dead-tab",
     pageSessionId: deadPage
@@ -107,7 +107,7 @@ test("pass5: dead future owner is atomically reclaimed by normal reserve", () =>
   pageSessions.close(deadPage);
   now = 3_000;
   const freshPage = pageSessions.open();
-  const next = lane.reserve({
+  const next = await lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "fresh-tab",
     pageSessionId: freshPage
@@ -130,12 +130,12 @@ test("pass5: dead future owner is atomically reclaimed by normal reserve", () =>
   assert.equal(lane.get()?.ownerId, "fresh-tab");
 });
 
-test("pass5: client cannot shrink stale timeout via staleAfterMs=0", () => {
+test("pass5: client cannot shrink stale timeout via staleAfterMs=0", async () => {
   let now = 0;
   const pageSessions = createPageSessionRegistry({ now: () => now, disconnectGraceMs: 5_000 });
   const lane = createExecutionLaneRegistry({ now: () => now, pageSessions });
   const page = pageSessions.open();
-  const reserved = lane.reserve({
+  const reserved = await lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "live-owner",
     pageSessionId: page
@@ -143,7 +143,7 @@ test("pass5: client cannot shrink stale timeout via staleAfterMs=0", () => {
   assert.equal(reserved.ok, true);
   now = 10;
   // Even if a client still sends staleAfterMs:0, reclaimStale ignores it; live page stays.
-  const forced = lane.reclaimStale({ requesterId: "attacker", staleAfterMs: 0 });
+  const forced = await lane.reclaimStale({ requesterId: "attacker", staleAfterMs: 0 });
   assert.equal(forced.ok, false);
   assert.equal(forced.code, "still-alive");
   assert.equal(lane.get()?.ownerId, "live-owner");
@@ -156,11 +156,11 @@ test("pass5: client cannot shrink stale timeout via staleAfterMs=0", () => {
   assert.doesNotMatch(client, /staleAfterMs\s*=/);
 });
 
-test("pass5: identical ownerId+kind second reserve is lane-busy; lease required to submit", () => {
+test("pass5: identical ownerId+kind second reserve is lane-busy; lease required to submit", async () => {
   const pageSessions = createPageSessionRegistry();
   const lane = createExecutionLaneRegistry({ pageSessions });
   const pageA = pageSessions.open();
-  const a = lane.reserve({
+  const a = await lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "same-owner",
     pageSessionId: pageA
@@ -169,7 +169,7 @@ test("pass5: identical ownerId+kind second reserve is lane-busy; lease required 
   assert.ok(a.leaseToken);
 
   const pageB = pageSessions.open();
-  const b = lane.reserve({
+  const b = await lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "same-owner",
     pageSessionId: pageB

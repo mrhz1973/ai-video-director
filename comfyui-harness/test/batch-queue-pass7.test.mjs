@@ -52,21 +52,22 @@ function simulateQueue(lane, creds, submits) {
     pageSessionId: creds.pageSessionId
   });
   if (!gate.ok) return gate;
-  lane.beginSubmitTransaction();
+  const binding = { generation: gate.generation, leaseToken: gate.leaseToken };
+  lane.beginSubmitTransaction(binding);
   try {
     const promptId = `pid-${submits.length + 1}`;
-    lane.notePromptAccepted(promptId);
+    lane.notePromptAccepted(promptId, binding);
     submits.push(promptId);
     return { ok: true, prompt_id: promptId };
   } finally {
-    lane.endSubmitTransaction();
+    lane.endSubmitTransaction(binding);
   }
 }
 
 test("pass7: F5 does not permanently orphan ACTIVE_BATCH (no live txn)", async () => {
   const h = harness({ disconnectGraceMs: 1_000 });
   const attachedA = h.pageSessions.attach("doc-a");
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "owner-a",
     pageSessionId: attachedA.pageSessionId
@@ -94,11 +95,11 @@ test("pass7: F5 does not permanently orphan ACTIVE_BATCH (no live txn)", async (
 
   // Foreign cannot steal during grace (page still protected).
   const foreignEarly = h.pageSessions.attach("doc-foreign-early");
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "foreign",
     pageSessionId: foreignEarly.pageSessionId
-  }).code, "lane-busy");
+  })).code, "lane-busy");
 
   // Copied storage + different document cannot release/submit.
   const dup = h.pageSessions.attach("doc-dup");
@@ -112,7 +113,7 @@ test("pass7: F5 does not permanently orphan ACTIVE_BATCH (no live txn)", async (
   h.advance(1_001);
   // After safe reconciliation (page gone, no live txn) lane is not stuck.
   const nextDoc = h.pageSessions.attach("doc-after-f5");
-  const next = h.lane.reserve({
+  const next = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "owner-next",
     pageSessionId: nextDoc.pageSessionId
@@ -126,10 +127,10 @@ test("pass7: F5 does not permanently orphan ACTIVE_BATCH (no live txn)", async (
   clearStoredExecutionLane(storage);
 });
 
-test("pass7: F5 ACTIVE_BATCH stays fail-closed while submit transaction is live", () => {
+test("pass7: F5 ACTIVE_BATCH stays fail-closed while submit transaction is live", async () => {
   const h = harness({ disconnectGraceMs: 500 });
   const attachedA = h.pageSessions.attach("doc-a-live");
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "owner-a",
     pageSessionId: attachedA.pageSessionId
@@ -148,18 +149,18 @@ test("pass7: F5 ACTIVE_BATCH stays fail-closed while submit transaction is live"
   h.advance(5_000);
 
   const foreign = h.pageSessions.attach("doc-thief");
-  const steal = h.lane.reserve({
+  const steal = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "thief",
     pageSessionId: foreign.pageSessionId
   });
   assert.equal(steal.ok, false);
   assert.equal(steal.code, "lane-busy");
-  assert.equal(h.lane.reclaimStale().code, "transaction-live");
+  assert.equal((await h.lane.reclaimStale()).code, "transaction-live");
   assert.equal(submits.length, 1, "no duplicate /prompt");
 
   h.lane.notePromptTerminal(queued.prompt_id);
-  const after = h.lane.reserve({
+  const after = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "after",
     pageSessionId: foreign.pageSessionId
@@ -171,7 +172,7 @@ test("pass7: F5 ACTIVE_BATCH stays fail-closed while submit transaction is live"
 test("pass7: F5 IMMEDIATE_SINGLE same lifecycle as ACTIVE_BATCH", async () => {
   const h = harness({ disconnectGraceMs: 1_000 });
   const attachedA = h.pageSessions.attach("imm-a");
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
     ownerId: "imm-owner",
     pageSessionId: attachedA.pageSessionId
@@ -197,26 +198,27 @@ test("pass7: F5 IMMEDIATE_SINGLE same lifecycle as ACTIVE_BATCH", async () => {
 
   h.advance(1_001);
   const foreign = h.pageSessions.attach("imm-foreign");
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "imm-foreign",
     pageSessionId: foreign.pageSessionId
-  }).ok, false);
+  })).ok, false);
   assert.equal(simulateQueue(h.lane, { ...copied, pageSessionId: foreign.pageSessionId }, submits).ok, false);
 
   h.lane.noteComfyMessage({ type: "execution_success", data: { prompt_id: queued.prompt_id } });
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
     ownerId: "imm-after",
     pageSessionId: foreign.pageSessionId
-  }).ok, true);
+  })).ok, true);
   assert.equal(submits.length, 1);
 });
 
-test("pass7: SSE reconnect of same document keeps DEFERRED_BATCH authority", () => {
-  const h = harness({ disconnectGraceMs: 1_000 });
+test("pass7: SSE reconnect of same document keeps DEFERRED_BATCH authority", async () => {
+  // Short abandon window for this unit test; pass8 covers the >5s reconnect race.
+  const h = harness({ disconnectGraceMs: 10_000 });
   const first = h.pageSessions.attach("live-doc");
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "tab-a",
     pageSessionId: first.pageSessionId
@@ -224,11 +226,11 @@ test("pass7: SSE reconnect of same document keeps DEFERRED_BATCH authority", () 
   assert.equal(reserved.ok, true);
   const leaseToken = reserved.leaseToken;
 
-  // Drop only SSE transport; document identity remains.
+  // Drop only SSE transport; document identity remains (RECONNECTABLE).
   h.pageSessions.close(first.pageSessionId, first.connectionGeneration);
   assert.equal(h.pageSessions.isConnected(first.pageSessionId), false);
   h.advance(2_000);
-  assert.equal(h.pageSessions.isProtected(first.pageSessionId), false);
+  assert.equal(h.pageSessions.isProtected(first.pageSessionId), true);
 
   const reattached = h.pageSessions.attach("live-doc");
   assert.equal(reattached.reattached, true);
@@ -237,11 +239,11 @@ test("pass7: SSE reconnect of same document keeps DEFERRED_BATCH authority", () 
   assert.equal(h.lane.get()?.ownerId, "tab-a");
 
   const foreign = h.pageSessions.attach("other-doc");
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "tab-b",
     pageSessionId: foreign.pageSessionId
-  }).code, "lane-busy");
+  })).code, "lane-busy");
 
   assert.equal(h.lane.heartbeat({
     ownerId: "tab-a",
@@ -283,10 +285,10 @@ test("pass7: SSE reconnect of same document keeps DEFERRED_BATCH authority", () 
   assert.equal(h.lane.get(), null);
 });
 
-test("pass7: duplicate tab with copied storage cannot operate reattached document", () => {
+test("pass7: duplicate tab with copied storage cannot operate reattached document", async () => {
   const h = harness();
   const first = h.pageSessions.attach("orig-doc");
-  const reserved = h.lane.reserve({
+  const reserved = await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "orig",
     pageSessionId: first.pageSessionId
@@ -312,11 +314,11 @@ test("pass7: duplicate tab with copied storage cannot operate reattached documen
   assert.equal(h.lane.get()?.pageSessionId, first.pageSessionId);
 });
 
-test("pass7: ACTIVE_BATCH / IMMEDIATE_SINGLE survive SSE reconnect of same document", () => {
+test("pass7: ACTIVE_BATCH / IMMEDIATE_SINGLE survive SSE reconnect of same document", async () => {
   for (const kind of [EXECUTION_LANE_KIND.ACTIVE_BATCH, EXECUTION_LANE_KIND.IMMEDIATE_SINGLE]) {
     const h = harness({ disconnectGraceMs: 400 });
     const first = h.pageSessions.attach(`doc-${kind}`);
-    const reserved = h.lane.reserve({
+    const reserved = await h.lane.reserve({
       kind,
       ownerId: `owner-${kind}`,
       pageSessionId: first.pageSessionId
@@ -339,11 +341,11 @@ test("pass7: ACTIVE_BATCH / IMMEDIATE_SINGLE survive SSE reconnect of same docum
     }, submits).ok, true);
     assert.equal(submits.length, 1);
     const thief = h.pageSessions.attach(`thief-${kind}`);
-    assert.equal(h.lane.reserve({
+    assert.equal((await h.lane.reserve({
       kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
       ownerId: "thief",
       pageSessionId: thief.pageSessionId
-    }).ok, false);
+    })).ok, false);
     assert.equal(h.lane.release({
       ownerId: `owner-${kind}`,
       kind,
@@ -353,10 +355,10 @@ test("pass7: ACTIVE_BATCH / IMMEDIATE_SINGLE survive SSE reconnect of same docum
   }
 });
 
-test("pass7: stale SSE close after reattach does not declare page dead", () => {
+test("pass7: stale SSE close after reattach does not declare page dead", async () => {
   const h = harness({ disconnectGraceMs: 200 });
   const first = h.pageSessions.attach("stable-doc");
-  h.lane.reserve({
+  await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
     ownerId: "a",
     pageSessionId: first.pageSessionId
@@ -367,14 +369,14 @@ test("pass7: stale SSE close after reattach does not declare page dead", () => {
   h.advance(1_000);
   assert.equal(h.pageSessions.isConnected(second.pageSessionId), true);
   const foreign = h.pageSessions.attach("foreign");
-  assert.equal(h.lane.reserve({
+  assert.equal((await h.lane.reserve({
     kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
     ownerId: "b",
     pageSessionId: foreign.pageSessionId
-  }).code, "lane-busy");
+  })).code, "lane-busy");
 });
 
-test("pass7: terminalPromptIdFromComfyMessage helper", () => {
+test("pass7: terminalPromptIdFromComfyMessage helper", async () => {
   assert.equal(terminalPromptIdFromComfyMessage({
     type: "execution_success",
     data: { prompt_id: "p1" }
@@ -386,7 +388,7 @@ test("pass7: terminalPromptIdFromComfyMessage helper", () => {
   assert.equal(terminalPromptIdFromComfyMessage({ type: "progress", data: { prompt_id: "p3" } }), null);
 });
 
-test("pass7: production identity wiring (audit)", () => {
+test("pass7: production identity wiring (audit)", async () => {
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.match(app, /getPageInstanceId\(\)/);
   assert.match(app, /pageInstanceId=/);

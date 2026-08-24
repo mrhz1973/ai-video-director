@@ -3,22 +3,27 @@
  * Not persisted — Director restart clears authority (fail-closed).
  *
  * Browser reservations bind to a server-issued pageSessionId (document identity).
- * SSE transport reconnects of the same document reattach that session.
- * JS heartbeat silence alone never makes a live page stealable.
+ * SSE reconnects of the same document reattach that session while RECONNECTABLE.
  *
- * FUTURE reclaim: owning page unprotected (connection loss + grace).
- * ACTIVE_BATCH / IMMEDIATE_SINGLE: fail-closed while a submit transaction is
- * live; after the owning page is gone AND no accepted prompt remains open,
- * the reservation is abandoned-reclaimable (F5 must not orphan forever).
+ * FUTURE reclaim: only after the owning page is ABANDONED (past reconnect window).
+ * A RECONNECTABLE outage must not let a competing reserve steal FUTURE authority.
  *
- * Destructive ops require leaseToken + matching pageSessionId.
+ * ACTIVE_BATCH / IMMEDIATE_SINGLE: fail-closed while a submit transaction is live.
+ * Accepted prompt settlement is SERVER-AUTHORITATIVE via resolvePromptState
+ * (Comfy /history + /queue) — never exclusively via browser SSE delivery.
+ *
+ * Submit bookkeeping is bound to reservation generation + leaseToken so a
+ * late completion cannot mutate a later unrelated reservation.
+ *
  * MULTI_BATCH_QUEUE is server-owned (pageSessionId null).
  */
 
 import { randomUUID } from "node:crypto";
 import {
   createPageSessionRegistry,
-  PAGE_SESSION_DISCONNECT_GRACE_MS
+  PAGE_SESSION_DISCONNECT_GRACE_MS,
+  PAGE_SESSION_RECONNECT_WINDOW_MS,
+  PAGE_SESSION_LIFECYCLE
 } from "./page-session.mjs";
 
 export const EXECUTION_LANE_KIND = Object.freeze({
@@ -32,7 +37,19 @@ export const EXECUTION_LANE_KIND = Object.freeze({
 /** @deprecated Heartbeat silence is not reclaim authority; kept for telemetry only. */
 export const FUTURE_LANE_STALE_MS = 45_000;
 
-export { PAGE_SESSION_DISCONNECT_GRACE_MS };
+export {
+  PAGE_SESSION_DISCONNECT_GRACE_MS,
+  PAGE_SESSION_RECONNECT_WINDOW_MS,
+  PAGE_SESSION_LIFECYCLE
+};
+
+export const PROMPT_STATE = Object.freeze({
+  RUNNING: "running",
+  COMPLETED: "completed",
+  INTERRUPTED: "interrupted",
+  FAILED: "failed",
+  UNKNOWN: "unknown"
+});
 
 const FUTURE_KINDS = new Set([
   EXECUTION_LANE_KIND.QUEUED_NEXT,
@@ -48,6 +65,12 @@ const TERMINAL_COMFY_TYPES = new Set([
   "execution_success",
   "execution_error",
   "execution_interrupted"
+]);
+
+const TERMINAL_PROMPT_STATES = new Set([
+  PROMPT_STATE.COMPLETED,
+  PROMPT_STATE.INTERRUPTED,
+  PROMPT_STATE.FAILED
 ]);
 
 export function isFutureExecutionLaneKind(kind) {
@@ -76,7 +99,12 @@ export function terminalPromptIdFromComfyMessage(message) {
 export function createExecutionLaneRegistry({
   now = () => Date.now(),
   pageSessions = createPageSessionRegistry({ now }),
-  futureStaleMs = FUTURE_LANE_STALE_MS
+  futureStaleMs = FUTURE_LANE_STALE_MS,
+  /**
+   * Browser-independent Comfy settlement.
+   * Must return PROMPT_STATE.* — never invent terminal from queue absence alone.
+   */
+  resolvePromptState = null
 } = {}) {
   void futureStaleMs;
   /** @type {null | {
@@ -125,6 +153,17 @@ export function createExecutionLaneRegistry({
     return reservation.httpInFlight > 0 || reservation.acceptedPromptIds.size > 0;
   }
 
+  function bindingMatches(binding = {}) {
+    if (!reservation) return false;
+    if (binding.generation != null && Number(binding.generation) !== reservation.generation) {
+      return false;
+    }
+    if (binding.leaseToken != null && String(binding.leaseToken) !== reservation.leaseToken) {
+      return false;
+    }
+    return true;
+  }
+
   function isFutureReclaimable() {
     if (!reservation || !isFutureExecutionLaneKind(reservation.kind)) return false;
     return pageUnprotected();
@@ -142,6 +181,44 @@ export function createExecutionLaneRegistry({
       return true;
     }
     return false;
+  }
+
+  /**
+   * Prune accepted prompts using server-authoritative Comfy state.
+   * Does not rely on browser SSE. Unknown/unreachable → fail-closed (keep).
+   */
+  async function settleAbandonedAcceptedPrompts() {
+    if (!reservation || !isInFlightExecutionLaneKind(reservation.kind)) {
+      return { ok: true, status: "ignored" };
+    }
+    if (!pageUnprotected()) return { ok: true, status: "page-protected" };
+    if (reservation.httpInFlight > 0) return { ok: true, status: "http-in-flight" };
+    if (!reservation.acceptedPromptIds.size) return { ok: true, status: "empty" };
+    if (typeof resolvePromptState !== "function") {
+      return { ok: false, code: "settlement-unavailable", status: "fail-closed" };
+    }
+
+    const ids = [...reservation.acceptedPromptIds];
+    let pruned = 0;
+    for (const promptId of ids) {
+      let state;
+      try {
+        state = await resolvePromptState(promptId);
+      } catch {
+        state = PROMPT_STATE.UNKNOWN;
+      }
+      if (TERMINAL_PROMPT_STATES.has(String(state || ""))) {
+        reservation.acceptedPromptIds.delete(promptId);
+        pruned += 1;
+      }
+      // running / unknown: keep — fail closed
+    }
+    return {
+      ok: true,
+      status: "settled",
+      pruned,
+      remaining: reservation.acceptedPromptIds.size
+    };
   }
 
   function requireOwnerLeaseAndPage({ ownerId, leaseToken, pageSessionId } = {}) {
@@ -180,7 +257,7 @@ export function createExecutionLaneRegistry({
     get: publicSnapshot,
     pageSessions,
 
-    reserve({ kind, ownerId, projectId = null, pageSessionId = null } = {}) {
+    async reserve({ kind, ownerId, projectId = null, pageSessionId = null } = {}) {
       const nextKind = String(kind || "").trim();
       const nextOwner = String(ownerId || "").trim();
       if (!nextKind || !nextOwner) {
@@ -200,6 +277,7 @@ export function createExecutionLaneRegistry({
         }
       }
 
+      await settleAbandonedAcceptedPrompts();
       tryReclaimStaleReservation();
 
       if (reservation) {
@@ -209,7 +287,10 @@ export function createExecutionLaneRegistry({
           error: "Esiste già un job/batch in attesa o una Coda Batch attiva. Attendi o annullalo prima.",
           reservation: publicSnapshot(),
           reclaimable: isFutureReclaimable() || isAbandonedInFlightReclaimable(),
-          transactionLive: hasLiveTransaction()
+          transactionLive: hasLiveTransaction(),
+          pageLifecycle: reservation.pageSessionId
+            ? pageSessions.getLifecycle(reservation.pageSessionId)
+            : null
         };
       }
 
@@ -267,15 +348,19 @@ export function createExecutionLaneRegistry({
       return { ok: true, reservation: publicSnapshot(), leaseToken: reservation.leaseToken };
     },
 
-    reclaimStale({ requesterId = null } = {}) {
+    async reclaimStale({ requesterId = null } = {}) {
       if (!reservation) return { ok: true, status: "empty" };
+      await settleAbandonedAcceptedPrompts();
       if (isFutureExecutionLaneKind(reservation.kind)) {
         if (!isFutureReclaimable()) {
           return {
             ok: false,
             code: "still-alive",
-            error: "La page session proprietaria è ancora viva (connessione SSE o grace).",
-            reservation: publicSnapshot()
+            error: "La page session proprietaria è ancora CONNECTED o RECONNECTABLE.",
+            reservation: publicSnapshot(),
+            pageLifecycle: reservation.pageSessionId
+              ? pageSessions.getLifecycle(reservation.pageSessionId)
+              : null
           };
         }
       } else if (isInFlightExecutionLaneKind(reservation.kind)) {
@@ -283,7 +368,7 @@ export function createExecutionLaneRegistry({
           return {
             ok: false,
             code: "still-alive",
-            error: "La page session proprietaria è ancora viva (connessione SSE o grace).",
+            error: "La page session proprietaria è ancora CONNECTED o RECONNECTABLE.",
             reservation: publicSnapshot()
           };
         }
@@ -291,7 +376,7 @@ export function createExecutionLaneRegistry({
           return {
             ok: false,
             code: "transaction-live",
-            error: "Submit ancora in corso: la lane resta fail-closed.",
+            error: "Submit ancora in corso o prompt non ancora terminale in Comfy.",
             reservation: publicSnapshot()
           };
         }
@@ -348,26 +433,47 @@ export function createExecutionLaneRegistry({
           reservation: publicSnapshot()
         };
       }
-      return { ok: true, reservation: publicSnapshot() };
+      return {
+        ok: true,
+        reservation: publicSnapshot(),
+        generation: reservation.generation,
+        leaseToken: reservation.leaseToken
+      };
     },
 
-    /** Count an in-flight /api/queue HTTP transaction on the current in-flight kind. */
-    beginSubmitTransaction() {
+    /** Bind submit bookkeeping to the reservation that passed assertSubmitAllowed. */
+    beginSubmitTransaction(binding = {}) {
       if (!reservation || !isInFlightExecutionLaneKind(reservation.kind)) {
         return { ok: true, status: "ignored" };
       }
+      if (binding.generation != null || binding.leaseToken != null) {
+        if (!bindingMatches(binding)) {
+          return { ok: true, status: "stale" };
+        }
+      }
       reservation.httpInFlight += 1;
-      return { ok: true, status: "started" };
+      return {
+        ok: true,
+        status: "started",
+        generation: reservation.generation,
+        leaseToken: reservation.leaseToken
+      };
     },
 
-    endSubmitTransaction() {
+    endSubmitTransaction(binding = {}) {
       if (!reservation) return { ok: true, status: "empty" };
+      if ((binding.generation != null || binding.leaseToken != null) && !bindingMatches(binding)) {
+        return { ok: true, status: "stale" };
+      }
       if (reservation.httpInFlight > 0) reservation.httpInFlight -= 1;
       return { ok: true, status: "ended", httpInFlight: reservation.httpInFlight };
     },
 
-    notePromptAccepted(promptId) {
+    notePromptAccepted(promptId, binding = {}) {
       if (!reservation || !promptId) return { ok: true, status: "ignored" };
+      if ((binding.generation != null || binding.leaseToken != null) && !bindingMatches(binding)) {
+        return { ok: true, status: "stale" };
+      }
       reservation.acceptedPromptIds.add(String(promptId));
       return { ok: true, status: "accepted" };
     },
@@ -384,6 +490,7 @@ export function createExecutionLaneRegistry({
       return this.notePromptTerminal(promptId);
     },
 
+    settleAbandonedAcceptedPrompts,
     hasLiveTransaction,
 
     clear() {

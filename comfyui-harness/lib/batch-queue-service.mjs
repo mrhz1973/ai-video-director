@@ -497,7 +497,7 @@ export function createBatchQueueRuntimeService({
       const laneOwnerId = multiBatchLaneOwner(projectId);
       let laneLeaseToken = null;
       if (executionLane) {
-        const reserved = executionLane.reserve({
+        const reserved = await executionLane.reserve({
           kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
           ownerId: laneOwnerId,
           projectId

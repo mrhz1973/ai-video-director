@@ -38,6 +38,7 @@ import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
 import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
 import { createExecutionLaneRegistry } from "./lib/execution-lane.mjs";
 import { createPageSessionRegistry } from "./lib/page-session.mjs";
+import { createResolvePromptState } from "./lib/prompt-settlement.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
@@ -53,7 +54,14 @@ const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
 const pageSessions = createPageSessionRegistry();
-const executionLane = createExecutionLaneRegistry({ pageSessions });
+/** Browser-independent settlement for abandoned ACTIVE/IMMEDIATE accepted prompts. */
+const resolvePromptState = createResolvePromptState({ comfyUrl: comfy });
+const executionLane = createExecutionLaneRegistry({ pageSessions, resolvePromptState });
+/** Periodic settle — independent of browser SSE; never submits /prompt. */
+const abandonedPromptSettleTimer = setInterval(() => {
+  executionLane.settleAbandonedAcceptedPrompts().catch(() => {});
+}, 5_000);
+if (typeof abandonedPromptSettleTimer.unref === "function") abandonedPromptSettleTimer.unref();
 const runtimeControl = createRuntimeControlService({
   comfyUrl: comfy,
   ownershipRegistry: runtimeOwnership,
@@ -353,7 +361,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/execution-lane/reserve") {
       const input = await readJsonBody(req);
-      const result = executionLane.reserve({
+      const result = await executionLane.reserve({
         kind: input.kind,
         ownerId: input.ownerId,
         projectId: input.projectId,
@@ -393,7 +401,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/execution-lane/reclaim-stale") {
       const input = await readJsonBody(req);
       // staleAfterMs from clients is intentionally ignored — server policy only.
-      const result = executionLane.reclaimStale({
+      const result = await executionLane.reclaimStale({
         requesterId: input.requesterId
       });
       return json(res, result.ok ? 200 : 409, result);
@@ -621,7 +629,13 @@ const server = http.createServer(async (req, res) => {
           reservation: laneGate.reservation || null
         });
       }
-      executionLane.beginSubmitTransaction();
+      // Bind bookkeeping to this reservation generation so a late completion
+      // cannot mutate a later unrelated reservation.
+      const submitBinding = {
+        generation: laneGate.generation,
+        leaseToken: laneGate.leaseToken
+      };
+      executionLane.beginSubmitTransaction(submitBinding);
       try {
         const input = JSON.parse((await body(req)).toString("utf8"));
         logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
@@ -648,7 +662,7 @@ const server = http.createServer(async (req, res) => {
           if (!upstream.ok || !data.prompt_id) {
             logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
           } else {
-            executionLane.notePromptAccepted(data.prompt_id);
+            executionLane.notePromptAccepted(data.prompt_id, submitBinding);
             const batchId = req.headers["x-h3-batch-id"];
             const batchIndexRaw = req.headers["x-h3-batch-index"];
             runtimeControl.registerQueueAcceptance({
@@ -665,7 +679,7 @@ const server = http.createServer(async (req, res) => {
           return json(res, 502, { error: "Queue submission failed" });
         }
       } finally {
-        executionLane.endSubmitTransaction();
+        executionLane.endSubmitTransaction(submitBinding);
       }
     }
     if (req.method === "GET" && url.pathname === "/api/outputs") {
