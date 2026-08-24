@@ -188,17 +188,18 @@ test("pass6: copied sessionStorage lease cannot control another page session", a
     pageSessionId: pageA
   }).ok, true);
 
-  // Genuinely lose A → ACTIVE is not FUTURE-reclaimable (fail-closed).
+  // Genuinely lose A → ACTIVE with no live transaction is abandoned-reclaimable
+  // so F5 cannot permanently orphan the lane. Copied B still cannot operate A's lease
+  // while the reservation exists.
   h.pageSessions.close(pageA);
   h.advance(5_000);
-  assert.equal(h.lane.reclaimStale().ok, false);
-  assert.equal(h.lane.reclaimStale().code, "not-reclaimable");
-
-  // Matching page session can still release after disconnect (owner credential).
   assert.equal(h.lane.release({
     ...copied,
-    pageSessionId: pageA
-  }).ok, true);
+    pageSessionId: pageB
+  }).code, "invalid-page-session");
+  const abandoned = h.lane.reclaimStale();
+  assert.equal(abandoned.ok, true, abandoned.error || abandoned.code);
+  assert.equal(abandoned.status, "reclaimed");
   assert.equal(h.lane.get(), null);
 
   clearPageSessionId();
@@ -234,21 +235,27 @@ test("pass6: queued-next copied lease also cannot release owner page", async () 
 
 test("pass6: production paths bind page-session + lease (audit)", () => {
   const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  assert.match(server, /pageSessions\.open\(\)/);
+  assert.match(server, /pageSessions\.attach\(/);
   assert.match(server, /event: page-session/);
-  assert.match(server, /pageSessions\.close\(pageSessionId\)/);
+  assert.match(server, /pageSessions\.close\(pageSessionId,\s*connectionGeneration\)/);
   assert.match(server, /x-h3-page-session/);
   assert.match(server, /pageSessionId:\s*lanePageSession/);
+  assert.match(server, /beginSubmitTransaction/);
+  assert.match(server, /notePromptAccepted/);
+  assert.match(server, /noteComfyMessage/);
 
   const client = readFileSync(new URL("../public/execution-lane-client.mjs", import.meta.url), "utf8");
   assert.match(client, /memoryPageSessionId/);
+  assert.match(client, /memoryPageInstanceId/);
   assert.match(client, /executionLaneSubmitHeaders/);
   assert.match(client, /x-h3-page-session/);
   assert.doesNotMatch(client, /sessionStorage\.setItem\([^)]*pageSessionId/);
+  assert.doesNotMatch(client, /sessionStorage\.setItem\([^)]*pageInstanceId/);
 
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.match(app, /setPageSessionId/);
   assert.match(app, /page-session/);
+  assert.match(app, /pageInstanceId/);
   assert.match(app, /executionLaneSubmitHeaders/);
 
   const batchUi = readFileSync(new URL("../public/batch-ui.mjs", import.meta.url), "utf8");

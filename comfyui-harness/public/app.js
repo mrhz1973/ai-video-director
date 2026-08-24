@@ -73,6 +73,7 @@ import {
   EXECUTION_LANE_KIND,
   bindExecutionLaneUnloadRelease,
   executionLaneSubmitHeaders,
+  getPageInstanceId,
   getPageSessionId,
   reconcileExecutionLaneAfterReload,
   releaseExecutionLane,
@@ -1083,7 +1084,8 @@ async function handleMessage(event) {
 
 function connect() {
   events?.close();
-  events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
+  const pageInstanceId = getPageInstanceId();
+  events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}&pageInstanceId=${encodeURIComponent(pageInstanceId)}`);
   events.addEventListener("page-session", event => {
     try {
       const data = JSON.parse(event.data);

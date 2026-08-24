@@ -508,11 +508,21 @@ const server = http.createServer(async (req, res) => {
       const clientId = url.searchParams.get("clientId");
       if (!clientId) return json(res, 400, { error: "Missing clientId" });
       res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
-      // Server-issued page session: never accept client-supplied pageSessionId.
-      const pageSessionId = pageSessions.open();
+      // pageInstanceId is a memory-only document reconnect nonce, not the authority.
+      // Same instance reattaches the same opaque pageSessionId; never accept client pageSessionId.
+      const attached = pageSessions.attach(url.searchParams.get("pageInstanceId"));
+      const pageSessionId = attached.pageSessionId;
+      const connectionGeneration = attached.connectionGeneration;
       res.write(": connected\n\n");
-      res.write(`event: page-session\ndata: ${JSON.stringify({ pageSessionId })}\n\n`);
-      logger.info("sse_bridge_open", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
+      res.write(`event: page-session\ndata: ${JSON.stringify({
+        pageSessionId,
+        reattached: Boolean(attached.reattached)
+      })}\n\n`);
+      logger.info("sse_bridge_open", {
+        client_id: shortId(clientId),
+        page_session: shortId(pageSessionId),
+        reattached: Boolean(attached.reattached)
+      });
       const upstream = new WebSocket(`${comfy.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`);
       const sendEvent = (event, data) => { if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
       const subscribeLogs = async enabled => {
@@ -530,7 +540,12 @@ const server = http.createServer(async (req, res) => {
         sendEvent("connection", { state: "open" });
         subscribeLogs(true);
       });
-      upstream.addEventListener("message", event => { if (typeof event.data === "string" && !res.destroyed) res.write(`data: ${event.data}\n\n`); });
+      upstream.addEventListener("message", event => {
+        if (typeof event.data === "string" && !res.destroyed) {
+          executionLane.noteComfyMessage(event.data);
+          res.write(`data: ${event.data}\n\n`);
+        }
+      });
       upstream.addEventListener("close", () => {
         logger.info("sse_bridge_close", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
         subscribeLogs(false);
@@ -543,7 +558,7 @@ const server = http.createServer(async (req, res) => {
       const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": heartbeat\n\n"); }, 15000);
       req.on("close", () => {
         clearInterval(heartbeat);
-        pageSessions.close(pageSessionId);
+        pageSessions.close(pageSessionId, connectionGeneration);
         subscribeLogs(false);
         if (upstream.readyState < 2) upstream.close();
       });
@@ -606,45 +621,51 @@ const server = http.createServer(async (req, res) => {
           reservation: laneGate.reservation || null
         });
       }
-      const input = JSON.parse((await body(req)).toString("utf8"));
-      logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
-      const { preset, workflow } = await loadPreset(input.workflowId);
-      const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
-      if (safeFitBlocksGenerate(fit.status)) {
-        const gate = describeSafeFitBlocker(fit.status);
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
-        return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
-      }
-      let requested;
+      executionLane.beginSubmitTransaction();
       try {
-        requested = selectMegapixels(input);
-      } catch (error) {
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
-        return json(res, 400, { error: error.message });
-      }
-      const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
-      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
-      const bound = cloneAndBind(workflow, preset.bindings || {}, values);
-      try {
-        const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
-        const data = await upstream.json();
-        if (!upstream.ok || !data.prompt_id) {
-          logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
-        } else {
-          const batchId = req.headers["x-h3-batch-id"];
-          const batchIndexRaw = req.headers["x-h3-batch-index"];
-          runtimeControl.registerQueueAcceptance({
-            promptId: data.prompt_id,
-            batchId: batchId ? String(batchId) : null,
-            batchIndex: batchIndexRaw != null && batchIndexRaw !== "" ? Number(batchIndexRaw) : null,
-            clientId: input.clientId
-          });
-          logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
+        const input = JSON.parse((await body(req)).toString("utf8"));
+        logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
+        const { preset, workflow } = await loadPreset(input.workflowId);
+        const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
+        if (safeFitBlocksGenerate(fit.status)) {
+          const gate = describeSafeFitBlocker(fit.status);
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
+          return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
         }
-        return json(res, upstream.status, data);
-      } catch (error) {
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
-        return json(res, 502, { error: "Queue submission failed" });
+        let requested;
+        try {
+          requested = selectMegapixels(input);
+        } catch (error) {
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
+          return json(res, 400, { error: error.message });
+        }
+        const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
+        const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
+        const bound = cloneAndBind(workflow, preset.bindings || {}, values);
+        try {
+          const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
+          const data = await upstream.json();
+          if (!upstream.ok || !data.prompt_id) {
+            logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
+          } else {
+            executionLane.notePromptAccepted(data.prompt_id);
+            const batchId = req.headers["x-h3-batch-id"];
+            const batchIndexRaw = req.headers["x-h3-batch-index"];
+            runtimeControl.registerQueueAcceptance({
+              promptId: data.prompt_id,
+              batchId: batchId ? String(batchId) : null,
+              batchIndex: batchIndexRaw != null && batchIndexRaw !== "" ? Number(batchIndexRaw) : null,
+              clientId: input.clientId
+            });
+            logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
+          }
+          return json(res, upstream.status, data);
+        } catch (error) {
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
+          return json(res, 502, { error: "Queue submission failed" });
+        }
+      } finally {
+        executionLane.endSubmitTransaction();
       }
     }
     if (req.method === "GET" && url.pathname === "/api/outputs") {

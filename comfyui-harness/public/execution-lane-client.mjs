@@ -1,8 +1,9 @@
 /**
  * Browser client for server in-memory execution-lane reservation (Issue #47).
  *
- * pageSessionId is memory-only (from SSE `page-session` event). Never treat
- * sessionStorage-copied credentials as sufficient for destructive lane ops.
+ * pageInstanceId is generated once per top-level document in JS memory and is
+ * sent on SSE reconnect so the server reattaches the same pageSessionId.
+ * Never persist pageInstanceId or pageSessionId in sessionStorage.
  */
 
 import { EXECUTION_LANE_KIND, isFutureExecutionLaneKind } from "../lib/execution-lane.mjs";
@@ -11,14 +12,27 @@ export { EXECUTION_LANE_KIND, isFutureExecutionLaneKind };
 
 const SESSION_LANE_KEY = "h3ExecutionLane";
 
-/** @type {string|null} Server-issued SSE page session — memory only. */
+/** @type {string|null} Memory-only per-document reconnect nonce. */
+let memoryPageInstanceId = null;
+/** @type {string|null} Server-issued opaque page session — memory only. */
 let memoryPageSessionId = null;
+
+function newDocumentNonce() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** Stable for this JS document; never read from storage. */
+export function getPageInstanceId() {
+  if (!memoryPageInstanceId) memoryPageInstanceId = newDocumentNonce();
+  return memoryPageInstanceId;
+}
 
 export function getPageSessionId() {
   return memoryPageSessionId;
 }
 
-/** Called when SSE issues a fresh page-session event. Never load from storage. */
+/** Called when SSE issues a page-session event. Never load from storage. */
 export function setPageSessionId(pageSessionId) {
   const next = pageSessionId == null ? null : String(pageSessionId).trim() || null;
   memoryPageSessionId = next;
@@ -26,6 +40,12 @@ export function setPageSessionId(pageSessionId) {
 }
 
 export function clearPageSessionId() {
+  memoryPageSessionId = null;
+}
+
+/** Test helper: simulate a brand-new top-level document. */
+export function resetDocumentIdentityForTests() {
+  memoryPageInstanceId = null;
   memoryPageSessionId = null;
 }
 
@@ -212,8 +232,10 @@ export async function getExecutionLane() {
 
 /**
  * On reload: local future intent is gone by design.
- * Attempt release only with the live memory pageSession (not storage-copied alone).
- * Does not restore execution intent. Orphans clear via SSE disconnect + reclaim.
+ * Do not release using copied storage alone. A new document has a new
+ * pageInstanceId; abandoned ACTIVE/IMMEDIATE are reconciled server-side
+ * after the old page is unprotected and any submit transaction settles.
+ * Does not restore or auto-submit execution intent.
  */
 export async function reconcileExecutionLaneAfterReload({
   hasLocalFutureIntent = false,
@@ -230,7 +252,8 @@ export async function reconcileExecutionLaneAfterReload({
   }
   const pageSessionId = getPageSessionId();
   if (!pageSessionId) {
-    // No live page session yet — cannot authorize release with copied storage alone.
+    // New document / bootstrap before SSE — cannot authorize with copied storage.
+    // Server reconciles abandoned in-flight kinds after page loss + settled txn.
     clearStoredExecutionLane(storage);
     return { ok: true, status: "cleared-local-await-session", stored };
   }
