@@ -163,5 +163,5 @@ test("index loads the v0.8.1 layout modules", () => {
   assert.match(html, /panel-resize\.mjs/);
   assert.match(html, /inspector-ui\.mjs/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.match(pkg.version, /^0\.1[345]\./);
+  assert.match(pkg.version, /^0\.1[3456]\./);
 });
