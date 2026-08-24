@@ -73,8 +73,14 @@ export async function openArchiveFolder({
   execFileImpl = null,
   spawnImpl
 } = {}) {
-  const target = path.resolve(String(absolutePath || "").trim());
-  if (!target || !path.isAbsolute(target)) {
+  if (absolutePath == null || !String(absolutePath).trim()) {
+    throw new ComfyOutputPathError("Cartella archivio non configurata.", {
+      code: "archive-unconfigured",
+      status: 409
+    });
+  }
+  const target = path.resolve(String(absolutePath).trim());
+  if (!path.isAbsolute(target)) {
     throw new ComfyOutputPathError("Cartella archivio non configurata.", {
       code: "archive-unconfigured",
       status: 409

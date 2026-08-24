@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import {
   buildWindowsExplorerSelectArgs,
   classifyExplorerLaunchError,
   explorerExecutable,
+  launchWindowsExplorer,
   showComfyOutputInFolder,
   ComfyOutputPathError
 } from "../lib/comfy-output-actions.mjs";
@@ -197,4 +199,64 @@ test("Apri cartella opens directory without /select; failures are not swallowed"
     }),
     err => err instanceof ComfyOutputPathError && err.code === "explorer-failed"
   );
+});
+
+test("openArchiveFolder rejects missing/blank paths before path.resolve cwd fallback", async () => {
+  for (const value of [undefined, null, "", "   ", "\t"]) {
+    let launched = false;
+    await assert.rejects(
+      () => openArchiveFolder({
+        absolutePath: value,
+        platform: "win32",
+        execFileImpl: async () => {
+          launched = true;
+        }
+      }),
+      err => err instanceof ComfyOutputPathError
+        && err.code === "archive-unconfigured"
+        && launched === false
+    );
+  }
+});
+
+function mockChildProcess() {
+  const child = new EventEmitter();
+  child.pid = 4242;
+  child.kill = () => {};
+  child.unref = () => { child.unrefCalled = true; };
+  return child;
+}
+
+test("launchWindowsExplorer rejects when async error arrives before spawn", async () => {
+  const child = mockChildProcess();
+  const promise = launchWindowsExplorer(["/select,C:\\tmp\\clip.mp4"], {
+    spawnImpl: () => child,
+    timeoutMs: 2000
+  });
+  queueMicrotask(() => {
+    child.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
+  });
+  await assert.rejects(
+    () => promise,
+    err => err instanceof ComfyOutputPathError && err.code === "explorer-enoent"
+  );
+});
+
+test("launchWindowsExplorer resolves only after asynchronous spawn", async () => {
+  const child = mockChildProcess();
+  const promise = launchWindowsExplorer(["C:\\tmp\\archive"], {
+    spawnImpl: () => child,
+    timeoutMs: 2000
+  });
+  let resolved = false;
+  promise.then(() => { resolved = true; });
+  await Promise.resolve();
+  assert.equal(resolved, false);
+  queueMicrotask(() => {
+    child.emit("spawn");
+  });
+  const result = await promise;
+  assert.equal(result.ok, true);
+  assert.equal(result.pid, 4242);
+  assert.equal(child.unrefCalled, true);
 });

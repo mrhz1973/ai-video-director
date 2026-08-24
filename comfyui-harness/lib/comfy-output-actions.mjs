@@ -108,6 +108,7 @@ export function launchWindowsExplorer(args, {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let child = null;
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
@@ -115,7 +116,7 @@ export function launchWindowsExplorer(args, {
       fn(value);
     };
     const timer = setTimeout(() => {
-      try { child.kill(); } catch { /* ignore */ }
+      try { child?.kill(); } catch { /* ignore */ }
       finish(reject, classifyExplorerLaunchError({
         code: "ETIMEDOUT",
         killed: true,
@@ -123,7 +124,6 @@ export function launchWindowsExplorer(args, {
       }));
     }, timeoutMs);
 
-    let child;
     try {
       child = spawnImpl(exe, args, {
         detached: true,
@@ -138,9 +138,11 @@ export function launchWindowsExplorer(args, {
     child.once("error", error => {
       finish(reject, classifyExplorerLaunchError(error));
     });
-    // Process started successfully — do not wait for exit code.
-    child.unref();
-    finish(resolve, { ok: true, pid: child.pid });
+    child.once("spawn", () => {
+      // Process started successfully — do not wait for exit code.
+      try { child.unref(); } catch { /* ignore */ }
+      finish(resolve, { ok: true, pid: child.pid });
+    });
   });
 }
 
