@@ -189,7 +189,7 @@ test("openBrowser=false requests neither URL", async () => {
 
 test("failed ComfyUI health gate opens no browser pages", async () => {
   const comfyRoot = await makeFakeComfyRoot();
-  const { configPath } = await makeTempConfig(comfyRoot);
+  const { configPath } = await makeTempConfig(comfyRoot, { comfyTimeoutSeconds: 0.05 });
   const spawns = [];
   const browsers = [];
   await assert.rejects(() => runStart({
@@ -211,7 +211,7 @@ test("failed ComfyUI health gate opens no browser pages", async () => {
 
 test("failed Director health gate opens no browser pages", async () => {
   const comfyRoot = await makeFakeComfyRoot();
-  const { configPath } = await makeTempConfig(comfyRoot);
+  const { configPath } = await makeTempConfig(comfyRoot, { directorTimeoutSeconds: 0.05 });
   const spawns = [];
   const browsers = [];
   await assert.rejects(() => runStart({
