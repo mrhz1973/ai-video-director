@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } from "./lib/workflow.mjs";
 import { createLogger } from "./lib/logger.mjs";
+import "./lib/batch-queue-plan.mjs";
 import { createProjectStore } from "./lib/project-store.mjs";
 import { isValidProjectId } from "./lib/projects.mjs";
 import { probeAssetStatuses } from "./lib/asset-status.mjs";

@@ -6,7 +6,7 @@
  * Never persist pageInstanceId or pageSessionId in sessionStorage.
  */
 
-import { EXECUTION_LANE_KIND, isFutureExecutionLaneKind } from "../lib/execution-lane.mjs";
+import { EXECUTION_LANE_KIND, isFutureExecutionLaneKind } from "../lib/execution-lane-kinds.mjs";
 
 export { EXECUTION_LANE_KIND, isFutureExecutionLaneKind };
 

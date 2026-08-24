@@ -5,15 +5,18 @@
 import {
   BATCH_QUEUE_FAILURE_POLICY,
   QUEUE_ENTRY_STATE,
+  QUEUE_OVERALL_STATE,
   appendQueueEntry,
   createQueueEntryFromDraft,
   defaultQueueEntryName,
   normalizeBatchQueuePlan,
   serializeBatchQueuePlan,
+  setBatchQueuePlanRandomIdFactory,
   summarizeQueuePlan,
   validateQueueCapacity
-} from "../lib/batch-queue-plan.mjs";
-import { QUEUE_OVERALL_STATE } from "../lib/batch-queue-plan.mjs";
+} from "../lib/batch-queue-plan-core.mjs";
+
+setBatchQueuePlanRandomIdFactory(() => globalThis.crypto.randomUUID());
 import {
   buildQueueSessionOutputRecordsFromOutputs,
   selectCompletedQueueJobsForSession
