@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.12.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.13.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -147,7 +147,15 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 
 - **INTERROMPI RENDER** (Single monitor): confirmation → live queue match → server ownership → `POST /interrupt` with `prompt_id`. Never clears queue or mutates project/Batch draft.
 - **Interrompi job corrente** / **INTERROMPI BATCH** (submitted Batch monitor): server-side ownership registry from `POST /api/queue` headers (`x-h3-batch-id`, `x-h3-batch-index`). Current-job interrupt leaves pending same-Batch jobs queued; full stop deletes only owned pending prompt IDs via `{ delete: [...] }` — never `{ clear: true }`.
-- Registry is in-memory only; Director restart disables destructive controls fail-closed. Contract: `docs/COMFYUI_RUNTIME_CONTROL.md`.
+
+### Multi-Batch queue (v0.13.0, Issue #47)
+
+- **CODA BATCH**: up to **50** persisted Batch snapshots in project `batchQueue`; explicit **AVVIA CODA** arms in-memory `queueRunId` scheduler on Director. One Batch at a time; server tick continues if browser tab closes.
+- **Aggiungi alla coda** deep-clones the prepared Batch editor without clearing it. Future entries editable until `queued` → `submitting` claim.
+- Director restart: plan restores; authority lost; `recovery-required` for interrupted entries; **RIPRENDI CODA** required. **Genera singolo** / **Avvia batch** blocked while queue armed. Reference: `docs/BATCH_QUEUE_RUNTIME.md`.
+- Descriptive checkpoints persist only `{ batchQueue }` (claim / terminal / full-stop cancelled). Claim persistence failure is fail-closed (no prompt submit). Full Batch stop awaits cancelled checkpoint.
+- **Global execution lane** (server in-memory, not persisted): shared reservation for legacy `queuedNext` / `deferredBatch` / active Batch / immediate Single and multi-Batch queue. Future browser intents heartbebeat; silent orphans are reclaimable without restoring intent. Deferred must transfer to active before first `/api/queue` and release once in finally. `RIPRENDI CODA` exits `RECOVERY_REQUIRED` after explicit entry resolve + durable persist.
+- Runtime ownership registry is in-memory only; Director restart disables destructive controls fail-closed. Contract: `docs/COMFYUI_RUNTIME_CONTROL.md`.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

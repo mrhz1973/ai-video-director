@@ -33,6 +33,16 @@ import {
   getSharedCoordinator,
   resolveBatchQueueAction
 } from "./queue-coordinator.mjs";
+import {
+  EXECUTION_LANE_KIND,
+  executionLaneSubmitHeaders,
+  getPageSessionId,
+  releaseExecutionLane,
+  reserveExecutionLane,
+  startExecutionLaneHeartbeat,
+  stopExecutionLaneHeartbeat,
+  transferExecutionLaneKind
+} from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
 import {
   applyBatchStopResult,
@@ -43,6 +53,10 @@ import {
   batchStopConfirmMessage,
   findActiveBatchJob
 } from "./runtime-interrupt-ui.mjs";
+import {
+  addCurrentBatchToQueue,
+  isBatchQueueArmed
+} from "./batch-queue-ui.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -286,6 +300,22 @@ export function getBatchEditorSummary() {
     count: items.length,
     hasDraft: Boolean(items.length && source),
     submitted
+  };
+}
+
+/** Validates and returns the current prepared Batch as an independent queue snapshot. */
+export function getCurrentBatchSnapshotForQueue() {
+  const snapshot = collectSourceSnapshot();
+  if (snapshot.error) return { ok: false, error: snapshot.error };
+  const validation = validateCurrentBatch(snapshot);
+  if (!validation.valid) return { ok: false, error: validation.errors.join(" ") };
+  return {
+    ok: true,
+    draft: {
+      version: 1,
+      source,
+      items: batchItemsForExport()
+    }
   };
 }
 
@@ -547,6 +577,7 @@ function createUi() {
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
         <button type="button" class="secondary" id="batchReset">Reset</button>
+        <button type="button" class="secondary" id="batchAddToQueue">Aggiungi alla coda</button>
         <button type="button" id="batchQueue">Avvia batch</button>
       </div>
       <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
@@ -607,6 +638,12 @@ function createUi() {
     renderBatch();
     setFeedback("Batch svuotato. Nessuna generazione avviata.");
   };
+  $("batchAddToQueue")?.addEventListener("click", async () => {
+    const prepared = getCurrentBatchSnapshotForQueue();
+    if (!prepared.ok) return setFeedback(prepared.error, "error");
+    const result = await addCurrentBatchToQueue(prepared.draft);
+    if (!result.ok) setFeedback(result.error || "Impossibile aggiungere alla coda.", "error");
+  });
   $("batchQueue").onclick = queueBatch;
 }
 
@@ -737,7 +774,8 @@ function updateQueueButton() {
     pending: queue.pending,
     queuedNext: coord?.getQueuedNext?.() || null,
     deferredBatch: coord?.getDeferredBatch?.() || null,
-    batchActive: Boolean(coord?.snapshot?.().batchActive)
+    batchActive: Boolean(coord?.snapshot?.().batchActive),
+    batchQueueArmed: isBatchQueueArmed()
   });
   button.disabled = action.disabled;
   button.textContent = action.label;
@@ -787,8 +825,50 @@ function payloadFor(item, snapshot) {
 
 async function runSequentialBatch(snapshot) {
   const coord = getSharedCoordinator();
+  const clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
+  let lane = coord?.getLaneReservation?.();
+
+  // Deferred → active MUST complete before the first /api/queue.
+  if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH) {
+    const transferred = await transferExecutionLaneKind({
+      ownerId: lane.ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: lane.leaseToken
+    });
+    if (!transferred.ok) {
+      throw new Error(transferred.error || "Impossibile attivare la lane batch.");
+    }
+    lane = {
+      ownerId: lane.ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: transferred.leaseToken || lane.leaseToken,
+      pageSessionId: getPageSessionId()
+    };
+    coord?.setLaneReservation?.(lane);
+  } else if (!lane || lane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+    const ownerId = `active-batch:${clientId}`;
+    const reserved = await reserveExecutionLane({
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      ownerId,
+      projectId: null
+    });
+    if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+    lane = {
+      ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: reserved.leaseToken,
+      pageSessionId: getPageSessionId()
+    };
+    coord?.setLaneReservation?.(lane);
+  }
+
   const claimed = coord?.beginActiveBatch?.();
   if (claimed && !claimed.ok && claimed.reason === "locked") {
+    const held = coord?.getLaneReservation?.();
+    if (held?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(held);
+      coord?.clearLaneReservation?.();
+    }
     throw new Error("Un altro invio è già in corso.");
   }
   submitting = true;
@@ -797,11 +877,17 @@ async function runSequentialBatch(snapshot) {
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
     const snapshotItems = items.map(item => cloneBatchItemSnapshot(item));
+    const laneHeaders = () => executionLaneSubmitHeaders(coord?.getLaneReservation?.());
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
       const response = await fetch("/api/queue", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-h3-batch-id": batchId, "x-h3-batch-index": String(index) },
+        headers: {
+          "content-type": "application/json",
+          "x-h3-batch-id": batchId,
+          "x-h3-batch-index": String(index),
+          ...laneHeaders()
+        },
         body: JSON.stringify(payloadFor(item, snapshot))
       });
       const data = await response.json();
@@ -845,6 +931,12 @@ async function runSequentialBatch(snapshot) {
   } finally {
     submitting = false;
     coord?.endActiveBatch?.();
+    stopExecutionLaneHeartbeat();
+    const held = coord?.getLaneReservation?.();
+    if (held?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(held);
+      coord?.clearLaneReservation?.();
+    }
     updateQueueButton();
   }
 }
@@ -888,6 +980,13 @@ async function queueBatch() {
         projectLabel: $("projectLabel")?.value || "",
         workflowLabel: snapshot.workflowLabel || ""
       }, { storage: localStorage });
+      const ownerId = `deferred-batch:${sessionStorage.getItem("h3ClientId") || crypto.randomUUID()}`;
+      const reserved = await reserveExecutionLane({
+        kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+        ownerId,
+        projectId: null
+      });
+      if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
       const armed = coord.armDeferredBatch({
         items: items.map(item => cloneBatchItemSnapshot(item)),
         snapshot: {
@@ -896,7 +995,21 @@ async function queueBatch() {
         },
         submitAll: () => runSequentialBatch(snapshot)
       });
-      if (!armed.ok) throw new Error("Impossibile armare il batch in attesa.");
+      if (!armed.ok) {
+        await releaseExecutionLane({
+          ownerId,
+          kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+          leaseToken: reserved.leaseToken
+        });
+        throw new Error("Impossibile armare il batch in attesa.");
+      }
+      coord.setLaneReservation?.({
+        ownerId,
+        kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+        leaseToken: reserved.leaseToken,
+        pageSessionId: getPageSessionId()
+      });
+      startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
       setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");
       return;
     }
@@ -1183,6 +1296,9 @@ async function init() {
   loadDraftFromLocalStorage();
   loadRuntime();
   window.addEventListener("h3-queue-sample", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-armed", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-changed", () => updateQueueButton());
+  window.addEventListener("h3-batch-queue-runtime", () => updateQueueButton());
   window.addEventListener("h3-deferred-batch-cancel", () => {
     setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
     updateQueueButton();

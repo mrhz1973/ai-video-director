@@ -35,6 +35,13 @@ import {
 } from "./lib/gpu-power-helper.mjs";
 import { createRuntimeOwnershipRegistry } from "./lib/runtime-ownership.mjs";
 import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
+import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
+import { createExecutionLaneRegistry } from "./lib/execution-lane.mjs";
+import { createPageSessionRegistry } from "./lib/page-session.mjs";
+import { createResolvePromptState } from "./lib/prompt-settlement.mjs";
+import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
+import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
+import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -46,9 +53,96 @@ const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
+const pageSessions = createPageSessionRegistry();
+/** Browser-independent settlement for abandoned ACTIVE/IMMEDIATE accepted prompts. */
+const resolvePromptState = createResolvePromptState({ comfyUrl: comfy });
+const executionLane = createExecutionLaneRegistry({ pageSessions, resolvePromptState });
+/** Periodic settle — independent of browser SSE; never submits /prompt. */
+const abandonedPromptSettleTimer = setInterval(() => {
+  executionLane.settleAbandonedAcceptedPrompts().catch(() => {});
+}, 5_000);
+if (typeof abandonedPromptSettleTimer.unref === "function") abandonedPromptSettleTimer.unref();
 const runtimeControl = createRuntimeControlService({
   comfyUrl: comfy,
   ownershipRegistry: runtimeOwnership,
+  logger
+});
+
+const batchQueueRuntime = createBatchQueueRuntimeService({
+  submitJob: async (input, meta = {}) => {
+    const { preset, workflow } = await loadPreset(input.workflowId);
+    const files = resolveBatchItemFiles(
+      { files: input.files },
+      input.sharedFiles || {}
+    );
+    const result = await submitWorkflowToComfy({
+      input: { ...input, files },
+      preset,
+      workflow,
+      comfyUrl: comfy
+    });
+    if (!result.ok || !result.data?.prompt_id) {
+      const error = new Error(result.data?.error || "Queue submission failed");
+      error.status = result.status || 502;
+      throw error;
+    }
+    return result.data;
+  },
+  fetchQueueCounts: async () => {
+    const response = await fetch(`${comfy}/queue`);
+    const data = await response.json();
+    return {
+      running: Array.isArray(data.queue_running) ? data.queue_running.length : 0,
+      pending: Array.isArray(data.queue_pending) ? data.queue_pending.length : 0
+    };
+  },
+  fetchHistoryState: async promptId => {
+    try {
+      const response = await fetch(`${comfy}/history/${encodeURIComponent(promptId)}`);
+      if (!response.ok) return "running";
+      const data = await response.json();
+      const entry = data[promptId];
+      if (!entry) return "running";
+      const messages = entry.status?.messages || [];
+      const types = messages.map(item => item[0]);
+      if (types.includes("execution_success")) return "completed";
+      if (types.includes("execution_interrupted")) return "interrupted";
+      if (types.includes("execution_error")) return "failed";
+      return "running";
+    } catch {
+      return "running";
+    }
+  },
+  fetchActivePromptId: async () => {
+    const response = await fetch(`${comfy}/queue`);
+    const data = await response.json();
+    const running = Array.isArray(data.queue_running) ? data.queue_running : [];
+    return running.length ? extractPromptIdFromQueueEntry(running[0]) : null;
+  },
+  registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
+    runtimeOwnership.register(promptId, {
+      kind: "batch",
+      batchId,
+      batchIndex,
+      clientId: queueRunId,
+      queueEntryId
+    });
+  },
+  executionLane,
+  persistDescriptivePlan: async ({ projectId, plan }) => {
+    if (!projectId || !plan) return;
+    try {
+      // Patch-only: projectStore.update() re-reads fresh state and must not
+      // overwrite unrelated editor fields with a stale full snapshot.
+      await projectStore.update(projectId, { batchQueue: plan });
+    } catch (error) {
+      logger?.error?.("batch_queue_checkpoint_failed", {
+        project_id: String(projectId).slice(0, 8),
+        reason: error.message
+      });
+      throw error;
+    }
+  },
   logger
 });
 
@@ -248,11 +342,133 @@ const server = http.createServer(async (req, res) => {
           batchId: input.batchId,
           expectedRunningPromptId: input.expectedRunningPromptId
         });
-        return json(res, 200, result);
+        let queueCheckpoint = null;
+        if (input.projectId) {
+          queueCheckpoint = await batchQueueRuntime.onFullBatchStop(input.projectId, { batchId: input.batchId });
+        }
+        return json(res, 200, {
+          ...result,
+          queueCheckpoint,
+          queueCheckpointFailed: Boolean(queueCheckpoint && queueCheckpoint.ok === false)
+        });
       } catch (error) {
         logger.error("batch_stop_rejected", { code: error.code, reason: error.message });
         return json(res, error.status || 409, { error: error.message, code: error.code || "batch-stop-rejected" });
       }
+    }
+    if (req.method === "GET" && url.pathname === "/api/execution-lane") {
+      return json(res, 200, { reservation: executionLane.get() });
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/reserve") {
+      const input = await readJsonBody(req);
+      const result = await executionLane.reserve({
+        kind: input.kind,
+        ownerId: input.ownerId,
+        projectId: input.projectId,
+        pageSessionId: input.pageSessionId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/release") {
+      const input = await readJsonBody(req);
+      const result = executionLane.release({
+        ownerId: input.ownerId,
+        kind: input.kind,
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/transfer") {
+      const input = await readJsonBody(req);
+      const result = executionLane.transferKind({
+        ownerId: input.ownerId,
+        kind: input.kind,
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/heartbeat") {
+      const input = await readJsonBody(req);
+      const result = executionLane.heartbeat({
+        ownerId: input.ownerId,
+        leaseToken: input.leaseToken,
+        pageSessionId: input.pageSessionId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/reclaim-stale") {
+      const input = await readJsonBody(req);
+      // staleAfterMs from clients is intentionally ignored — server policy only.
+      const result = await executionLane.reclaimStale({
+        requesterId: input.requesterId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "GET" && url.pathname === "/api/batch-queue/runtime") {
+      const projectId = url.searchParams.get("projectId") || "";
+      return json(res, 200, batchQueueRuntime.getRuntime(projectId));
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/sync") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.syncPlan({
+        projectId: input.projectId,
+        plan: input.plan,
+        expectedRevision: input.expectedRevision
+      });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/arm") {
+      const input = await readJsonBody(req);
+      const result = await batchQueueRuntime.arm({
+        projectId: input.projectId,
+        plan: input.plan,
+        failurePolicy: input.failurePolicy
+      });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/resume") {
+      const input = await readJsonBody(req);
+      const result = await batchQueueRuntime.resume({
+        projectId: input.projectId,
+        plan: input.plan,
+        expectedRevision: input.expectedRevision
+      });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/resolve-recovery") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.resolveRecoveryEntry(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/update-entry") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.updateEntry(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/reorder") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.reorder(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/cancel-entry") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.cancelEntry(input);
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
+    }
+    if (req.method === "POST" && url.pathname === "/api/batch-queue/pause") {
+      const input = await readJsonBody(req);
+      const result = batchQueueRuntime.pauseQueue({ projectId: input.projectId, reason: input.reason });
+      if (!result.ok) return json(res, 409, result);
+      return json(res, 200, result.view);
     }
     if (req.method === "GET" && url.pathname === "/api/active") {
       try {
@@ -300,8 +516,21 @@ const server = http.createServer(async (req, res) => {
       const clientId = url.searchParams.get("clientId");
       if (!clientId) return json(res, 400, { error: "Missing clientId" });
       res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
+      // pageInstanceId is a memory-only document reconnect nonce, not the authority.
+      // Same instance reattaches the same opaque pageSessionId; never accept client pageSessionId.
+      const attached = pageSessions.attach(url.searchParams.get("pageInstanceId"));
+      const pageSessionId = attached.pageSessionId;
+      const connectionGeneration = attached.connectionGeneration;
       res.write(": connected\n\n");
-      logger.info("sse_bridge_open", { client_id: shortId(clientId) });
+      res.write(`event: page-session\ndata: ${JSON.stringify({
+        pageSessionId,
+        reattached: Boolean(attached.reattached)
+      })}\n\n`);
+      logger.info("sse_bridge_open", {
+        client_id: shortId(clientId),
+        page_session: shortId(pageSessionId),
+        reattached: Boolean(attached.reattached)
+      });
       const upstream = new WebSocket(`${comfy.replace(/^http/, "ws")}/ws?clientId=${encodeURIComponent(clientId)}`);
       const sendEvent = (event, data) => { if (!res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
       const subscribeLogs = async enabled => {
@@ -319,19 +548,25 @@ const server = http.createServer(async (req, res) => {
         sendEvent("connection", { state: "open" });
         subscribeLogs(true);
       });
-      upstream.addEventListener("message", event => { if (typeof event.data === "string" && !res.destroyed) res.write(`data: ${event.data}\n\n`); });
+      upstream.addEventListener("message", event => {
+        if (typeof event.data === "string" && !res.destroyed) {
+          executionLane.noteComfyMessage(event.data);
+          res.write(`data: ${event.data}\n\n`);
+        }
+      });
       upstream.addEventListener("close", () => {
-        logger.info("sse_bridge_close", { client_id: shortId(clientId) });
+        logger.info("sse_bridge_close", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
         subscribeLogs(false);
         sendEvent("connection", { state: "closed" });
       });
       upstream.addEventListener("error", () => {
-        logger.error("sse_bridge_error", { client_id: shortId(clientId) });
+        logger.error("sse_bridge_error", { client_id: shortId(clientId), page_session: shortId(pageSessionId) });
         sendEvent("connection", { state: "error" });
       });
       const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": heartbeat\n\n"); }, 15000);
       req.on("close", () => {
         clearInterval(heartbeat);
+        pageSessions.close(pageSessionId, connectionGeneration);
         subscribeLogs(false);
         if (upstream.readyState < 2) upstream.close();
       });
@@ -376,45 +611,75 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/queue") {
-      const input = JSON.parse((await body(req)).toString("utf8"));
-      logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
-      const { preset, workflow } = await loadPreset(input.workflowId);
-      const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
-      if (safeFitBlocksGenerate(fit.status)) {
-        const gate = describeSafeFitBlocker(fit.status);
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
-        return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
+      const laneOwner = String(req.headers["x-h3-lane-owner"] || "").trim();
+      const laneKind = String(req.headers["x-h3-lane-kind"] || "").trim() || null;
+      const laneLease = String(req.headers["x-h3-lane-lease"] || "").trim() || null;
+      const lanePageSession = String(req.headers["x-h3-page-session"] || "").trim() || null;
+      const laneGate = executionLane.assertSubmitAllowed({
+        ownerId: laneOwner || null,
+        kind: laneKind,
+        leaseToken: laneLease,
+        pageSessionId: lanePageSession
+      });
+      if (!laneGate.ok) {
+        logger.error("queue_rejected", { reason: "execution_lane", code: laneGate.code });
+        return json(res, 409, {
+          error: laneGate.error,
+          code: laneGate.code || "lane-busy",
+          reservation: laneGate.reservation || null
+        });
       }
-      let requested;
+      // Bind bookkeeping to this reservation generation so a late completion
+      // cannot mutate a later unrelated reservation.
+      const submitBinding = {
+        generation: laneGate.generation,
+        leaseToken: laneGate.leaseToken
+      };
+      executionLane.beginSubmitTransaction(submitBinding);
       try {
-        requested = selectMegapixels(input);
-      } catch (error) {
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
-        return json(res, 400, { error: error.message });
-      }
-      const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
-      const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
-      const bound = cloneAndBind(workflow, preset.bindings || {}, values);
-      try {
-        const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
-        const data = await upstream.json();
-        if (!upstream.ok || !data.prompt_id) {
-          logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
-        } else {
-          const batchId = req.headers["x-h3-batch-id"];
-          const batchIndexRaw = req.headers["x-h3-batch-index"];
-          runtimeControl.registerQueueAcceptance({
-            promptId: data.prompt_id,
-            batchId: batchId ? String(batchId) : null,
-            batchIndex: batchIndexRaw != null && batchIndexRaw !== "" ? Number(batchIndexRaw) : null,
-            clientId: input.clientId
-          });
-          logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
+        const input = JSON.parse((await body(req)).toString("utf8"));
+        logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
+        const { preset, workflow } = await loadPreset(input.workflowId);
+        const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
+        if (safeFitBlocksGenerate(fit.status)) {
+          const gate = describeSafeFitBlocker(fit.status);
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
+          return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
         }
-        return json(res, upstream.status, data);
-      } catch (error) {
-        logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
-        return json(res, 502, { error: "Queue submission failed" });
+        let requested;
+        try {
+          requested = selectMegapixels(input);
+        } catch (error) {
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
+          return json(res, 400, { error: error.message });
+        }
+        const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
+        const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
+        const bound = cloneAndBind(workflow, preset.bindings || {}, values);
+        try {
+          const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
+          const data = await upstream.json();
+          if (!upstream.ok || !data.prompt_id) {
+            logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
+          } else {
+            executionLane.notePromptAccepted(data.prompt_id, submitBinding);
+            const batchId = req.headers["x-h3-batch-id"];
+            const batchIndexRaw = req.headers["x-h3-batch-index"];
+            runtimeControl.registerQueueAcceptance({
+              promptId: data.prompt_id,
+              batchId: batchId ? String(batchId) : null,
+              batchIndex: batchIndexRaw != null && batchIndexRaw !== "" ? Number(batchIndexRaw) : null,
+              clientId: input.clientId
+            });
+            logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
+          }
+          return json(res, upstream.status, data);
+        } catch (error) {
+          logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
+          return json(res, 502, { error: "Queue submission failed" });
+        }
+      } finally {
+        executionLane.endSubmitTransaction(submitBinding);
       }
     }
     if (req.method === "GET" && url.pathname === "/api/outputs") {

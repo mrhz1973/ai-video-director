@@ -2,6 +2,11 @@
 
 import { lookupAvailability, normalizeInputSubfolder } from "./asset-ref.mjs";
 import { assertNoExecutionAuthority, normalizeBatchDraft, serializeBatchDraft } from "./batch-draft.mjs";
+import {
+  assertNoQueuePlanAuthority,
+  normalizeBatchQueuePlan,
+  serializeBatchQueuePlan
+} from "./batch-queue-plan.mjs";
 import { normalizeDurationSeconds } from "./duration.mjs";
 
 export const SCHEMA_VERSION = 1;
@@ -283,6 +288,7 @@ export function normalizeProject(raw = {}) {
   const library = normalizeLibrary(source.library, source.assets, files);
   const hadSchema = Number.isFinite(Number(source.schemaVersion));
   const batchDraft = normalizeBatchDraft(source.batchDraft);
+  const batchQueue = normalizeBatchQueuePlan(source.batchQueue);
   return {
     schemaVersion: SCHEMA_VERSION,
     id: source.id ? String(source.id) : "",
@@ -293,6 +299,7 @@ export function normalizeProject(raw = {}) {
     library,
     files,
     batchDraft,
+    batchQueue,
     _legacySchemaVersion: hadSchema && Number(source.schemaVersion) === SCHEMA_VERSION ? SCHEMA_VERSION : 0
   };
 }
@@ -324,6 +331,10 @@ export function toPersistedProject(project, { includeBatchUpdatedAt = true } = {
     })
     : null;
   if (batchDraft) assertNoExecutionAuthority(batchDraft);
+  const batchQueue = normalized.batchQueue
+    ? serializeBatchQueuePlan(normalized.batchQueue)
+    : null;
+  if (batchQueue) assertNoQueuePlanAuthority(batchQueue);
   const out = {
     schemaVersion: SCHEMA_VERSION,
     id: normalized.id,
@@ -335,6 +346,7 @@ export function toPersistedProject(project, { includeBatchUpdatedAt = true } = {
     files: { ...(normalized.files || {}) }
   };
   if (batchDraft) out.batchDraft = batchDraft;
+  if (batchQueue) out.batchQueue = batchQueue;
   return out;
 }
 
@@ -349,7 +361,8 @@ export function publicProjectView(project) {
     settings: normalized.settings,
     library: normalized.library,
     files: normalized.files,
-    ...(normalized.batchDraft ? { batchDraft: normalized.batchDraft } : {})
+    ...(normalized.batchDraft ? { batchDraft: normalized.batchDraft } : {}),
+    ...(normalized.batchQueue ? { batchQueue: normalized.batchQueue } : {})
   };
 }
 
@@ -360,7 +373,8 @@ export function projectEditorSnapshot({
   settings,
   library,
   files,
-  batchDraft = null
+  batchDraft = null,
+  batchQueue = null
 } = {}) {
   return JSON.stringify(toPersistedProject({
     id: "snapshot-temp-id",
@@ -370,7 +384,8 @@ export function projectEditorSnapshot({
     settings,
     library,
     files,
-    batchDraft
+    batchDraft,
+    batchQueue
   }, { includeBatchUpdatedAt: false }));
 }
 

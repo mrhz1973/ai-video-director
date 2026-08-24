@@ -70,6 +70,19 @@ import {
   summarizeQueuedNext
 } from "./queue-coordinator.mjs";
 import {
+  EXECUTION_LANE_KIND,
+  bindExecutionLaneUnloadRelease,
+  executionLaneSubmitHeaders,
+  getPageInstanceId,
+  getPageSessionId,
+  reconcileExecutionLaneAfterReload,
+  releaseExecutionLane,
+  reserveExecutionLane,
+  setPageSessionId,
+  startExecutionLaneHeartbeat,
+  stopExecutionLaneHeartbeat
+} from "./execution-lane-client.mjs";
+import {
   buildSingleRenderPayload,
   toSingleRenderQueueBody
 } from "./single-render.mjs";
@@ -119,6 +132,15 @@ import {
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
 } from "./batch-ui.mjs";
+import {
+  exportBatchQueueForPersistence,
+  exportBatchQueueForProject,
+  importBatchQueueFromProject,
+  initBatchQueueUi,
+  isBatchQueueArmed,
+  syncBatchQueuePlanToServer,
+  getBatchQueueRuntimeView
+} from "./batch-queue-ui.mjs";
 import { showAppNotice } from "./notify.mjs";
 import {
   buildSingleJobCompletionAttribution,
@@ -137,11 +159,17 @@ let completing = false;
 let busy = false;
 let submitting = false;
 let latestCompletion = null;
-const coordinator = setSharedCoordinator(createQueueCoordinator({
+let coordinator;
+coordinator = setSharedCoordinator(createQueueCoordinator({
   async submit(payload) {
+    const lane = coordinator.getLaneReservation?.();
+    const headers = {
+      "content-type": "application/json",
+      ...executionLaneSubmitHeaders(lane)
+    };
     const response = await fetch("/api/queue", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: JSON.stringify(payload)
     });
     const data = await response.json();
@@ -150,6 +178,10 @@ const coordinator = setSharedCoordinator(createQueueCoordinator({
   }
 }));
 void shouldRestoreExecutionIntent();
+void reconcileExecutionLaneAfterReload({
+  hasLocalFutureIntent: Boolean(coordinator.getQueuedNext?.() || coordinator.getDeferredBatch?.())
+});
+bindExecutionLaneUnloadRelease();
 let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || null;
 let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
 let monitorState = initialMonitorState();
@@ -209,7 +241,8 @@ function hideLegacyBatchRecover() {
 function editorSnapshotWithBatch() {
   return projectEditorSnapshot({
     ...currentEditorState(),
-    batchDraft: exportBatchDraftForProject()
+    batchDraft: exportBatchDraftForProject(),
+    batchQueue: exportBatchQueueForProject()
   });
 }
 
@@ -592,8 +625,14 @@ function renderQueueWaitCard() {
     cancel.type = "button";
     cancel.className = "secondary";
     cancel.textContent = "Annulla";
-    cancel.onclick = () => {
+    cancel.onclick = async () => {
       coordinator.cancelQueuedNext();
+      stopExecutionLaneHeartbeat();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
       renderQueueWaitCard();
       updateGenerateButton();
     };
@@ -621,8 +660,15 @@ function renderQueueWaitCard() {
     cancel.type = "button";
     cancel.className = "secondary";
     cancel.textContent = "Annulla attesa";
-    cancel.onclick = () => {
+    cancel.onclick = async () => {
       coordinator.cancelDeferredBatch();
+      stopExecutionLaneHeartbeat();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH
+        || lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
       window.dispatchEvent(new CustomEvent("h3-deferred-batch-cancel"));
       renderQueueWaitCard();
       updateGenerateButton();
@@ -738,9 +784,55 @@ async function submitSingleRender({ action }) {
   const queueBody = toSingleRenderQueueBody(intent);
   archiveCurrentPrompt(action);
   if (action === "queue-next") {
-    return coordinator.armQueuedNext(queueBody);
+    const ownerId = `queued-next:${clientId}`;
+    const reserved = await reserveExecutionLane({
+      kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+      ownerId,
+      projectId: draft?.id || $("project")?.value || null
+    });
+    if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+    const armed = coordinator.armQueuedNext(queueBody);
+    if (!armed.ok) {
+      await releaseExecutionLane({
+        ownerId,
+        kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+        leaseToken: reserved.leaseToken
+      });
+      throw new Error(armed.reason || "Impossibile mettere in coda il prossimo job.");
+    }
+    coordinator.setLaneReservation?.({
+      ownerId,
+      kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+      leaseToken: reserved.leaseToken,
+      pageSessionId: getPageSessionId()
+    });
+    startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
+    return armed;
   }
-  return coordinator.tryImmediateGenerate(queueBody);
+
+  const ownerId = `immediate-single:${clientId}`;
+  const reserved = await reserveExecutionLane({
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    ownerId,
+    projectId: draft?.id || $("project")?.value || null
+  });
+  if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+  coordinator.setLaneReservation?.({
+    ownerId,
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: reserved.leaseToken,
+    pageSessionId: getPageSessionId()
+  });
+  try {
+    return await coordinator.tryImmediateGenerate(queueBody);
+  } finally {
+    await releaseExecutionLane({
+      ownerId,
+      kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+      leaseToken: reserved.leaseToken
+    });
+    coordinator.clearLaneReservation?.();
+  }
 }
 
 function renderPromptHistory() {
@@ -832,8 +924,25 @@ async function refreshQueueCounts() {
     coordinator.markQueue({ running, pending });
     await refreshSingleOwnership();
     const transition = await coordinator.observeQueue({ running, pending });
-    if (transition.submitted === "queued-next" && transition.result?.result?.prompt_id) {
-      adoptSubmittedJob(transition.result.result);
+    if (transition.submitted === "queued-next") {
+      stopExecutionLaneHeartbeat();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT
+        || lane?.kind === EXECUTION_LANE_KIND.IMMEDIATE_SINGLE) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
+      if (transition.result?.result?.prompt_id) {
+        adoptSubmittedJob(transition.result.result);
+      }
+    } else if (transition.submitted === "deferred-batch") {
+      // runSequentialBatch already transferred deferred→active and released in finally.
+      stopExecutionLaneHeartbeat();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
     }
     renderMonitor();
     updateGenerateButton();
@@ -975,7 +1084,14 @@ async function handleMessage(event) {
 
 function connect() {
   events?.close();
-  events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}`);
+  const pageInstanceId = getPageInstanceId();
+  events = new EventSource(`/api/events?clientId=${encodeURIComponent(clientId)}&pageInstanceId=${encodeURIComponent(pageInstanceId)}`);
+  events.addEventListener("page-session", event => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data?.pageSessionId) setPageSessionId(data.pageSessionId);
+    } catch { /* ignore */ }
+  });
   events.addEventListener("connection", event => {
     const state = JSON.parse(event.data).state;
     applyConnection(state);
@@ -1067,6 +1183,7 @@ function queueSample() {
     queuedNext: state.queuedNext,
     deferredBatch: state.deferredBatch,
     batchActive: state.batchActive,
+    batchQueueArmed: isBatchQueueArmed(),
     lockOwner: state.lockOwner
   };
 }
@@ -1653,6 +1770,9 @@ async function loadProjectById(id) {
     if (modelResult.warning) add(modelResult.warning, "system");
 
     const batchResult = await restoreProjectBatch(normalized);
+    importBatchQueueFromProject(normalized.batchQueue || null);
+    void getBatchQueueRuntimeView();
+    void syncBatchQueuePlanToServer();
     const missingAssetCount = Object.entries(normalized.files || {}).filter(([, filename]) => {
       if (!filename) return false;
       const member = findMemberByFilename(normalized.library, filename);
@@ -1784,7 +1904,8 @@ function payloadFromEditor() {
     settings: state.settings,
     library: state.library,
     files: state.files,
-    batchDraft: exportBatchDraftForPersistence()
+    batchDraft: exportBatchDraftForPersistence(),
+    batchQueue: exportBatchQueueForPersistence()
   };
 }
 
@@ -1838,7 +1959,8 @@ async function duplicateCurrentProject() {
     settings: state.settings,
     library: state.library,
     files: state.files,
-    batchDraft: exportBatchDraftForProject()
+    batchDraft: exportBatchDraftForProject(),
+    batchQueue: exportBatchQueueForProject()
   }, { newLabel: newLabel.trim() });
 
   const response = await fetch("/api/projects", {
@@ -2033,6 +2155,12 @@ if (recovery && !$("project").value) {
 persistenceReady = true;
 setBatchPersistenceHook(() => {
   if (draft.saved && draft.id) noteEditorChange();
+});
+initBatchQueueUi({
+  getProjectId: () => draft.id || $("project")?.value || "",
+  onPlanDirty: () => {
+    if (draft.saved && draft.id) noteEditorChange();
+  }
 });
 setBatchAssetContextProvider(() => {
   const unavailable = new Set();

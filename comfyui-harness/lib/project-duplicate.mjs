@@ -10,6 +10,11 @@ import {
   serializeBatchDraft
 } from "./batch-draft.mjs";
 import { normalizeSettings } from "./projects.mjs";
+import {
+  assertNoQueuePlanAuthority,
+  normalizeBatchQueuePlan,
+  serializeBatchQueuePlan
+} from "./batch-queue-plan.mjs";
 
 function cloneBatchDraftForDuplicate(batchDraft = null) {
   const normalized = normalizeBatchDraft(batchDraft);
@@ -69,5 +74,15 @@ export function buildDuplicateProjectPayload(editorState = {}, { newLabel } = {}
 
   const batchDraft = cloneBatchDraftForDuplicate(editorState.batchDraft);
   if (batchDraft) payload.batchDraft = batchDraft;
+  const batchQueue = cloneBatchQueueForDuplicate(editorState.batchQueue);
+  if (batchQueue) payload.batchQueue = batchQueue;
   return payload;
+}
+
+function cloneBatchQueueForDuplicate(batchQueue = null) {
+  const normalized = normalizeBatchQueuePlan(batchQueue);
+  if (!normalized) return null;
+  const serialized = serializeBatchQueuePlan(normalized);
+  if (serialized) assertNoQueuePlanAuthority(serialized);
+  return serialized;
 }
