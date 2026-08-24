@@ -8,6 +8,7 @@ import {
   serializeBatchQueuePlan
 } from "./batch-queue-plan-core.mjs";
 import { normalizeDurationSeconds } from "./duration.mjs";
+import { normalizePersistedLoraSettings } from "./h3-lora-validation.mjs";
 
 export const SCHEMA_VERSION = 1;
 
@@ -279,6 +280,7 @@ export function normalizeSettings(settings = {}) {
       out[key] = key === "duration" ? normalizeDurationSeconds(settings[key]) : settings[key];
     }
   }
+  Object.assign(out, normalizePersistedLoraSettings(settings));
   return out;
 }
 
@@ -627,10 +629,14 @@ export function describeGenerateBlockers({
   availability = {},
   busy = false,
   submitting = false,
-  safeFitStatus = null
+  safeFitStatus = null,
+  loraBlockedReason = null
 } = {}) {
   if (busy || submitting) {
     return { blocked: true, reason: "Generazione in corso", code: "busy" };
+  }
+  if (loraBlockedReason) {
+    return { blocked: true, reason: String(loraBlockedReason), code: "lora-unavailable" };
   }
   if (safeFitStatus === "needs-apply") {
     return { blocked: true, reason: "Workflow image-fit non aggiornato", code: "safe-fit" };
@@ -697,6 +703,8 @@ export function editorStateFromDomLike({
   duration,
   aspect,
   seed,
+  loraId,
+  loraStrength,
   library,
   files
 }) {
@@ -704,7 +712,7 @@ export function editorStateFromDomLike({
     label: label || "",
     workflowId: workflowId || "",
     prompt: prompt || "",
-    settings: normalizeSettings({ megapixels, model, steps, duration, aspect, seed }),
+    settings: normalizeSettings({ megapixels, model, steps, duration, aspect, seed, loraId, loraStrength }),
     library: library || emptyLibrary(),
     files: { ...(files || {}) }
   };

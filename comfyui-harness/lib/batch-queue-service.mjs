@@ -781,6 +781,8 @@ function buildQueuePayload(ctx) {
     duration: Number(item.duration),
     aspect: item.aspect,
     seed: Number(item.seed),
+    loraId: source.loraId || "off",
+    ...(source.loraStrength != null ? { loraStrength: Number(source.loraStrength) } : {}),
     sharedFiles: source.files || {},
     files: item.files || {}
   };

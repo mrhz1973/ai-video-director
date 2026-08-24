@@ -1,0 +1,21 @@
+{
+  "136": {
+    "class_type": "UnetLoaderGGUFDynamicVRAM",
+    "inputs": {
+      "unet_name": "minimax_h3_fl2va_pruned_fp8_Q8_CR.gguf"
+    }
+  },
+  "128": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": ["136", 0],
+      "steps": 20
+    }
+  },
+  "130": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": ["136", 0]
+    }
+  }
+}

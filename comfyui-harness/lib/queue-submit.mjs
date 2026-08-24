@@ -9,13 +9,16 @@ import {
   safeFitBlocksGenerate,
   describeSafeFitBlocker
 } from "./h3-safe-fit.mjs";
+import { validateLoraSelection } from "./h3-lora-validation.mjs";
+import { buildBoundWorkflowWithLora } from "./h3-lora-workflow.mjs";
 
 export async function submitWorkflowToComfy({
   input,
   preset,
   workflow,
   comfyUrl,
-  fetchFn = fetch
+  fetchFn = fetch,
+  availableComfyPaths = null
 }) {
   const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
   if (safeFitBlocksGenerate(fit.status)) {
@@ -40,7 +43,23 @@ export async function submitWorkflowToComfy({
     lastImage: input.lastImage,
     ...(input.files || {})
   };
-  const bound = cloneAndBind(workflow, preset.bindings || {}, values);
+  const loraGate = validateLoraSelection({
+    ...input,
+    preset,
+    availableComfyPaths
+  });
+  if (!loraGate.ok) {
+    const error = new Error(loraGate.error);
+    error.code = loraGate.code || "lora-invalid";
+    error.status = 400;
+    throw error;
+  }
+  const bound = buildBoundWorkflowWithLora({
+    workflow,
+    preset,
+    values,
+    loraSelection: loraGate.selection
+  });
   const upstream = await fetchFn(`${comfyUrl}/prompt`, {
     method: "POST",
     headers: { "content-type": "application/json" },

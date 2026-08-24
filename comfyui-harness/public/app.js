@@ -91,6 +91,14 @@ import {
   toSingleRenderQueueBody
 } from "./single-render.mjs";
 import {
+  applyH3LoraPresetCapability,
+  h3LoraSelectionBlockedReason,
+  initH3LoraControls,
+  readH3LoraFromDom,
+  setH3LoraAvailability,
+  syncH3LoraFromSettings
+} from "./h3-lora-ui.mjs";
+import {
   PROMPT_HISTORY_MAX,
   archivePrompt,
   clearPromptHistory,
@@ -365,6 +373,8 @@ function captureRecoverySnapshot() {
     steps: state.settings?.steps ?? $("steps")?.value,
     duration: state.settings?.duration ?? $("duration")?.value,
     seed: state.settings?.seed ?? $("seed")?.value,
+    loraId: state.settings?.loraId ?? $("loraId")?.value,
+    loraStrength: state.settings?.loraStrength ?? $("loraStrength")?.value,
     library: state.library,
     files: state.files
   });
@@ -781,6 +791,7 @@ async function prepareSingleRenderPayload() {
     duration: normalizeDurationSeconds($("duration").value),
     aspect: $("aspect").value,
     seed: $("seed").value,
+    ...readH3LoraFromDom(),
     files: filterFilesForActivePreset(built.files, activeKeys)
   });
 }
@@ -1226,7 +1237,8 @@ function updateGenerateButton() {
     availability: draft.availability,
     busy: false,
     submitting: false,
-    safeFitStatus: currentSafeFitStatus()
+    safeFitStatus: currentSafeFitStatus(),
+    loraBlockedReason: h3LoraSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,
@@ -1275,6 +1287,7 @@ function applyMegapixelsContract() {
 }
 
 function currentEditorState() {
+  const lora = readH3LoraFromDom();
   return editorStateFromDomLike({
     label: $("projectLabel").value.trim(),
     workflowId: $("workflow").value,
@@ -1285,6 +1298,8 @@ function currentEditorState() {
     duration: $("duration").value,
     aspect: $("aspect").value,
     seed: $("seed").value,
+    loraId: lora.loraId,
+    loraStrength: lora.loraStrength,
     library: draft.library,
     files: draft.files
   });
@@ -1727,6 +1742,7 @@ function selectPreset({
   }
   renderLibrary();
   renderRoleFields();
+  applyH3LoraPresetCapability(preset);
   updateGenerateButton();
   if (trackDirty) updateDirtyFlag();
 }
@@ -1776,6 +1792,7 @@ async function loadProjectById(id) {
     }
     const restoredMp = megapixelsFromSettings(normalized.settings || {});
     if (restoredMp !== undefined) $("megapixels").value = restoredMp;
+    syncH3LoraFromSettings(normalized.settings || {});
 
     selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false });
     await refreshAvailability();
@@ -1869,6 +1886,7 @@ function resetDraft({ keepForm = false, clearRecovery = true } = {}) {
   clearBatchEditor({ writeLocalCache: true, notify: false });
   if (!keepForm) {
     $("prompt").value = "";
+    syncH3LoraFromSettings({});
   }
   selectPreset({ preserveLibrary: true, clearProjectSelection: true });
   markBaselineFromDraft();
@@ -1898,6 +1916,7 @@ function applyRecoverySnapshot(snapshot) {
     }
     const restoredMp = megapixelsFromSettings(normalized.settings || {});
     if (restoredMp !== undefined) $("megapixels").value = restoredMp;
+    syncH3LoraFromSettings(normalized.settings || {});
     selectPreset({ preserveLibrary: true, preferredModel: savedModel, trackDirty: false, clearProjectSelection: true });
     markBaselineFromDraft();
     setSaveStatus(SAVE_STATUS.RECOVERED);
@@ -2056,6 +2075,9 @@ function wireDropTarget(el, onFiles) {
 // --- boot ---
 config = await (await fetch("/api/config")).json();
 $("version").textContent = `v${config.version}`;
+setH3LoraAvailability(config.h3Lora?.availability || {});
+initH3LoraControls({ onChange: () => { updateDirtyFlag(); updateGenerateButton(); } });
+syncH3LoraFromSettings({});
 $("workflow").replaceChildren(...(config.presets.length ? config.presets.map(item => new Option(item.label, item.id)) : [new Option("Nessun preset", "")]));
 refreshProjectSelect();
 
@@ -2150,6 +2172,7 @@ $("projectDelete").onclick = async () => {
 };
 
 selectPreset({ preserveLibrary: true, trackDirty: false });
+applyH3LoraPresetCapability(currentPreset());
 setCategory("elements");
 applyDurationField($("duration")?.value);
 markBaselineFromDraft();
@@ -2257,7 +2280,8 @@ $("send").onclick = async () => {
     availability: draft.availability,
     busy: false,
     submitting: false,
-    safeFitStatus: currentSafeFitStatus()
+    safeFitStatus: currentSafeFitStatus(),
+    loraBlockedReason: h3LoraSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,
