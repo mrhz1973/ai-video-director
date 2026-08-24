@@ -282,6 +282,17 @@ test("inspector secondary tabs are Asset/Input only", () => {
   assert.match(html, /id="sessionGallerySection"/);
 });
 
+test("OUTPUT tab renders Destinazione e nomi before Clip sessione", () => {
+  const outputView = html.match(/id="view-output"[\s\S]*?<\/div>\s*<\/section>/);
+  assert.ok(outputView, "OUTPUT tab panel markup expected");
+  const panel = outputView[0];
+  const destinationIdx = panel.indexOf('id="outputSettingsDetails"');
+  const galleryIdx = panel.indexOf('id="sessionGallerySection"');
+  assert.ok(destinationIdx >= 0, "Destinazione e nomi section expected in OUTPUT tab");
+  assert.ok(galleryIdx >= 0, "Clip sessione section expected in OUTPUT tab");
+  assert.ok(destinationIdx < galleryIdx, "Destinazione e nomi must appear before Clip sessione");
+});
+
 test("F5 persistence surfaces still present (draft/queue/session outputs)", () => {
   assert.match(batchUi, /persistDraft|h3BatchDraft|localStorage|sessionStorage/);
   assert.match(batchQueueUi, /syncBatchQueuePlanToServer|exportBatchQueueForProject/);

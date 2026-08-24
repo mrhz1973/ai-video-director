@@ -159,15 +159,6 @@
     </div>
 
     <div class="workflow-view" id="view-output" data-workflow-view="output" role="tabpanel" hidden>
-      <section class="session-gallery-section" id="sessionGallerySection" aria-label="Clip sessione">
-        <div class="session-gallery-head">
-          <h3 id="sessionGalleryTitle">CLIP SESSIONE · 0</h3>
-          <button type="button" class="secondary" id="sessionGalleryClear" title="Rimuove solo l'elenco in memoria sessione; non cancella i file">Svuota elenco</button>
-        </div>
-        <div id="sessionGalleryList" class="session-gallery-list"></div>
-        <p id="sessionGalleryEmpty" class="session-gallery-empty">Nessuna clip generata in questa sessione.</p>
-      </section>
-
       <details class="output-settings-details" id="outputSettingsDetails">
         <summary>Destinazione e nomi (archivio browser)</summary>
         <section class="output-section" id="outputSection">
@@ -202,6 +193,15 @@
           <p class="output-help">La cartella archivio resta privata nel browser locale. L'harness copia il file finito; non cancella né rinomina l'originale ComfyUI.</p>
         </section>
       </details>
+
+      <section class="session-gallery-section" id="sessionGallerySection" aria-label="Clip sessione">
+        <div class="session-gallery-head">
+          <h3 id="sessionGalleryTitle">CLIP SESSIONE · 0</h3>
+          <button type="button" class="secondary" id="sessionGalleryClear" title="Rimuove solo l'elenco in memoria sessione; non cancella i file">Svuota elenco</button>
+        </div>
+        <div id="sessionGalleryList" class="session-gallery-list"></div>
+        <p id="sessionGalleryEmpty" class="session-gallery-empty">Nessuna clip generata in questa sessione.</p>
+      </section>
     </div>
   </section>
 
