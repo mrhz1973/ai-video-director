@@ -162,10 +162,10 @@
 
     <div class="workflow-view" id="view-output" data-workflow-view="output" role="tabpanel" hidden>
       <details class="output-settings-details" id="outputSettingsDetails">
-        <summary>Destinazione e nomi (archivio browser)</summary>
+        <summary>Destinazione e nomi (Archivio locale)</summary>
         <section class="output-section" id="outputSection">
           <div class="output-grid">
-            <label>Destinazione
+            <label>Destinazione archivio
               <select id="outputScope">
                 <option value="global">Cartella predefinita</option>
                 <option value="project">Cartella di questo progetto</option>
@@ -173,10 +173,13 @@
             </label>
             <div class="output-folder-row">
               <div>
-                <span class="hint">Cartella selezionata</span>
+                <span class="hint">Cartella</span>
                 <div id="outputFolderName" class="output-folder-name">Nessuna cartella scelta</div>
               </div>
-              <button type="button" class="secondary" id="outputChooseFolder">Scegli cartella</button>
+              <div class="output-folder-actions">
+                <button type="button" class="secondary" id="outputChooseFolder">Scegli cartella</button>
+                <button type="button" class="secondary" id="outputOpenFolder" disabled>Apri cartella</button>
+              </div>
             </div>
             <label>Scena / shot<input id="outputScene" type="text" value="shot" autocomplete="off"></label>
             <label>Variante<input id="outputVariant" type="text" placeholder="es. candidate, v2" autocomplete="off"></label>
@@ -188,11 +191,11 @@
                 <option value="global">Progressiva globale</option>
               </select>
             </label>
-            <label class="output-check"><input id="outputAuto" type="checkbox" checked> Copia automaticamente il render finito</label>
+            <label class="output-check"><input id="outputAuto" type="checkbox" checked> Auto-archivia nuovi output</label>
             <div class="output-preview wide"><span>Anteprima</span><code id="outputPreview">render.mp4</code></div>
           </div>
           <p id="outputStatus" class="output-status">Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.</p>
-          <p class="output-help">La cartella archivio resta privata nel browser locale. L'harness copia il file finito; non cancella né rinomina l'originale ComfyUI.</p>
+          <p class="output-help">Archivio locale Director: la copia avviene sul server Node. L'originale ComfyUI non viene cancellato né spostato. Nessun permesso di scrittura browser è richiesto.</p>
         </section>
       </details>
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-25 — v0.16.0
+
+- **Archivio locale Director**: completed ComfyUI outputs are copied by the Node server into a machine-local destination (`%LOCALAPPDATA%\AI Video Director\archive.json`), not by browser File System Access API writes.
+- OUTPUT UI: **Scegli cartella** uses a native Windows folder picker via Director; **Apri cartella** opens the configured archive; auto-archive calls `POST /api/archive-output` with history/realpath authority. Original ComfyUI files are never deleted or moved.
+- Removes archive dependency on `showDirectoryPicker` / `createWritable` / browser write permission prompts.
+
 ## 2026-08-24 — v0.15.0
 
 - MiniMax H3 **single-LoRA** support (I2VA + FL2VA): SCENA controls **LoRA** + **Forza LoRA** with stable profile IDs (`off`, `realism-people`, `spatial-physics`, `camera-motion`, `action`). OFF remains default for existing projects, Batch drafts and queue snapshots.

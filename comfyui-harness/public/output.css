@@ -30,6 +30,12 @@
   gap: 8px;
   align-items: end;
 }
+.output-folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
 .output-folder-name {
   min-height: 18px;
   margin-top: 5px;

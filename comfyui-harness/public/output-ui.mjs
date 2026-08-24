@@ -1,10 +1,14 @@
+/**
+ * OUTPUT destination UI + server-side archive orchestration (v0.16.0).
+ * Browser configures destination via Director APIs; Node performs copies.
+ * Does not use FileSystemDirectoryHandle / showDirectoryPicker / createWritable.
+ */
+
 import {
   DEFAULT_OUTPUT_TEMPLATE,
   buildOutputFilename,
   buildOutputTokens,
-  extensionFromFilename,
-  outputCounterStorageKey,
-  sanitizeOutputSegment
+  outputCounterStorageKey
 } from "./output-naming.mjs";
 import { createSessionClipCard } from "./session-gallery-dom.mjs";
 import {
@@ -24,13 +28,15 @@ const SETTINGS_PREFIX = "h3OutputSettings:v1:";
 const SCOPE_PREF_PREFIX = "h3OutputScopePreference:v1:";
 const PLAN_PREFIX = "h3OutputPlan:v1:";
 const ARCHIVED_PREFIX = "h3OutputArchived:v1:";
-const DB_NAME = "h3-output-directories";
-const DB_STORE = "handles";
-const DB_VERSION = 1;
 const originalFetch = window.fetch.bind(window);
 let archiveChain = Promise.resolve();
 let activeSettings = null;
 let activeFolderKey = "global";
+let archiveDestination = {
+  configured: false,
+  absolutePath: null,
+  folderLabel: null
+};
 
 function projectId() {
   return $("project")?.value || "";
@@ -101,105 +107,84 @@ function setStatus(message, kind = "neutral") {
   node.dataset.kind = kind;
 }
 
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("IndexedDB unavailable"));
-  });
-}
-
-async function dbGet(key) {
-  const db = await openDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readonly");
-      const request = tx.objectStore(DB_STORE).get(key);
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error || new Error("Directory handle read failed"));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function dbSet(key, value) {
-  const db = await openDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readwrite");
-      tx.objectStore(DB_STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || new Error("Directory handle write failed"));
-      tx.onabort = () => reject(tx.error || new Error("Directory handle write aborted"));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function permissionState(handle, { request = false } = {}) {
-  if (!handle) return "missing";
-  try {
-    if (typeof handle.queryPermission !== "function") return "granted";
-    let state = await handle.queryPermission({ mode: "readwrite" });
-    if (state !== "granted" && request && typeof handle.requestPermission === "function") {
-      state = await handle.requestPermission({ mode: "readwrite" });
-    }
-    return state;
-  } catch {
-    return "denied";
-  }
-}
-
 async function refreshFolderLabel() {
   const label = $("outputFolderName");
-  if (!label) return;
+  const openBtn = $("outputOpenFolder");
   try {
-    const handle = await dbGet(activeFolderKey);
-    if (!handle) {
-      label.textContent = "Nessuna cartella scelta";
-      setStatus("Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.");
-      return;
+    const response = await originalFetch(`/api/archive/config?folderKey=${encodeURIComponent(activeFolderKey)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Archive config failed");
+    archiveDestination = {
+      configured: Boolean(data.configured),
+      absolutePath: data.absolutePath || null,
+      folderLabel: data.folderLabel || null
+    };
+    if (label) {
+      label.textContent = archiveDestination.configured
+        ? (archiveDestination.absolutePath || archiveDestination.folderLabel || "Cartella configurata")
+        : "Nessuna cartella scelta";
     }
-    const permission = await permissionState(handle);
-    label.textContent = handle.name || "Cartella selezionata";
-    if (permission === "granted") setStatus("Cartella pronta per l'archiviazione automatica.", "ok");
-    else setStatus("Cartella ricordata; Edge potrebbe richiedere di riattivare il permesso.", "warn");
+    if (openBtn) openBtn.disabled = !archiveDestination.configured;
+    if (archiveDestination.configured) {
+      setStatus("Archivio locale Director pronto. I render completati verranno copiati qui.", "ok");
+    } else {
+      setStatus("Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.");
+    }
   } catch {
-    label.textContent = "Cartella non disponibile";
-    setStatus("Impossibile leggere la cartella salvata nel browser.", "warn");
+    archiveDestination = { configured: false, absolutePath: null, folderLabel: null };
+    if (label) label.textContent = "Cartella non disponibile";
+    if (openBtn) openBtn.disabled = true;
+    setStatus("Impossibile leggere la configurazione archivio Director.", "warn");
   }
 }
 
 async function chooseFolder() {
-  if (typeof window.showDirectoryPicker !== "function") {
-    setStatus("Questo browser non supporta la scelta diretta della cartella. Usa Edge/Chromium aggiornato.", "error");
-    return;
-  }
+  setStatus("Apertura selettore cartella…");
   try {
-    const handle = await window.showDirectoryPicker({
-      id: `h3-output-${sanitizeOutputSegment(activeFolderKey, { fallback: "global", maxLength: 40 })}`,
-      mode: "readwrite"
+    const response = await originalFetch("/api/archive/pick-folder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folderKey: activeFolderKey })
     });
-    const permission = await permissionState(handle, { request: true });
-    if (permission !== "granted") {
-      setStatus("Permesso di scrittura non concesso; nessun file verrà archiviato automaticamente.", "warn");
-      return;
-    }
-    await dbSet(activeFolderKey, handle);
-    $("outputFolderName").textContent = handle.name || "Cartella selezionata";
-    setStatus("Cartella selezionata. I render completati verranno copiati qui con il nome scelto.", "ok");
-  } catch (error) {
-    if (error?.name === "AbortError") {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && data.code === "archive-pick-cancelled") {
       setStatus("Scelta cartella annullata.");
       return;
     }
+    if (!response.ok) {
+      setStatus(data.error || "Errore scelta cartella", "error");
+      return;
+    }
+    archiveDestination = {
+      configured: Boolean(data.configured),
+      absolutePath: data.absolutePath || null,
+      folderLabel: data.folderLabel || null
+    };
+    if ($("outputFolderName")) {
+      $("outputFolderName").textContent = archiveDestination.absolutePath
+        || archiveDestination.folderLabel
+        || "Cartella configurata";
+    }
+    if ($("outputOpenFolder")) $("outputOpenFolder").disabled = !archiveDestination.configured;
+    setStatus("Cartella archivio configurata sul Director. Nessun permesso browser richiesto.", "ok");
+  } catch (error) {
     setStatus(`Errore cartella: ${error?.message || error}`, "error");
+  }
+}
+
+async function openConfiguredFolder() {
+  try {
+    const response = await originalFetch("/api/archive/open-folder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folderKey: activeFolderKey })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setStatus(data.error || "Impossibile aprire la cartella archivio.", "error");
+    }
+  } catch (error) {
+    setStatus(`Errore apertura cartella: ${error?.message || error}`, "error");
   }
 }
 
@@ -340,110 +325,81 @@ function archivedKey(promptId, item) {
   return `${ARCHIVED_PREFIX}${promptId}:${item?.subfolder || ""}:${item?.filename || "output"}`;
 }
 
-async function fileExists(directory, filename) {
-  try {
-    await directory.getFileHandle(filename, { create: false });
-    return true;
-  } catch (error) {
-    if (error?.name === "NotFoundError") return false;
-    throw error;
-  }
-}
-
-function appendCollisionSuffix(filename, counter) {
-  const ext = extensionFromFilename(filename);
-  const base = filename.slice(0, -ext.length);
-  return `${base}_${String(counter).padStart(4, "0")}${ext}`;
-}
-
-async function allocateFilename(directory, plan, item) {
-  const counterKey = outputCounterStorageKey({
-    scope: plan.counterScope,
-    projectId: plan.projectId,
-    scene: plan.scene
-  });
-  let counter = Number(localStorage.getItem(counterKey) || "1");
-  if (!Number.isFinite(counter) || counter < 1) counter = 1;
-  counter = Math.floor(counter);
-
-  const tokens = buildOutputTokens({
-    project: plan.projectLabel,
-    scene: plan.scene,
-    variant: plan.variant,
-    ...(plan.generation || {})
-  });
-  const templateHasCounter = /\{counter(?::0?\d+)?\}/.test(plan.template || "");
-
-  for (let attempts = 0; attempts < 10000; attempts += 1, counter += 1) {
-    let filename = buildOutputFilename({
-      template: plan.template,
-      tokens,
-      counter,
-      sourceFilename: item.filename
-    });
-    if (!templateHasCounter && counter > 1) filename = appendCollisionSuffix(filename, counter);
-    if (!(await fileExists(directory, filename))) {
-      return { filename, counter, counterKey };
-    }
-  }
-  throw new Error("Unable to allocate a collision-free output filename");
-}
-
-async function copyOutputToDirectory(directory, item, targetName) {
-  const response = await originalFetch(item.url);
-  if (!response.ok) throw new Error(`Output fetch failed: ${response.status}`);
-  const blob = await response.blob();
-  const fileHandle = await directory.getFileHandle(targetName, { create: true });
-  const writable = await fileHandle.createWritable();
-  try {
-    await writable.write(blob);
-    await writable.close();
-  } catch (error) {
-    try { await writable.abort(); } catch { /* ignore */ }
-    throw error;
-  }
-  const saved = await fileHandle.getFile();
-  if (saved.size !== blob.size) throw new Error(`Archived file size mismatch for ${targetName}`);
-  return saved.size;
-}
-
 async function archiveOutputs(promptId, items = []) {
   const plan = readPromptPlan(promptId);
   if (!plan?.enabled || !Array.isArray(items) || !items.length) return;
-  const directory = await dbGet(plan.folderKey);
-  if (!directory) {
-    setStatus("Render completato ma nessuna cartella archivio è associata a questo job.", "warn");
-    return;
-  }
-  const permission = await permissionState(directory);
-  if (permission !== "granted") {
-    setStatus("Render completato; Edge richiede di riattivare il permesso della cartella prima della copia.", "warn");
-    return;
-  }
 
   let copied = 0;
   for (const item of items) {
-    if (!item?.filename || !item?.url) continue;
+    if (!item?.filename) continue;
     const key = archivedKey(promptId, item);
     if (localStorage.getItem(key)) continue;
-    const allocation = await allocateFilename(directory, plan, item);
-    const bytes = await copyOutputToDirectory(directory, item, allocation.filename);
-    localStorage.setItem(allocation.counterKey, String(allocation.counter + 1));
-    localStorage.setItem(key, JSON.stringify({ filename: allocation.filename, bytes, archivedAt: Date.now() }));
-    attachArchiveMetadata(sessionStorage, {
-      promptId,
-      filename: item.filename,
-      subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
-      archive: {
-        filename: allocation.filename,
-        folderLabel: directory.name || plan.projectLabel || plan.folderKey || "",
-        archivedAt: Date.now(),
-        bytes
-      }
+    const response = await originalFetch("/api/archive-output", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        promptId,
+        filename: item.filename,
+        subfolder: item.subfolder || subfolderFromOutputUrl(item.url) || "",
+        type: "output",
+        folderKey: plan.folderKey || activeFolderKey,
+        plan
+      })
     });
-    notifySessionOutputsChanged();
-    copied += 1;
-    setStatus(`Archiviato: ${allocation.filename}`, "ok");
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && data.code === "archive-unconfigured") {
+      setStatus("Render completato ma nessuna cartella archivio è configurata sul Director.", "warn");
+      return;
+    }
+    if (response.status === 409 && data.code === "archive-unavailable") {
+      setStatus("Render completato; cartella archivio non disponibile. L'originale ComfyUI resta intatto.", "warn");
+      return;
+    }
+    if (!response.ok) {
+      setStatus(
+        `Archiviazione non riuscita: ${data.error || response.status}. L'output originale ComfyUI resta intatto.`,
+        "error"
+      );
+      return;
+    }
+    if (data.skipped) continue;
+    if (data.archivedFilename) {
+      localStorage.setItem(key, JSON.stringify({
+        filename: data.archivedFilename,
+        bytes: data.bytes,
+        archivedAt: Date.now()
+      }));
+      const counterKey = outputCounterStorageKey({
+        scope: plan.counterScope,
+        projectId: plan.projectId,
+        scene: plan.scene
+      });
+      try {
+        const current = Number(localStorage.getItem(counterKey) || "1");
+        if (Number.isFinite(current) && current >= 1) {
+          localStorage.setItem(counterKey, String(Math.floor(current) + 1));
+        }
+      } catch { /* preview counter best-effort */ }
+      attachArchiveMetadata(sessionStorage, {
+        promptId,
+        filename: item.filename,
+        subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+        archive: {
+          filename: data.archivedFilename,
+          folderLabel: data.folderLabel || archiveDestination.folderLabel || "Archivio locale",
+          archivedAt: Date.now(),
+          bytes: data.bytes
+        }
+      });
+      notifySessionOutputsChanged();
+      copied += 1;
+      setStatus(
+        data.alreadyArchived
+          ? `Già archiviato: ${data.archivedFilename}`
+          : `Archiviato: ${data.archivedFilename}`,
+        "ok"
+      );
+    }
   }
   if (copied) renderPreview();
 }
@@ -545,13 +501,10 @@ function bindSessionGallery() {
 
 function bindUi() {
   if (!$("outputSection") && !$("sessionGallerySection")) return;
-  if ($("outputChooseFolder") && typeof window.showDirectoryPicker !== "function") {
-    $("outputChooseFolder").disabled = true;
-    setStatus("Scelta cartella non supportata dal browser. Edge/Chromium aggiornato è richiesto.", "warn");
-  }
 
-  $("outputChooseFolder")?.addEventListener("click", chooseFolder);
-  $("outputScope")?.addEventListener("change", changeScope);
+  $("outputChooseFolder")?.addEventListener("click", () => { void chooseFolder(); });
+  $("outputOpenFolder")?.addEventListener("click", () => { void openConfiguredFolder(); });
+  $("outputScope")?.addEventListener("change", () => { void changeScope(); });
   for (const id of ["outputAuto", "outputScene", "outputVariant", "outputTemplate", "outputCounterScope"]) {
     $(id)?.addEventListener("input", saveSettings);
     $(id)?.addEventListener("change", saveSettings);
@@ -560,14 +513,14 @@ function bindUi() {
     $(id)?.addEventListener("input", renderPreview);
     $(id)?.addEventListener("change", renderPreview);
   }
-  $("project")?.addEventListener("change", () => { setTimeout(loadScope, 0); });
+  $("project")?.addEventListener("change", () => { setTimeout(() => { void loadScope(); }, 0); });
 
   const observer = new MutationObserver(renderPreview);
   if ($("workflow")) observer.observe($("workflow"), { childList: true, subtree: true });
   if ($("model")) observer.observe($("model"), { childList: true, subtree: true });
 
-  loadScope();
-  setTimeout(loadScope, 500);
+  void loadScope();
+  setTimeout(() => { void loadScope(); }, 500);
   bindSessionGallery();
 }
 

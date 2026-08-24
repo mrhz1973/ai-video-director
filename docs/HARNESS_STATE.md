@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.15.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.16.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -288,6 +288,17 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 - Runtime: `cloneAndBind` then optional deterministic insert of one `LoraLoaderModelOnly` node (`900001`) between UNet loader node `136` and MODEL consumers (`BasicScheduler`, `BasicGuider`). OFF leaves the graph unchanged.
 - Availability: `GET /api/config` → `h3Lora.availability` from ComfyUI `object_info/LoraLoaderModelOnly`. Missing files stay visible but block Generate (fail-closed, no silent fallback).
 - Validation: `lib/h3-lora-validation.mjs` rejects unknown IDs, forbidden client paths (`lora_name`, etc.) and out-of-range strength before `/prompt`.
+
+## Output archive — Archivio locale Director (v0.16.0)
+
+v0.16.0 moves completed-clip archiving from browser File System Access API writes to the Node Director process.
+
+- Persistence: `%LOCALAPPDATA%\AI Video Director\archive.json` (override with `H3_ARCHIVE_STORE_PATH`). Absolute archive paths are never committed to the repo or project JSON.
+- Selection: `POST /api/archive/pick-folder` runs a native Windows `FolderBrowserDialog` (`scripts/windows/Select-ArchiveFolder.ps1`). The browser cannot supply an absolute destination path.
+- Copy: `POST /api/archive-output` resolves the source via `resolveAuthoritativeComfyOutput` (promptId + history + realpath containment), allocates a collision-free name, then `fs.copyFile`. Comfy originals are never deleted or moved.
+- Open: `POST /api/archive/open-folder` opens the configured archive root in Explorer.
+- Auto-archive: browser still observes `/api/outputs` and, when enabled, requests server copy. Failures leave the Comfy original intact and surface a clear status.
+- UI terminology: **Archivio locale** / **Archivio Director** (not “archivio browser”). Legacy IndexedDB directory handles are left untouched but unused for writes.
 
 ## Megapixels and resolution
 
