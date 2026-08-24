@@ -299,6 +299,7 @@ v0.16.0 moves completed-clip archiving from browser File System Access API write
 - Open: `POST /api/archive/open-folder` opens the configured archive root in Explorer.
 - Auto-archive: browser still observes `/api/outputs` and, when enabled, requests server copy. Failures leave the Comfy original intact and surface a clear status.
 - UI terminology: **Archivio locale** / **Archivio Director** (not “archivio browser”). Legacy IndexedDB directory handles are left untouched but unused for writes.
+- **Mostra nella cartella** (Comfy original): `POST /api/show-in-folder` launches `explorer.exe` with a single `/select,<absolutePath>` argument after authoritative history/realpath resolution. Launch failures are never reported as success. **Apri cartella** (archive) opens the configured archive directory without `/select`.
 
 ## Megapixels and resolution
 

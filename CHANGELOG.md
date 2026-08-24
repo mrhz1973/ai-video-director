@@ -5,6 +5,7 @@
 - **Archivio locale Director**: completed ComfyUI outputs are copied by the Node server into a machine-local destination (`%LOCALAPPDATA%\AI Video Director\archive.json`), not by browser File System Access API writes.
 - OUTPUT UI: **Scegli cartella** uses a native Windows folder picker via Director; **Apri cartella** opens the configured archive; auto-archive calls `POST /api/archive-output` with history/realpath authority. Original ComfyUI files are never deleted or moved.
 - Removes archive dependency on `showDirectoryPicker` / `createWritable` / browser write permission prompts.
+- **Bugfix:** **Mostra nella cartella** now uses a single Explorer argv `/select,<absolutePath>`, never returns `ok:true` when launch fails, and surfaces Explorer errors in the UI. **Apri cartella** opens the archive directory without `/select`.
 
 ## 2026-08-24 — v0.15.0
 

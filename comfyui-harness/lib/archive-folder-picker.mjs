@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ComfyOutputPathError } from "./comfy-output-path.mjs";
+import { launchWindowsExplorer } from "./comfy-output-actions.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,10 +70,11 @@ export async function pickArchiveFolderNative({
 export async function openArchiveFolder({
   absolutePath,
   platform = process.platform,
-  execFileImpl = execFileAsync
+  execFileImpl = null,
+  spawnImpl
 } = {}) {
-  const target = path.resolve(String(absolutePath || ""));
-  if (!target) {
+  const target = path.resolve(String(absolutePath || "").trim());
+  if (!target || !path.isAbsolute(target)) {
     throw new ComfyOutputPathError("Cartella archivio non configurata.", {
       code: "archive-unconfigured",
       status: 409
@@ -84,19 +86,11 @@ export async function openArchiveFolder({
       status: 501
     });
   }
-  try {
-    await execFileImpl("explorer.exe", [target], {
-      timeout: 8000,
-      windowsHide: true,
-      maxBuffer: 1024 * 64
-    });
-  } catch (error) {
-    if (error && (error.code === "ENOENT" || error.code === "EACCES")) {
-      throw new ComfyOutputPathError(error.message || "Explorer launch failed.", {
-        code: "explorer-failed",
-        status: 500
-      });
-    }
-  }
+  // Distinct from Mostra nella cartella: open the directory itself (no /select).
+  await launchWindowsExplorer([target], {
+    exe: "explorer.exe",
+    execFileImpl,
+    spawnImpl
+  });
   return { ok: true, absolutePath: target };
 }

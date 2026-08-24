@@ -470,14 +470,15 @@ function renderSessionGallery() {
             type: "output"
           })
         }).then(async response => {
-          if (response.ok) return;
-          const data = await response.json().catch(() => ({}));
-          const status = $("outputStatus");
-          if (status) {
-            status.textContent = data.error || "Impossibile aprire la cartella ComfyUI.";
-            status.dataset.state = "error";
+          if (response.ok) {
+            setStatus("Cartella ComfyUI aperta con il file selezionato.", "ok");
+            return;
           }
-        }).catch(() => {});
+          const data = await response.json().catch(() => ({}));
+          setStatus(data.error || "Impossibile aprire la cartella ComfyUI.", "error");
+        }).catch(error => {
+          setStatus(`Impossibile aprire la cartella ComfyUI: ${error?.message || error}`, "error");
+        });
       }
     }));
   }
