@@ -45,6 +45,7 @@ function buildDownloadUrl(item) {
   params.set("filename", String(item.filename || ""));
   if (item.subfolder) params.set("subfolder", String(item.subfolder));
   params.set("type", "output");
+  if (item.promptId) params.set("promptId", String(item.promptId));
   return `/api/download-mp4?${params.toString()}`;
 }
 

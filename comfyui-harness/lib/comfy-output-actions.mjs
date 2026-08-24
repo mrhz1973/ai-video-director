@@ -4,17 +4,15 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { realpath as fsRealpath } from "node:fs/promises";
 import {
   ComfyOutputPathError,
-  resolveSafeComfyOutputPath
-} from "./comfy-output-path.mjs";
+  resolveAuthoritativeComfyOutput
+} from "./comfy-output-authority.mjs";
 
 const execFileAsync = promisify(execFile);
 
 export function buildWindowsExplorerSelectArgs(absolutePath) {
-  // Fixed Explorer select behavior — path is already server-resolved.
   return ["/select,", String(absolutePath)];
 }
 
@@ -24,35 +22,30 @@ export function explorerExecutable(platform = process.platform) {
 }
 
 /**
- * Reveal an authoritative output file in the OS file manager.
- * @param {{
- *   outputRoot: string,
- *   filename: string,
- *   subfolder?: string,
- *   type?: string,
- *   platform?: string,
- *   execFileImpl?: typeof execFileAsync,
- *   accessImpl?: typeof access
- * }} opts
+ * Reveal an authoritative output after history + realpath checks.
  */
 export async function showComfyOutputInFolder({
   outputRoot,
+  comfyUrl,
+  promptId,
   filename,
   subfolder = "",
   type = "output",
   platform = process.platform,
-  execFileImpl = execFileAsync,
-  accessImpl = access
+  fetchFn = fetch,
+  realpathImpl = fsRealpath,
+  execFileImpl = execFileAsync
 } = {}) {
-  const resolved = resolveSafeComfyOutputPath(outputRoot, { filename, subfolder, type });
-  try {
-    await accessImpl(resolved.absolutePath, fsConstants.F_OK);
-  } catch {
-    throw new ComfyOutputPathError("Output file not found under Comfy output root.", {
-      code: "file-not-found",
-      status: 404
-    });
-  }
+  const resolved = await resolveAuthoritativeComfyOutput({
+    outputRoot,
+    comfyUrl,
+    promptId,
+    filename,
+    subfolder,
+    type,
+    fetchFn,
+    realpathImpl
+  });
 
   const exe = explorerExecutable(platform);
   if (!exe) {
@@ -70,7 +63,6 @@ export async function showComfyOutputInFolder({
       maxBuffer: 1024 * 64
     });
   } catch (error) {
-    // Explorer often returns non-zero even when the window opens; treat access errors only.
     if (error && (error.code === "ENOENT" || error.code === "EACCES")) {
       throw new ComfyOutputPathError(error.message || "Explorer launch failed.", {
         code: "explorer-failed",
@@ -78,7 +70,12 @@ export async function showComfyOutputInFolder({
       });
     }
   }
-  return { ok: true, filename: resolved.filename, subfolder: resolved.subfolder };
+  return {
+    ok: true,
+    filename: resolved.filename,
+    subfolder: resolved.subfolder,
+    promptId: resolved.promptId
+  };
 }
 
-export { ComfyOutputPathError, resolveSafeComfyOutputPath };
+export { ComfyOutputPathError, resolveAuthoritativeComfyOutput };

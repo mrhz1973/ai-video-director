@@ -57,6 +57,10 @@ import {
   addCurrentBatchToQueue,
   isBatchQueueArmed
 } from "./batch-queue-ui.mjs";
+import {
+  appendBatchFirstFrameSummary,
+  resolveEffectiveFirstFrame
+} from "./first-frame-view.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -220,6 +224,13 @@ export function setBatchAssetContextProvider(fn) {
   assetContextProvider = typeof fn === "function" ? fn : null;
 }
 
+/** Re-render compact cards (e.g. after availability / library refresh). */
+export function refreshBatchPresentation() {
+  if (typeof document !== "undefined" && document.getElementById?.("batchList")) {
+    renderBatch();
+  }
+}
+
 function getBatchAssetContext() {
   const ctx = assetContextProvider?.() || {};
   const unavailable = ctx.unavailableFilenames instanceof Set
@@ -227,7 +238,8 @@ function getBatchAssetContext() {
     : new Set(Array.isArray(ctx.unavailableFilenames) ? ctx.unavailableFilenames : []);
   return {
     library: ctx.library || { groups: [] },
-    unavailableFilenames: unavailable
+    unavailableFilenames: unavailable,
+    availability: ctx.availability && typeof ctx.availability === "object" ? ctx.availability : {}
   };
 }
 
@@ -519,6 +531,7 @@ function appendBatchJobInputSection(body, item) {
     select.addEventListener("change", () => {
       setItemFileOverride(item, role.key, select.value);
       markEdited();
+      if (role.key === "firstImage") renderBatch();
     });
     label.append(title, select);
     section.append(label);
@@ -689,6 +702,7 @@ function renderBatch() {
     return;
   }
 
+  const { library, availability } = getBatchAssetContext();
   items.forEach((item, index) => {
     const card = document.createElement("details");
     card.className = "batch-job";
@@ -697,7 +711,22 @@ function renderBatch() {
       batchExpandState.set(index, card.open);
     });
     const summary = document.createElement("summary");
-    summary.innerHTML = `<strong>Job ${index + 1}</strong><span>${formatBatchJobSummary(item)}</span>`;
+    const jobTitle = document.createElement("strong");
+    jobTitle.textContent = `Job ${index + 1}`;
+    const summaryText = document.createElement("span");
+    summaryText.className = "batch-job-summary-text";
+    summaryText.textContent = formatBatchJobSummary(item);
+    summary.append(jobTitle, summaryText);
+    appendBatchFirstFrameSummary(
+      document,
+      summary,
+      resolveEffectiveFirstFrame({
+        itemFiles: item.files || null,
+        sharedFiles: source?.files || null,
+        library,
+        availability
+      })
+    );
 
     const controls = document.createElement("div");
     controls.className = "batch-job-controls";
@@ -742,7 +771,7 @@ function renderBatch() {
       const update = () => {
         item[field] = field === "duration" ? String(normalizeDurationSeconds(input.value)) : input.value;
         if (field === "duration") input.value = item[field];
-        summary.querySelector("span").textContent = formatBatchJobSummary(item);
+        summaryText.textContent = formatBatchJobSummary(item);
         markEdited();
       };
       input.addEventListener("input", update);

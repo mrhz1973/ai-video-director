@@ -42,12 +42,18 @@ import { createResolvePromptState } from "./lib/prompt-settlement.mjs";
 import {
   ComfyOutputPathError,
   isMp4Filename,
-  resolveSafeComfyOutputPath
-} from "./lib/comfy-output-path.mjs";
+  resolveAuthoritativeComfyOutput
+} from "./lib/comfy-output-authority.mjs";
 import { showComfyOutputInFolder } from "./lib/comfy-output-actions.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
+
+function resolveConfiguredFilesystemPath(baseRoot, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(baseRoot, raw);
+}
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const configPath = resolveConfigPath({ root, env: process.env, existsSync });
@@ -56,10 +62,13 @@ const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
 const projectDir = path.resolve(root, config.projectDirectory || "./projects");
-/** Optional absolute/relative path to ComfyUI's output folder for reveal/download. */
-const comfyOutputDirectory = config.comfyOutputDirectory
-  ? path.resolve(root, config.comfyOutputDirectory)
-  : null;
+/**
+ * Output root precedence:
+ * 1) explicit harness config.comfyOutputDirectory
+ * 2) H3_COMFY_OUTPUT_DIRECTORY (Windows launcher derives <comfyRoot>/ComfyUI/output)
+ */
+const comfyOutputDirectory = resolveConfiguredFilesystemPath(root, config.comfyOutputDirectory)
+  || resolveConfiguredFilesystemPath(root, process.env.H3_COMFY_OUTPUT_DIRECTORY);
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
@@ -235,7 +244,16 @@ async function loadPreset(id) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (req.method === "GET" && url.pathname === "/api/config") return json(res, 200, { version: packageInfo.version, comfyUrl: comfy, wsUrl: comfy.replace(/^http/, "ws") + "/ws", presets: await presets(), projects: await projects() });
+    if (req.method === "GET" && url.pathname === "/api/config") {
+      return json(res, 200, {
+        version: packageInfo.version,
+        comfyUrl: comfy,
+        wsUrl: comfy.replace(/^http/, "ws") + "/ws",
+        presets: await presets(),
+        projects: await projects(),
+        comfyOutputConfigured: Boolean(comfyOutputDirectory)
+      });
+    }
     if (req.method === "GET" && url.pathname === "/api/projects") return json(res, 200, await projects());
     if (req.method === "POST" && url.pathname === "/api/projects") {
       const input = await readJsonBody(req);
@@ -630,11 +648,16 @@ const server = http.createServer(async (req, res) => {
       try {
         const result = await showComfyOutputInFolder({
           outputRoot: comfyOutputDirectory,
+          comfyUrl: comfy,
+          promptId: input.promptId,
           filename: input.filename,
           subfolder: input.subfolder || "",
           type: input.type || "output"
         });
-        logger.info("show_in_folder", { filename: String(input.filename || "").slice(0, 64) });
+        logger.info("show_in_folder", {
+          prompt_id: shortId(input.promptId),
+          filename: String(input.filename || "").slice(0, 64)
+        });
         return json(res, 200, result);
       } catch (error) {
         if (error instanceof ComfyOutputPathError) {
@@ -648,13 +671,17 @@ const server = http.createServer(async (req, res) => {
       try {
         const filename = url.searchParams.get("filename") || "";
         const subfolder = url.searchParams.get("subfolder") || "";
+        const promptId = url.searchParams.get("promptId") || "";
         if (!isMp4Filename(filename)) {
           return json(res, 400, {
             error: "Only authoritative .mp4 outputs can use Scarica MP4.",
             code: "not-mp4"
           });
         }
-        const resolved = resolveSafeComfyOutputPath(comfyOutputDirectory, {
+        const resolved = await resolveAuthoritativeComfyOutput({
+          outputRoot: comfyOutputDirectory,
+          comfyUrl: comfy,
+          promptId,
           filename,
           subfolder,
           type: "output"

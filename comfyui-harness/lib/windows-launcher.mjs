@@ -89,17 +89,33 @@ export function buildComfyCommand(comfyRoot = "") {
   };
 }
 
-export function buildDirectorCommand(harnessRoot = "", nodeExecutable = "node") {
+export function deriveComfyOutputDirectoryFromComfyRoot(comfyRoot = "") {
+  const root = String(comfyRoot || "").trim();
+  if (!root) return null;
+  return path.join(path.resolve(root), "ComfyUI", "output");
+}
+
+export function buildDirectorCommand(harnessRoot = "", nodeExecutable = "node", {
+  comfyRoot = "",
+  env = process.env
+} = {}) {
   const root = path.resolve(String(harnessRoot || "").trim());
   const server = path.join(root, "server.mjs");
   if (!existsSync(server)) {
     throw new Error(`Director server.mjs not found in harness root`);
   }
   const executable = String(nodeExecutable || "node").trim() || "node";
+  const nextEnv = { ...(env || {}) };
+  const derived = deriveComfyOutputDirectoryFromComfyRoot(comfyRoot);
+  // Launcher-derived output root; explicit H3_COMFY_OUTPUT_DIRECTORY / harness config win later in server.
+  if (derived && !String(nextEnv.H3_COMFY_OUTPUT_DIRECTORY || "").trim()) {
+    nextEnv.H3_COMFY_OUTPUT_DIRECTORY = derived;
+  }
   return {
     cwd: root,
     executable,
     arguments: ["server.mjs"],
+    env: nextEnv,
     displayCommand: `${executable} server.mjs`
   };
 }

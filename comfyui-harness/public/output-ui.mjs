@@ -508,6 +508,7 @@ function renderSessionGallery() {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
+            promptId: clip.promptId || "",
             filename: clip.filename,
             subfolder: clip.subfolder || "",
             type: "output"

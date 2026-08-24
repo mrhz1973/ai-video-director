@@ -24,7 +24,7 @@ Tracked scripts live in `comfyui-harness/scripts/windows/`:
 - `Get-AIVideoDirectorStatus.ps1` — read-only status
 - `Install-AIVideoDirectorLauncher.ps1` — writes local config + Desktop shortcut (manual post-merge step)
 
-Local machine config (not committed): `%LOCALAPPDATA%\AI Video Director\launcher.json` with `comfyRoot`, timeouts and `openBrowser`.
+Local machine config (not committed): `%LOCALAPPDATA%\AI Video Director\launcher.json` with `comfyRoot`, timeouts and `openBrowser`. When the launcher starts Director it sets `H3_COMFY_OUTPUT_DIRECTORY` to `<comfyRoot>/ComfyUI/output` unless already set; explicit harness `comfyOutputDirectory` still wins. Reveal/download require `promptId` + Comfy `/history` match and realpath containment under that root.
 
 Startup probes ComfyUI `GET /system_stats` and Director `GET /api/config`, reuses healthy services, starts missing ones exactly once, and **fails closed** if a port is occupied by an unexpected process. The launcher never POSTs `/api/queue`, ComfyUI `/prompt`, or project writes. Browser opens only after Director health succeeds.
 

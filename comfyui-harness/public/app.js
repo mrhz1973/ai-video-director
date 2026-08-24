@@ -15,6 +15,10 @@ import {
 import { singleInterruptActionable } from "./runtime-interrupt-ui.mjs";
 import { connectionBadge } from "./connection-badge.mjs";
 import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
+import {
+  applyScenaFirstFrameView,
+  resolveEffectiveFirstFrame
+} from "./first-frame-view.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
 import {
   CATEGORIES,
@@ -128,6 +132,7 @@ import {
   exportBatchDraftForProject,
   exportBatchDraftForPersistence,
   importBatchDraftFromProject,
+  refreshBatchPresentation,
   setBatchAssetContextProvider,
   setBatchLocalLoadSuppressed,
   setBatchPersistenceHook
@@ -1326,10 +1331,22 @@ function availabilityOf(filename, subfolder = "") {
   return lookupAvailability(draft.availability, { filename, subfolder });
 }
 
+function syncScenaFirstFrame() {
+  const binding = resolveEffectiveFirstFrame({
+    sharedFiles: draft.files,
+    library: draft.library,
+    availability: draft.availability
+  });
+  applyScenaFirstFrameView(document, binding);
+  return binding;
+}
+
 async function refreshAvailability() {
   const unique = draftAssetDescriptors();
   if (!unique.length) {
     draft.availability = {};
+    syncScenaFirstFrame();
+    refreshBatchPresentation();
     return;
   }
   try {
@@ -1340,6 +1357,8 @@ async function refreshAvailability() {
     draft.availability = Object.fromEntries(unique.map(item => [assetStatusKey(item), "error"]));
   }
   updateGenerateButton();
+  syncScenaFirstFrame();
+  refreshBatchPresentation();
 }
 
 function setCategory(category) {
@@ -1676,6 +1695,7 @@ function renderRoleFields() {
     label.append(note, input);
     legacyHost.append(label);
   }
+  syncScenaFirstFrame();
 }
 
 function selectPreset({
@@ -2176,7 +2196,8 @@ setBatchAssetContextProvider(() => {
   }
   return {
     library: draft.library,
-    unavailableFilenames: unavailable
+    unavailableFilenames: unavailable,
+    availability: draft.availability
   };
 });
 $("batchLegacyRecover")?.addEventListener("click", () => {

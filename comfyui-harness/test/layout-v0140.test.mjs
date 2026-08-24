@@ -202,14 +202,24 @@ test("resolveSafeComfyOutputPath accepts valid and rejects traversal/absolute/es
   );
 });
 
-test("show-in-folder uses fixed Explorer argv and rejects missing file", async () => {
+test("show-in-folder uses fixed Explorer argv after authoritative history", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "h3-show-"));
   writeFileSync(path.join(dir, "clip.mp4"), Buffer.from("abc"));
   const calls = [];
   await showComfyOutputInFolder({
     outputRoot: dir,
+    comfyUrl: "http://127.0.0.1:9",
+    promptId: "pid-layout",
     filename: "clip.mp4",
     platform: "win32",
+    fetchFn: async () => ({
+      ok: true,
+      json: async () => ({
+        "pid-layout": {
+          outputs: { "1": { videos: [{ filename: "clip.mp4", subfolder: "", type: "output" }] } }
+        }
+      })
+    }),
     execFileImpl: async (exe, args) => {
       calls.push({ exe, args });
     }
@@ -221,22 +231,33 @@ test("show-in-folder uses fixed Explorer argv and rejects missing file", async (
   await assert.rejects(
     () => showComfyOutputInFolder({
       outputRoot: dir,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "pid-layout",
       filename: "missing.mp4",
       platform: "win32",
+      fetchFn: async () => ({
+        ok: true,
+        json: async () => ({
+          "pid-layout": {
+            outputs: { "1": { videos: [{ filename: "clip.mp4", subfolder: "", type: "output" }] } }
+          }
+        })
+      }),
       execFileImpl: async () => {}
     }),
-    err => err.code === "file-not-found"
+    err => err.code === "history-mismatch" || err.code === "file-not-found"
   );
 });
 
-test("MP4 download endpoint wiring: mime, attachment, no transcode", () => {
+test("MP4 download is server-authoritative (promptId + history); no ffmpeg", () => {
   assert.match(server, /\/api\/download-mp4/);
+  assert.match(server, /resolveAuthoritativeComfyOutput/);
+  assert.match(server, /promptId/);
   assert.match(server, /content-type": "video\/mp4"/);
-  assert.match(server, /content-disposition/);
-  assert.match(server, /attachment; filename=/);
   assert.match(server, /createReadStream/);
   assert.doesNotMatch(server, /ffmpeg|transcode|handbrake/i);
   assert.match(server, /\/api\/show-in-folder/);
+  assert.match(galleryDom, /promptId/);
   assert.equal(isMp4Filename("a.mp4"), true);
   assert.equal(isMp4Filename("a.webm"), false);
 });
