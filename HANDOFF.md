@@ -79,7 +79,7 @@ Known package version: 0.13.0 (feature branch `feature/multi-batch-queue-v0130`)
 
 ## Current harness UX focus (v0.13.0)
 
-- **CODA BATCH** (Issue #47): persistent multi-Batch queue (max 50) with server-side sequential scheduler; **Aggiungi alla coda**, **AVVIA CODA**, **RIPRENDI CODA**; plan in `batchQueue`, runtime authority fail-closed after Director restart. See `docs/BATCH_QUEUE_RUNTIME.md`.
+- **CODA BATCH** (Issue #47): persistent multi-Batch queue (max 50) with server-side sequential scheduler; **Aggiungi alla coda**, **AVVIA CODA**, **RIPRENDI CODA**; plan in `batchQueue`, runtime authority fail-closed after Director restart. Server in-memory global execution-lane reservation blocks cross-tab races with legacy queued-next / deferred Batch. See `docs/BATCH_QUEUE_RUNTIME.md`.
 
 ## Prior harness UX (v0.12.0)
 

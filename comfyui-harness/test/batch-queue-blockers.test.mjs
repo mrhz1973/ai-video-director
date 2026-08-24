@@ -246,7 +246,7 @@ test("blocker4: full queued batch stop pauses multi-queue", async () => {
   await service.arm({ projectId: "p1", plan });
   await service.tickProject("p1");
   const view = service.getRuntime("p1");
-  service.onFullBatchStop("p1", { batchId: view.currentBatchId });
+  await service.onFullBatchStop("p1", { batchId: view.currentBatchId });
   const after = service.getRuntime("p1");
   assert.equal(after.overallState, QUEUE_OVERALL_STATE.PAUSED);
   assert.equal(after.currentEntryId, null);

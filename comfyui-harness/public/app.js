@@ -70,6 +70,12 @@ import {
   summarizeQueuedNext
 } from "./queue-coordinator.mjs";
 import {
+  EXECUTION_LANE_KIND,
+  releaseExecutionLane,
+  reserveExecutionLane,
+  transferExecutionLaneKind
+} from "./execution-lane-client.mjs";
+import {
   buildSingleRenderPayload,
   toSingleRenderQueueBody
 } from "./single-render.mjs";
@@ -602,8 +608,13 @@ function renderQueueWaitCard() {
     cancel.type = "button";
     cancel.className = "secondary";
     cancel.textContent = "Annulla";
-    cancel.onclick = () => {
+    cancel.onclick = async () => {
       coordinator.cancelQueuedNext();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
       renderQueueWaitCard();
       updateGenerateButton();
     };
@@ -631,8 +642,14 @@ function renderQueueWaitCard() {
     cancel.type = "button";
     cancel.className = "secondary";
     cancel.textContent = "Annulla attesa";
-    cancel.onclick = () => {
+    cancel.onclick = async () => {
       coordinator.cancelDeferredBatch();
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH
+        || lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
       window.dispatchEvent(new CustomEvent("h3-deferred-batch-cancel"));
       renderQueueWaitCard();
       updateGenerateButton();
@@ -748,7 +765,20 @@ async function submitSingleRender({ action }) {
   const queueBody = toSingleRenderQueueBody(intent);
   archiveCurrentPrompt(action);
   if (action === "queue-next") {
-    return coordinator.armQueuedNext(queueBody);
+    const ownerId = `queued-next:${clientId}`;
+    const reserved = await reserveExecutionLane({
+      kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+      ownerId,
+      projectId: draft?.id || $("project")?.value || null
+    });
+    if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+    const armed = coordinator.armQueuedNext(queueBody);
+    if (!armed.ok) {
+      await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
+      throw new Error(armed.reason || "Impossibile mettere in coda il prossimo job.");
+    }
+    coordinator.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
+    return armed;
   }
   return coordinator.tryImmediateGenerate(queueBody);
 }
@@ -842,8 +872,26 @@ async function refreshQueueCounts() {
     coordinator.markQueue({ running, pending });
     await refreshSingleOwnership();
     const transition = await coordinator.observeQueue({ running, pending });
-    if (transition.submitted === "queued-next" && transition.result?.result?.prompt_id) {
-      adoptSubmittedJob(transition.result.result);
+    if (transition.submitted === "queued-next") {
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
+      }
+      if (transition.result?.result?.prompt_id) {
+        adoptSubmittedJob(transition.result.result);
+      }
+    } else if (transition.submitted === "deferred-batch") {
+      const lane = coordinator.getLaneReservation?.();
+      if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH) {
+        const transferred = await transferExecutionLaneKind({
+          ownerId: lane.ownerId,
+          kind: EXECUTION_LANE_KIND.ACTIVE_BATCH
+        });
+        if (transferred.ok) {
+          coordinator.setLaneReservation?.({ ownerId: lane.ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH });
+        }
+      }
     }
     renderMonitor();
     updateGenerateButton();

@@ -38,6 +38,7 @@ import {
   mergeIncomingPlanWithRuntime,
   resolveRecoveryEntryInPlan
 } from "./batch-queue-reconcile.mjs";
+import { EXECUTION_LANE_KIND } from "./execution-lane.mjs";
 
 const TICK_MS = 3000;
 
@@ -48,6 +49,7 @@ export function createBatchQueueRuntimeService({
   fetchActivePromptId,
   registerOwnership,
   persistDescriptivePlan = null,
+  executionLane = null,
   logger = null,
   now = () => Date.now()
 } = {}) {
@@ -61,6 +63,19 @@ export function createBatchQueueRuntimeService({
 
   function log(event, fields = {}) {
     logger?.info?.(event, fields);
+  }
+
+  function multiBatchLaneOwner(projectId) {
+    return `multi-batch:${String(projectId || "").trim()}`;
+  }
+
+  function releaseMultiBatchLane(bucket) {
+    const ownerId = bucket?.runtime?.laneOwnerId;
+    if (!ownerId || !executionLane) return;
+    executionLane.release({
+      ownerId,
+      kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE
+    });
   }
 
   async function checkpointDescriptivePlan(bucket, reason = "") {
@@ -226,6 +241,7 @@ export function createBatchQueueRuntimeService({
     if (!next) {
       bucket.runtime.overallState = QUEUE_OVERALL_STATE.COMPLETED;
       bucket.runtime.armed = false;
+      releaseMultiBatchLane(bucket);
       return;
     }
     const claim = claimEntryAtomic(next);
@@ -240,7 +256,30 @@ export function createBatchQueueRuntimeService({
     bucket.runtime.entryJobs = jobs;
     bucket.runtime.overallState = QUEUE_OVERALL_STATE.RUNNING;
     log("batch_queue_entry_claim", { entry_id: next.queueEntryId.slice(0, 8), batch_id: batchId.slice(0, 8) });
-    await checkpointDescriptivePlan(bucket, "claim");
+    try {
+      await checkpointDescriptivePlan(bucket, "claim");
+    } catch (error) {
+      log("batch_queue_checkpoint_failed", {
+        phase: "claim",
+        entry_id: next.queueEntryId.slice(0, 8),
+        reason: error?.message || String(error)
+      });
+      bucket.plan.entries[entryIndex] = {
+        ...bucket.plan.entries[entryIndex],
+        state: QUEUE_ENTRY_STATE.RECOVERY_REQUIRED,
+        everClaimed: true
+      };
+      bucket.runtime.currentEntryId = null;
+      bucket.runtime.currentBatchId = null;
+      bucket.runtime.currentJobIndex = null;
+      bucket.runtime.entryJobs = null;
+      bucket.runtime.lastSubmitFailure = {
+        code: "checkpoint-failed",
+        message: error?.message || "Claim checkpoint persistence failed."
+      };
+      bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+      return;
+    }
 
     const { jobs: submittedJobs, submitResult } = await executeEntryJobs({
       entry: claim.entry,
@@ -391,6 +430,24 @@ export function createBatchQueueRuntimeService({
       if (!hasExecutable) {
         return { ok: false, code: "nothing-to-run", error: "Nessun batch eseguibile in coda." };
       }
+
+      const laneOwnerId = multiBatchLaneOwner(projectId);
+      if (executionLane) {
+        const reserved = executionLane.reserve({
+          kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
+          ownerId: laneOwnerId,
+          projectId
+        });
+        if (!reserved.ok) {
+          return {
+            ok: false,
+            code: reserved.code || "lane-busy",
+            error: reserved.error || "Esiste già un job/batch in attesa o una Coda Batch attiva.",
+            reservation: reserved.reservation || null
+          };
+        }
+      }
+
       armInFlight.add(projectId);
       try {
         const bucket = getBucket(projectId);
@@ -404,6 +461,7 @@ export function createBatchQueueRuntimeService({
           queueRunId: randomUUID(),
           projectId,
           armed: true,
+          laneOwnerId,
           overallState: QUEUE_OVERALL_STATE.ARMED,
           currentEntryId: null,
           currentBatchId: null,
@@ -418,6 +476,14 @@ export function createBatchQueueRuntimeService({
         log("batch_queue_armed", { project_id: String(projectId).slice(0, 8) });
         await tickProject(projectId);
         return { ok: true, view: publicView(projectId) };
+      } catch (error) {
+        if (executionLane) {
+          executionLane.release({
+            ownerId: laneOwnerId,
+            kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE
+          });
+        }
+        throw error;
       } finally {
         armInFlight.delete(projectId);
       }
@@ -526,7 +592,7 @@ export function createBatchQueueRuntimeService({
       return { ok: true, view: publicView(projectId) };
     },
 
-    onFullBatchStop(projectId, { batchId = null } = {}) {
+    async onFullBatchStop(projectId, { batchId = null } = {}) {
       const bucket = getBucket(projectId);
       if (bucket?.runtime?.currentEntryId && bucket.plan) {
         const entryId = bucket.runtime.currentEntryId;
@@ -544,6 +610,23 @@ export function createBatchQueueRuntimeService({
           bucket.runtime.currentBatchId = null;
           bucket.runtime.currentJobIndex = null;
           bucket.runtime.entryJobs = null;
+          try {
+            await checkpointDescriptivePlan(bucket, "full-stop");
+          } catch (error) {
+            log("batch_queue_checkpoint_failed", {
+              phase: "full-stop",
+              project_id: String(projectId).slice(0, 8),
+              reason: error?.message || String(error)
+            });
+            bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+            bucket.runtime.pauseRequested = true;
+            return {
+              ok: false,
+              code: "checkpoint-failed",
+              error: error?.message || "Impossibile persistere lo stato cancelled della coda.",
+              view: publicView(projectId)
+            };
+          }
         }
       }
       return this.pauseQueue({ projectId, reason: "full-batch-stop" });
@@ -552,6 +635,7 @@ export function createBatchQueueRuntimeService({
     loseAuthority(projectId) {
       const bucket = getBucket(projectId);
       if (!bucket) return;
+      releaseMultiBatchLane(bucket);
       if (bucket.plan) {
         bucket.plan.entries = classifyAuthorityLoss(bucket.plan.entries);
       }

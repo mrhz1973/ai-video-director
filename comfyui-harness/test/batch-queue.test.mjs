@@ -409,7 +409,7 @@ test("full batch stop pauses queue", async () => {
   const { service } = mockService();
   const plan = appendQueueEntry(null, createQueueEntryFromDraft(sampleDraft(1), { order: 1 })).plan;
   await service.arm({ projectId: "p1", plan });
-  service.onFullBatchStop("p1");
+  await service.onFullBatchStop("p1");
   assert.equal(service.getRuntime("p1").overallState, QUEUE_OVERALL_STATE.PAUSED);
 });
 

@@ -15,7 +15,7 @@ import {
 } from "../lib/batch-queue-plan.mjs";
 import { QUEUE_OVERALL_STATE } from "../lib/batch-queue-plan.mjs";
 import {
-  buildQueueSessionOutputRecords,
+  buildQueueSessionOutputRecordsFromOutputs,
   selectCompletedQueueJobsForSession
 } from "../lib/batch-queue-session.mjs";
 import {

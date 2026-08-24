@@ -36,6 +36,7 @@ import {
 import { createRuntimeOwnershipRegistry } from "./lib/runtime-ownership.mjs";
 import { createRuntimeControlService } from "./lib/runtime-control-service.mjs";
 import { createBatchQueueRuntimeService } from "./lib/batch-queue-service.mjs";
+import { createExecutionLaneRegistry } from "./lib/execution-lane.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
@@ -50,6 +51,7 @@ const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
+const executionLane = createExecutionLaneRegistry();
 const runtimeControl = createRuntimeControlService({
   comfyUrl: comfy,
   ownershipRegistry: runtimeOwnership,
@@ -107,7 +109,7 @@ const batchQueueRuntime = createBatchQueueRuntimeService({
     const running = Array.isArray(data.queue_running) ? data.queue_running : [];
     return running.length ? extractPromptIdFromQueueEntry(running[0]) : null;
   },
-    registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
+  registerOwnership: ({ promptId, batchId, batchIndex, queueRunId, queueEntryId }) => {
     runtimeOwnership.register(promptId, {
       kind: "batch",
       batchId,
@@ -116,42 +118,21 @@ const batchQueueRuntime = createBatchQueueRuntimeService({
       queueEntryId
     });
   },
+  executionLane,
   persistDescriptivePlan: async ({ projectId, plan }) => {
     if (!projectId || !plan) return;
     try {
-      const current = await projectStore.read(projectId);
-      await projectStore.update(projectId, { ...current, batchQueue: plan });
+      // Patch-only: projectStore.update() re-reads fresh state and must not
+      // overwrite unrelated editor fields with a stale full snapshot.
+      await projectStore.update(projectId, { batchQueue: plan });
     } catch (error) {
       logger?.error?.("batch_queue_checkpoint_failed", {
         project_id: String(projectId).slice(0, 8),
         reason: error.message
       });
+      throw error;
     }
   },
-  persistDescriptivePlan: async ({ projectId, plan }) => {
-
-    if (!projectId || !plan) return;
-
-    try {
-
-      const current = await projectStore.read(projectId);
-
-      await projectStore.update(projectId, { ...current, batchQueue: plan });
-
-    } catch (error) {
-
-      logger?.error?.("batch_queue_checkpoint_failed", {
-
-        project_id: String(projectId).slice(0, 8),
-
-        reason: error.message
-
-      });
-
-    }
-
-  },
-
   logger
 });
 
@@ -351,12 +332,47 @@ const server = http.createServer(async (req, res) => {
           batchId: input.batchId,
           expectedRunningPromptId: input.expectedRunningPromptId
         });
-        if (input.projectId) batchQueueRuntime.onFullBatchStop(input.projectId, { batchId: input.batchId });
-        return json(res, 200, result);
+        let queueCheckpoint = null;
+        if (input.projectId) {
+          queueCheckpoint = await batchQueueRuntime.onFullBatchStop(input.projectId, { batchId: input.batchId });
+        }
+        return json(res, 200, {
+          ...result,
+          queueCheckpoint,
+          queueCheckpointFailed: Boolean(queueCheckpoint && queueCheckpoint.ok === false)
+        });
       } catch (error) {
         logger.error("batch_stop_rejected", { code: error.code, reason: error.message });
         return json(res, error.status || 409, { error: error.message, code: error.code || "batch-stop-rejected" });
       }
+    }
+    if (req.method === "GET" && url.pathname === "/api/execution-lane") {
+      return json(res, 200, { reservation: executionLane.get() });
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/reserve") {
+      const input = await readJsonBody(req);
+      const result = executionLane.reserve({
+        kind: input.kind,
+        ownerId: input.ownerId,
+        projectId: input.projectId
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/release") {
+      const input = await readJsonBody(req);
+      const result = executionLane.release({
+        ownerId: input.ownerId,
+        kind: input.kind
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/transfer") {
+      const input = await readJsonBody(req);
+      const result = executionLane.transferKind({
+        ownerId: input.ownerId,
+        kind: input.kind
+      });
+      return json(res, result.ok ? 200 : 409, result);
     }
     if (req.method === "GET" && url.pathname === "/api/batch-queue/runtime") {
       const projectId = url.searchParams.get("projectId") || "";

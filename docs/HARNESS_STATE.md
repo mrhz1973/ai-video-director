@@ -153,7 +153,9 @@ Duration controls and labels use integer seconds only (`5s`). Prompt clear/histo
 - **CODA BATCH**: up to **50** persisted Batch snapshots in project `batchQueue`; explicit **AVVIA CODA** arms in-memory `queueRunId` scheduler on Director. One Batch at a time; server tick continues if browser tab closes.
 - **Aggiungi alla coda** deep-clones the prepared Batch editor without clearing it. Future entries editable until `queued` → `submitting` claim.
 - Director restart: plan restores; authority lost; `recovery-required` for interrupted entries; **RIPRENDI CODA** required. **Genera singolo** / **Avvia batch** blocked while queue armed. Reference: `docs/BATCH_QUEUE_RUNTIME.md`.
-- Registry is in-memory only; Director restart disables destructive controls fail-closed. Contract: `docs/COMFYUI_RUNTIME_CONTROL.md`.
+- Descriptive checkpoints persist only `{ batchQueue }` (claim / terminal / full-stop cancelled). Claim persistence failure is fail-closed (no prompt submit). Full Batch stop awaits cancelled checkpoint.
+- **Global execution lane** (server in-memory, not persisted): shared reservation for legacy `queuedNext` / `deferredBatch` / active Batch and multi-Batch queue so cross-tab future intents cannot double-submit. Restart clears lane authority fail-closed.
+- Runtime ownership registry is in-memory only; Director restart disables destructive controls fail-closed. Contract: `docs/COMFYUI_RUNTIME_CONTROL.md`.
 
 **Independence from GPU Power:** Batch never changes GPU mode, never posts `/api/gpu-power`, never invokes `schtasks` or `nvidia-smi -pl`, and never passes wattage or task names. GPU Power never submits Batch or mutates Batch draft/seed/settings. Both remain explicit user actions.
 

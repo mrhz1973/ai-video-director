@@ -33,6 +33,11 @@ import {
   getSharedCoordinator,
   resolveBatchQueueAction
 } from "./queue-coordinator.mjs";
+import {
+  EXECUTION_LANE_KIND,
+  releaseExecutionLane,
+  reserveExecutionLane
+} from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
 import {
   applyBatchStopResult,
@@ -815,8 +820,27 @@ function payloadFor(item, snapshot) {
 
 async function runSequentialBatch(snapshot) {
   const coord = getSharedCoordinator();
+  const clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
+  const ownerId = `active-batch:${clientId}`;
+  const existingLane = coord?.getLaneReservation?.();
+  if (!existingLane || existingLane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+    if (!existingLane || existingLane.kind !== EXECUTION_LANE_KIND.DEFERRED_BATCH) {
+      const reserved = await reserveExecutionLane({
+        kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+        ownerId,
+        projectId: null
+      });
+      if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+      coord?.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH });
+    }
+  }
   const claimed = coord?.beginActiveBatch?.();
   if (claimed && !claimed.ok && claimed.reason === "locked") {
+    const lane = coord?.getLaneReservation?.();
+    if (lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(lane);
+      coord?.clearLaneReservation?.();
+    }
     throw new Error("Un altro invio è già in corso.");
   }
   submitting = true;
@@ -873,6 +897,11 @@ async function runSequentialBatch(snapshot) {
   } finally {
     submitting = false;
     coord?.endActiveBatch?.();
+    const lane = coord?.getLaneReservation?.();
+    if (lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(lane);
+      coord?.clearLaneReservation?.();
+    }
     updateQueueButton();
   }
 }
@@ -916,6 +945,13 @@ async function queueBatch() {
         projectLabel: $("projectLabel")?.value || "",
         workflowLabel: snapshot.workflowLabel || ""
       }, { storage: localStorage });
+      const ownerId = `deferred-batch:${sessionStorage.getItem("h3ClientId") || crypto.randomUUID()}`;
+      const reserved = await reserveExecutionLane({
+        kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+        ownerId,
+        projectId: null
+      });
+      if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
       const armed = coord.armDeferredBatch({
         items: items.map(item => cloneBatchItemSnapshot(item)),
         snapshot: {
@@ -924,7 +960,11 @@ async function queueBatch() {
         },
         submitAll: () => runSequentialBatch(snapshot)
       });
-      if (!armed.ok) throw new Error("Impossibile armare il batch in attesa.");
+      if (!armed.ok) {
+        await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.DEFERRED_BATCH });
+        throw new Error("Impossibile armare il batch in attesa.");
+      }
+      coord.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.DEFERRED_BATCH });
       setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");
       return;
     }

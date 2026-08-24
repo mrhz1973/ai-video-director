@@ -218,6 +218,8 @@ export function createQueueCoordinator({ submit } = {}) {
   let submitCount = 0;
   let gpuWrites = 0;
   let observeInFlight = false;
+  /** @type {null | { ownerId: string, kind: string }} */
+  let laneReservation = null;
   const listeners = new Set();
 
   function emit() {
@@ -266,6 +268,18 @@ export function createQueueCoordinator({ submit } = {}) {
       return () => listeners.delete(listener);
     },
     snapshot,
+    getLaneReservation() {
+      return laneReservation ? { ...laneReservation } : null;
+    },
+    setLaneReservation(next) {
+      laneReservation = next && next.ownerId && next.kind
+        ? { ownerId: String(next.ownerId), kind: String(next.kind) }
+        : null;
+      return laneReservation ? { ...laneReservation } : null;
+    },
+    clearLaneReservation() {
+      laneReservation = null;
+    },
     setBatchQueueArmed(value) {
       batchQueueArmed = Boolean(value);
       return batchQueueArmed;
