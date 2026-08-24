@@ -830,12 +830,17 @@ async function runSequentialBatch(snapshot) {
   if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH) {
     const transferred = await transferExecutionLaneKind({
       ownerId: lane.ownerId,
-      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: lane.leaseToken
     });
     if (!transferred.ok) {
       throw new Error(transferred.error || "Impossibile attivare la lane batch.");
     }
-    lane = { ownerId: lane.ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH };
+    lane = {
+      ownerId: lane.ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      leaseToken: transferred.leaseToken || lane.leaseToken
+    };
     coord?.setLaneReservation?.(lane);
   } else if (!lane || lane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
     const ownerId = `active-batch:${clientId}`;
@@ -845,7 +850,7 @@ async function runSequentialBatch(snapshot) {
       projectId: null
     });
     if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
-    lane = { ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH };
+    lane = { ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH, leaseToken: reserved.leaseToken };
     coord?.setLaneReservation?.(lane);
   }
 
@@ -866,9 +871,13 @@ async function runSequentialBatch(snapshot) {
     const snapshotItems = items.map(item => cloneBatchItemSnapshot(item));
     const laneHeaders = () => {
       const current = coord?.getLaneReservation?.();
-      return current
-        ? { "x-h3-lane-owner": current.ownerId, "x-h3-lane-kind": current.kind }
-        : {};
+      if (!current) return {};
+      const headers = {
+        "x-h3-lane-owner": current.ownerId,
+        "x-h3-lane-kind": current.kind
+      };
+      if (current.leaseToken) headers["x-h3-lane-lease"] = current.leaseToken;
+      return headers;
     };
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
@@ -988,11 +997,19 @@ async function queueBatch() {
         submitAll: () => runSequentialBatch(snapshot)
       });
       if (!armed.ok) {
-        await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.DEFERRED_BATCH });
+        await releaseExecutionLane({
+          ownerId,
+          kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+          leaseToken: reserved.leaseToken
+        });
         throw new Error("Impossibile armare il batch in attesa.");
       }
-      coord.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.DEFERRED_BATCH });
-      startExecutionLaneHeartbeat(ownerId);
+      coord.setLaneReservation?.({
+        ownerId,
+        kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+        leaseToken: reserved.leaseToken
+      });
+      startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
       setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");
       return;
     }

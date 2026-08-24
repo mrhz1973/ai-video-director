@@ -348,7 +348,8 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
 
   // Legacy owns future lane first.
   clientLegacy.markQueue({ running: 1, pending: 0 });
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "tab-legacy" }).ok, true);
+  const reservedLegacy = lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "tab-legacy" });
+  assert.equal(reservedLegacy.ok, true);
   assert.equal(clientLegacy.armQueuedNext({ prompt: "L", seed: 1 }).ok, true);
 
   setLane({ running: 0, pending: 0 });
@@ -356,7 +357,11 @@ test("pass3: when lane empties, only one submission path may proceed", async () 
   assert.equal((await service.arm({ projectId: "p-race", plan })).ok, false);
 
   // Release legacy reservation, then multi may arm — still a single path owner.
-  lane.release({ ownerId: "tab-legacy", kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
+  lane.release({
+    ownerId: "tab-legacy",
+    kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+    leaseToken: reservedLegacy.leaseToken
+  });
   clientLegacy.cancelQueuedNext();
   assert.equal((await service.arm({ projectId: "p-race", plan })).ok, true);
   await service.tickProject("p-race");

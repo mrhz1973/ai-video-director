@@ -362,7 +362,8 @@ const server = http.createServer(async (req, res) => {
       const input = await readJsonBody(req);
       const result = executionLane.release({
         ownerId: input.ownerId,
-        kind: input.kind
+        kind: input.kind,
+        leaseToken: input.leaseToken
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -370,20 +371,24 @@ const server = http.createServer(async (req, res) => {
       const input = await readJsonBody(req);
       const result = executionLane.transferKind({
         ownerId: input.ownerId,
-        kind: input.kind
+        kind: input.kind,
+        leaseToken: input.leaseToken
       });
       return json(res, result.ok ? 200 : 409, result);
     }
     if (req.method === "POST" && url.pathname === "/api/execution-lane/heartbeat") {
       const input = await readJsonBody(req);
-      const result = executionLane.heartbeat({ ownerId: input.ownerId });
+      const result = executionLane.heartbeat({
+        ownerId: input.ownerId,
+        leaseToken: input.leaseToken
+      });
       return json(res, result.ok ? 200 : 409, result);
     }
     if (req.method === "POST" && url.pathname === "/api/execution-lane/reclaim-stale") {
       const input = await readJsonBody(req);
+      // staleAfterMs from clients is intentionally ignored — server policy only.
       const result = executionLane.reclaimStale({
-        requesterId: input.requesterId,
-        staleAfterMs: input.staleAfterMs
+        requesterId: input.requesterId
       });
       return json(res, result.ok ? 200 : 409, result);
     }
@@ -575,9 +580,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/queue") {
       const laneOwner = String(req.headers["x-h3-lane-owner"] || "").trim();
       const laneKind = String(req.headers["x-h3-lane-kind"] || "").trim() || null;
+      const laneLease = String(req.headers["x-h3-lane-lease"] || "").trim() || null;
       const laneGate = executionLane.assertSubmitAllowed({
         ownerId: laneOwner || null,
-        kind: laneKind
+        kind: laneKind,
+        leaseToken: laneLease
       });
       if (!laneGate.ok) {
         logger.error("queue_rejected", { reason: "execution_lane", code: laneGate.code });

@@ -109,11 +109,13 @@ function memoryStorage() {
  */
 async function runDeferredLifecycle({ lane, ownerId, submit }) {
   const events = [];
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId }).ok, true);
+  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId });
+  assert.equal(reserved.ok, true);
+  const leaseToken = reserved.leaseToken;
   events.push("reserved-deferred");
   assert.equal(lane.get()?.kind, EXECUTION_LANE_KIND.DEFERRED_BATCH);
 
-  const transferred = lane.transferKind({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH });
+  const transferred = lane.transferKind({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH, leaseToken });
   assert.equal(transferred.ok, true);
   events.push("transferred-active");
   assert.equal(lane.get()?.kind, EXECUTION_LANE_KIND.ACTIVE_BATCH);
@@ -122,7 +124,7 @@ async function runDeferredLifecycle({ lane, ownerId, submit }) {
     await submit();
     events.push("submitted");
   } finally {
-    assert.equal(lane.release({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH }).ok, true);
+    assert.equal(lane.release({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH, leaseToken }).ok, true);
     events.push("released-active");
   }
   assert.equal(lane.get(), null);
@@ -158,8 +160,13 @@ test("pass4: deferred lifecycle releases on thrown submit (no orphan)", async ()
 test("pass4: F5 clears stored deferredBatch future reservation without restoring intent", async () => {
   const lane = createExecutionLaneRegistry();
   const storage = memoryStorage();
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId: "tab-def" }).ok, true);
-  writeStoredExecutionLane({ ownerId: "tab-def", kind: EXECUTION_LANE_KIND.DEFERRED_BATCH }, storage);
+  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId: "tab-def" });
+  assert.equal(reserved.ok, true);
+  writeStoredExecutionLane({
+    ownerId: "tab-def",
+    kind: EXECUTION_LANE_KIND.DEFERRED_BATCH,
+    leaseToken: reserved.leaseToken
+  }, storage);
   const coord = createQueueCoordinator({ submit: async () => ({ prompt_id: "x" }) });
   assert.equal(coord.getDeferredBatch(), null);
   const stored = readStoredExecutionLane(storage);
@@ -173,11 +180,13 @@ test("pass4: F5 clears stored deferredBatch future reservation without restoring
 test("pass4: tab-loss deferred becomes reclaimable after heartbeat silence", () => {
   let now = 1_000;
   const lane = createExecutionLaneRegistry({ now: () => now, futureStaleMs: 1_000 });
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId: "tab-lost" }).ok, true);
+  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.DEFERRED_BATCH, ownerId: "tab-lost" });
+  assert.equal(reserved.ok, true);
+  const leaseToken = reserved.leaseToken;
 
   // Live heartbeat: not reclaimable.
   now = 1_500;
-  assert.equal(lane.heartbeat({ ownerId: "tab-lost" }).ok, true);
+  assert.equal(lane.heartbeat({ ownerId: "tab-lost", leaseToken }).ok, true);
   now = 2_000;
   assert.equal(lane.reclaimStale({ requesterId: "tab-b" }).ok, false);
   assert.equal(lane.reclaimStale({ requesterId: "tab-b" }).code, "still-alive");
@@ -207,9 +216,10 @@ test("pass4: active/multi kinds are never stale-reclaimed", () => {
 test("pass4: live future intent cannot be stolen by another client", () => {
   let now = 0;
   const lane = createExecutionLaneRegistry({ now: () => now, futureStaleMs: 5_000 });
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "live-a" }).ok, true);
+  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.QUEUED_NEXT, ownerId: "live-a" });
+  assert.equal(reserved.ok, true);
   now = 100;
-  lane.heartbeat({ ownerId: "live-a" });
+  lane.heartbeat({ ownerId: "live-a", leaseToken: reserved.leaseToken });
   now = 200;
   assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE, ownerId: "live-b" }).ok, false);
   assert.equal(lane.reclaimStale({ requesterId: "live-b" }).ok, false);
@@ -221,7 +231,8 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
   let pathCount = 0;
 
   // A wins with immediate single
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE, ownerId: "single-a" }).ok, true);
+  const reservedA = lane.reserve({ kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE, ownerId: "single-a" });
+  assert.equal(reservedA.ok, true);
   const { service: multi, submits, setLane } = mockService({
     executionLane: lane,
     historyMode: "instant-complete"
@@ -235,7 +246,11 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
 
   // Simulate accepted single submit then release
   pathCount += 1;
-  lane.release({ ownerId: "single-a", kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE });
+  lane.release({
+    ownerId: "single-a",
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: reservedA.leaseToken
+  });
 
   // Inverse: multi wins first
   const lane2 = createExecutionLaneRegistry();
@@ -243,17 +258,35 @@ test("pass4: immediate Single vs multi-queue — exactly one submission path", a
   multi2.setLane({ running: 1, pending: 0 });
   assert.equal((await multi2.service.arm({ projectId: "p-race-multi", plan })).ok, true);
   assert.equal(lane2.reserve({ kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE, ownerId: "single-b" }).ok, false);
-  assert.equal(lane2.assertSubmitAllowed({ ownerId: "single-b", kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE }).ok, false);
+  assert.equal(lane2.assertSubmitAllowed({
+    ownerId: "single-b",
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: "fake"
+  }).ok, false);
   pathCount += 1;
   assert.equal(pathCount, 2);
 });
 
 test("pass4: /api/queue boundary rejects foreign lane owner while reservation held", () => {
   const lane = createExecutionLaneRegistry();
-  assert.equal(lane.reserve({ kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE, ownerId: "multi" }).ok, true);
+  const reserved = lane.reserve({ kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE, ownerId: "multi" });
+  assert.equal(reserved.ok, true);
   assert.equal(lane.assertSubmitAllowed({ ownerId: null }).ok, false);
-  assert.equal(lane.assertSubmitAllowed({ ownerId: "other", kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE }).ok, false);
-  assert.equal(lane.assertSubmitAllowed({ ownerId: "multi", kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE }).ok, true);
+  assert.equal(lane.assertSubmitAllowed({
+    ownerId: "other",
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: reserved.leaseToken
+  }).ok, false);
+  assert.equal(lane.assertSubmitAllowed({
+    ownerId: "multi",
+    kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
+    leaseToken: reserved.leaseToken
+  }).ok, true);
+  assert.equal(lane.assertSubmitAllowed({
+    ownerId: "multi",
+    kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
+    leaseToken: null
+  }).ok, false);
 });
 
 test("pass4: stop UI feedback is truthful for HTTP 200 + queueCheckpointFailed", () => {
@@ -376,7 +409,11 @@ test("pass4: future kinds helper", () => {
 
 test("pass4: reconcileExecutionLaneAfterReload helper keeps storage when local intent present", async () => {
   const storage = memoryStorage();
-  writeStoredExecutionLane({ ownerId: "orphan", kind: EXECUTION_LANE_KIND.QUEUED_NEXT }, storage);
+  writeStoredExecutionLane({
+    ownerId: "orphan",
+    kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+    leaseToken: "lease-orphan"
+  }, storage);
   const withIntent = await reconcileExecutionLaneAfterReload({
     hasLocalFutureIntent: true,
     storage

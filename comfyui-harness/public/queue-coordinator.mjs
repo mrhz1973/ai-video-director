@@ -272,8 +272,12 @@ export function createQueueCoordinator({ submit } = {}) {
       return laneReservation ? { ...laneReservation } : null;
     },
     setLaneReservation(next) {
-      laneReservation = next && next.ownerId && next.kind
-        ? { ownerId: String(next.ownerId), kind: String(next.kind) }
+      laneReservation = next && next.ownerId && next.kind && next.leaseToken
+        ? {
+          ownerId: String(next.ownerId),
+          kind: String(next.kind),
+          leaseToken: String(next.leaseToken)
+        }
         : null;
       return laneReservation ? { ...laneReservation } : null;
     },

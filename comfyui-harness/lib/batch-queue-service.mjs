@@ -71,10 +71,12 @@ export function createBatchQueueRuntimeService({
 
   function releaseMultiBatchLane(bucket) {
     const ownerId = bucket?.runtime?.laneOwnerId;
+    const leaseToken = bucket?.runtime?.laneLeaseToken;
     if (!ownerId || !executionLane) return;
     executionLane.release({
       ownerId,
-      kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE
+      kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
+      leaseToken
     });
   }
 
@@ -108,11 +110,14 @@ export function createBatchQueueRuntimeService({
   function enrichRuntimeForPublic(bucket) {
     if (!bucket?.runtime) return null;
     const runtime = bucket.runtime;
+    const { laneLeaseToken: _lease, submittedMap: _map, ...safeRuntime } = runtime;
+    void _lease;
+    void _map;
     const currentEntry = bucket.plan?.entries?.find(entry => entry.queueEntryId === runtime.currentEntryId);
     const entryJobs = runtime.entryJobs || [];
     const acceptedJobs = buildAcceptedJobsList(bucket);
     return {
-      ...runtime,
+      ...safeRuntime,
       entries: bucket.plan?.entries,
       entryJobs,
       acceptedJobs,
@@ -228,10 +233,27 @@ export function createBatchQueueRuntimeService({
       pauseRequested
     });
     log("batch_queue_entry_terminal", { entry_id: entryId.slice(0, 8), state: entryState });
-    await checkpointDescriptivePlan(bucket, "terminal");
+    try {
+      await checkpointDescriptivePlan(bucket, "terminal");
+    } catch (error) {
+      log("batch_queue_checkpoint_failed", {
+        phase: "terminal",
+        entry_id: entryId.slice(0, 8),
+        reason: error?.message || String(error)
+      });
+      bucket.runtime.lastSubmitFailure = {
+        code: "checkpoint-failed",
+        message: error?.message || "Terminal checkpoint persistence failed."
+      };
+      bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+      bucket.runtime.pauseRequested = true;
+    }
   }
 
   async function startNextEntry(bucket) {
+    if (bucket.runtime?.overallState === QUEUE_OVERALL_STATE.RECOVERY_REQUIRED) {
+      return;
+    }
     const counts = await fetchQueueCounts();
     if (!isLaneSafe(counts)) {
       bucket.runtime.overallState = QUEUE_OVERALL_STATE.WAITING;
@@ -316,13 +338,33 @@ export function createBatchQueueRuntimeService({
         state: QUEUE_ENTRY_STATE.FAILED,
         everClaimed: true
       };
-      await checkpointDescriptivePlan(bucket, "submit-failure");
       bucket.runtime.entryStates = bucket.runtime.entryStates || {};
       bucket.runtime.entryStates[next.queueEntryId] = submittedJobs;
       bucket.runtime.currentEntryId = null;
       bucket.runtime.currentBatchId = null;
       bucket.runtime.currentJobIndex = null;
       bucket.runtime.entryJobs = null;
+      try {
+        await checkpointDescriptivePlan(bucket, "submit-failure");
+      } catch (error) {
+        log("batch_queue_checkpoint_failed", {
+          phase: "submit-failure",
+          entry_id: next.queueEntryId.slice(0, 8),
+          reason: error?.message || String(error)
+        });
+        bucket.plan.entries[entryIndex] = {
+          ...bucket.plan.entries[entryIndex],
+          state: QUEUE_ENTRY_STATE.RECOVERY_REQUIRED,
+          everClaimed: true
+        };
+        bucket.runtime.lastSubmitFailure = {
+          code: "checkpoint-failed",
+          message: error?.message || "Submit-failure checkpoint persistence failed."
+        };
+        bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+        bucket.runtime.pauseRequested = true;
+        return;
+      }
       bucket.runtime.overallState = decideQueueAfterEntryTerminal({
         failurePolicy: bucket.plan.failurePolicy,
         entryState: QUEUE_ENTRY_STATE.FAILED,
@@ -367,13 +409,33 @@ export function createBatchQueueRuntimeService({
 
   async function tickAll() {
     for (const projectId of byProject.keys()) {
-      await tickProject(projectId);
+      try {
+        await tickProject(projectId);
+      } catch (error) {
+        log("batch_queue_tick_failed", {
+          project_id: String(projectId).slice(0, 8),
+          reason: error?.message || String(error)
+        });
+        const bucket = getBucket(projectId);
+        if (bucket?.runtime) {
+          bucket.runtime.lastSubmitFailure = {
+            code: "tick-failed",
+            message: error?.message || "Queue tick failed."
+          };
+          bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
+          bucket.runtime.pauseRequested = true;
+        }
+      }
     }
   }
 
   function ensureTickTimer() {
     if (tickTimer) return;
-    tickTimer = setInterval(() => { void tickAll(); }, TICK_MS);
+    tickTimer = setInterval(() => {
+      void tickAll().catch(error => {
+        log("batch_queue_tick_unhandled", { reason: error?.message || String(error) });
+      });
+    }, TICK_MS);
     if (tickTimer.unref) tickTimer.unref();
   }
 
@@ -432,6 +494,7 @@ export function createBatchQueueRuntimeService({
       }
 
       const laneOwnerId = multiBatchLaneOwner(projectId);
+      let laneLeaseToken = null;
       if (executionLane) {
         const reserved = executionLane.reserve({
           kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
@@ -446,6 +509,7 @@ export function createBatchQueueRuntimeService({
             reservation: reserved.reservation || null
           };
         }
+        laneLeaseToken = reserved.leaseToken || null;
       }
 
       armInFlight.add(projectId);
@@ -462,6 +526,7 @@ export function createBatchQueueRuntimeService({
           projectId,
           armed: true,
           laneOwnerId,
+          laneLeaseToken,
           overallState: QUEUE_OVERALL_STATE.ARMED,
           currentEntryId: null,
           currentBatchId: null,
@@ -480,7 +545,8 @@ export function createBatchQueueRuntimeService({
         if (executionLane) {
           executionLane.release({
             ownerId: laneOwnerId,
-            kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE
+            kind: EXECUTION_LANE_KIND.MULTI_BATCH_QUEUE,
+            leaseToken: laneLeaseToken
           });
         }
         throw error;
@@ -692,6 +758,7 @@ export function createBatchQueueRuntimeService({
     },
 
     tickProject,
+    tickAll,
     _stopTimerForTests() {
       if (tickTimer) clearInterval(tickTimer);
       tickTimer = null;

@@ -13,21 +13,26 @@ export function readStoredExecutionLane(storage = sessionStorage) {
     const raw = storage.getItem(SESSION_LANE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed?.ownerId || !parsed?.kind) return null;
-    return { ownerId: String(parsed.ownerId), kind: String(parsed.kind) };
+    if (!parsed?.ownerId || !parsed?.kind || !parsed?.leaseToken) return null;
+    return {
+      ownerId: String(parsed.ownerId),
+      kind: String(parsed.kind),
+      leaseToken: String(parsed.leaseToken)
+    };
   } catch {
     return null;
   }
 }
 
 export function writeStoredExecutionLane(lane, storage = sessionStorage) {
-  if (!lane?.ownerId || !lane?.kind) {
+  if (!lane?.ownerId || !lane?.kind || !lane?.leaseToken) {
     storage.removeItem(SESSION_LANE_KEY);
     return;
   }
   storage.setItem(SESSION_LANE_KEY, JSON.stringify({
     ownerId: String(lane.ownerId),
-    kind: String(lane.kind)
+    kind: String(lane.kind),
+    leaseToken: String(lane.leaseToken)
   }));
 }
 
@@ -51,15 +56,21 @@ export async function reserveExecutionLane({ kind, ownerId, projectId = null } =
       reclaimable: Boolean(data.reclaimable)
     };
   }
-  writeStoredExecutionLane({ ownerId, kind });
-  return { ok: true, reservation: data.reservation || null, status: data.status };
+  const leaseToken = data.leaseToken || null;
+  writeStoredExecutionLane({ ownerId, kind, leaseToken });
+  return {
+    ok: true,
+    reservation: data.reservation || null,
+    leaseToken,
+    status: data.status
+  };
 }
 
-export async function releaseExecutionLane({ ownerId, kind = null } = {}) {
+export async function releaseExecutionLane({ ownerId, kind = null, leaseToken = null } = {}) {
   const response = await fetch("/api/execution-lane/release", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId, kind })
+    body: JSON.stringify({ ownerId, kind, leaseToken })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -75,11 +86,11 @@ export async function releaseExecutionLane({ ownerId, kind = null } = {}) {
   return { ok: true, status: data.status || "released" };
 }
 
-export async function transferExecutionLaneKind({ ownerId, kind } = {}) {
+export async function transferExecutionLaneKind({ ownerId, kind, leaseToken = null } = {}) {
   const response = await fetch("/api/execution-lane/transfer", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId, kind })
+    body: JSON.stringify({ ownerId, kind, leaseToken })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -90,15 +101,16 @@ export async function transferExecutionLaneKind({ ownerId, kind } = {}) {
       reservation: data.reservation || null
     };
   }
-  writeStoredExecutionLane({ ownerId, kind });
-  return { ok: true, reservation: data.reservation || null };
+  const nextLease = data.leaseToken || leaseToken;
+  writeStoredExecutionLane({ ownerId, kind, leaseToken: nextLease });
+  return { ok: true, reservation: data.reservation || null, leaseToken: nextLease };
 }
 
-export async function heartbeatExecutionLane({ ownerId } = {}) {
+export async function heartbeatExecutionLane({ ownerId, leaseToken = null } = {}) {
   const response = await fetch("/api/execution-lane/heartbeat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ownerId })
+    body: JSON.stringify({ ownerId, leaseToken })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -112,13 +124,12 @@ export async function heartbeatExecutionLane({ ownerId } = {}) {
   return { ok: true, reservation: data.reservation || null };
 }
 
-export async function reclaimStaleExecutionLane({ requesterId = null, staleAfterMs = null } = {}) {
-  const body = { requesterId };
-  if (staleAfterMs != null) body.staleAfterMs = staleAfterMs;
+/** Reclaim uses server-authoritative stale policy only — no client staleAfterMs. */
+export async function reclaimStaleExecutionLane({ requesterId = null } = {}) {
   const response = await fetch("/api/execution-lane/reclaim-stale", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify({ requesterId })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -165,10 +176,10 @@ export async function reconcileExecutionLaneAfterReload({
 
 let heartbeatTimer = null;
 
-export function startExecutionLaneHeartbeat(ownerId, { intervalMs = 10_000 } = {}) {
+export function startExecutionLaneHeartbeat(ownerId, { intervalMs = 10_000, leaseToken = null } = {}) {
   stopExecutionLaneHeartbeat();
-  if (!ownerId) return;
-  const tick = () => { void heartbeatExecutionLane({ ownerId }); };
+  if (!ownerId || !leaseToken) return;
+  const tick = () => { void heartbeatExecutionLane({ ownerId, leaseToken }); };
   tick();
   heartbeatTimer = setInterval(tick, intervalMs);
   if (heartbeatTimer.unref) heartbeatTimer.unref();

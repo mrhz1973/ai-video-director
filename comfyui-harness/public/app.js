@@ -163,6 +163,7 @@ coordinator = setSharedCoordinator(createQueueCoordinator({
     if (lane?.ownerId) {
       headers["x-h3-lane-owner"] = lane.ownerId;
       headers["x-h3-lane-kind"] = lane.kind;
+      if (lane.leaseToken) headers["x-h3-lane-lease"] = lane.leaseToken;
     }
     const response = await fetch("/api/queue", {
       method: "POST",
@@ -790,11 +791,19 @@ async function submitSingleRender({ action }) {
     if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
     const armed = coordinator.armQueuedNext(queueBody);
     if (!armed.ok) {
-      await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
+      await releaseExecutionLane({
+        ownerId,
+        kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+        leaseToken: reserved.leaseToken
+      });
       throw new Error(armed.reason || "Impossibile mettere in coda il prossimo job.");
     }
-    coordinator.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
-    startExecutionLaneHeartbeat(ownerId);
+    coordinator.setLaneReservation?.({
+      ownerId,
+      kind: EXECUTION_LANE_KIND.QUEUED_NEXT,
+      leaseToken: reserved.leaseToken
+    });
+    startExecutionLaneHeartbeat(ownerId, { leaseToken: reserved.leaseToken });
     return armed;
   }
 
@@ -805,11 +814,19 @@ async function submitSingleRender({ action }) {
     projectId: draft?.id || $("project")?.value || null
   });
   if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
-  coordinator.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE });
+  coordinator.setLaneReservation?.({
+    ownerId,
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    leaseToken: reserved.leaseToken
+  });
   try {
     return await coordinator.tryImmediateGenerate(queueBody);
   } finally {
-    await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE });
+    await releaseExecutionLane({
+      ownerId,
+      kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+      leaseToken: reserved.leaseToken
+    });
     coordinator.clearLaneReservation?.();
   }
 }
