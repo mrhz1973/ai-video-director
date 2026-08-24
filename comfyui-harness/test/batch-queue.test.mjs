@@ -517,12 +517,12 @@ test("race: director runtime loss prevents batch 2 auto submit", async () => {
   assert.equal(view.authorityPresent, false);
 });
 
-test("UI wiring exposes CODA BATCH and Aggiungi alla coda", () => {
-  assert.match(batchQueueUi, /CODA BATCH/);
+test("UI wiring exposes CODA and Aggiungi alla coda", () => {
+  assert.match(batchQueueUi, /CODA/);
   assert.match(batchQueueUi, /AVVIA CODA/);
   assert.match(batchQueueUi, /RIPRENDI CODA/);
   assert.match(batchUi, /batchAddToQueue/);
-  assert.match(batchUi, /Aggiungi alla coda/);
+  assert.match(batchUi, /AGGIUNGI ALLA CODA/);
   assert.match(app, /exportBatchQueueForPersistence/);
   assert.match(batchQueueUi, /\/api\/batch-queue\/arm/);
 });

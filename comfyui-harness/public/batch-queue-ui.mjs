@@ -28,6 +28,11 @@ import {
 import { buildSessionOutputRecords, upsertSessionOutputs, notifySessionOutputsChanged } from "./session-outputs.mjs";
 import { canArmMultiBatchQueue, getSharedCoordinator } from "./queue-coordinator.mjs";
 import { formatQueueBatchStopFeedback } from "./execution-lane-client.mjs";
+import {
+  appendQueueJobInputSection,
+  buildSavedQueueJobItem,
+  cloneQueueJobDraft
+} from "./batch-queue-job-input.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -41,6 +46,7 @@ let feedbackNode = null;
 let queueOwnershipControllable = false;
 let queueInterruptPending = false;
 let queueStopPending = false;
+let assetContextProvider = null;
 const reconstructedPromptIds = new Set();
 
 const ENTRY_STATE_LABELS = {
@@ -321,8 +327,41 @@ function renderSummary(entries) {
   const summary = summarizeQueuePlan(entries);
   const node = $("batchQueueSummary");
   if (!node) return;
-  const completed = entries.filter(e => e.state === QUEUE_ENTRY_STATE.COMPLETED).length;
-  node.textContent = `${completed} / ${entries.length} batch completati · ${summary.remainingJobs} job rimanenti`;
+  const batchCount = entries.length;
+  const jobCount = summary.totalJobs ?? entries.reduce((n, e) => n + (e.snapshot?.items?.length || 0), 0);
+  const parts = [`${batchCount} Batch · ${jobCount} Job`];
+  if (runtimeView?.armed && runtimeView?.currentEntryId) {
+    const idx = entries.findIndex(e => e.queueEntryId === runtimeView.currentEntryId);
+    if (idx >= 0) {
+      parts.push(`Batch ${idx + 1} / ${batchCount}`);
+      const jobs = entries[idx]?.snapshot?.items || [];
+      if (runtimeView.currentJobIndex != null && jobs.length) {
+        parts.push(`Job ${Number(runtimeView.currentJobIndex) + 1} / ${jobs.length}`);
+      }
+    }
+  } else if (summary.remainingJobs != null) {
+    parts.push(`${summary.remainingJobs} job rimanenti`);
+  }
+  node.textContent = parts.join(" · ");
+}
+
+function uniformQualitySummary(entry) {
+  const jobs = entry.snapshot?.items || [];
+  if (!jobs.length) return "";
+  const pick = key => {
+    const values = [...new Set(jobs.map(j => String(j?.[key] ?? "")))];
+    return values.length === 1 ? values[0] : null;
+  };
+  const bits = [];
+  const mp = pick("megapixels");
+  const steps = pick("steps");
+  const aspect = pick("aspect");
+  const duration = pick("duration");
+  if (mp) bits.push(`${mp} MP`);
+  if (steps) bits.push(`${steps} steps`);
+  if (aspect) bits.push(aspect);
+  if (duration) bits.push(`${duration}s`);
+  return bits.length ? bits.join(" · ") : "Qualità mista";
 }
 
 function renderQueueControls(entries) {
@@ -338,6 +377,14 @@ function renderQueueControls(entries) {
   const armed = Boolean(runtimeView?.armed && runtimeView?.authorityPresent);
   const paused = overall === QUEUE_OVERALL_STATE.PAUSED
     || overall === QUEUE_OVERALL_STATE.PAUSED_FAILURE;
+
+  const queuedBatches = entries.filter(e => e.state === QUEUE_ENTRY_STATE.QUEUED).length;
+  const queuedJobs = entries
+    .filter(e => e.state === QUEUE_ENTRY_STATE.QUEUED)
+    .reduce((n, e) => n + (e.snapshot?.items?.length || 0), 0);
+  armBtn.textContent = queuedBatches
+    ? `AVVIA CODA · ${queuedBatches} BATCH / ${queuedJobs} JOB`
+    : "AVVIA CODA";
 
   armBtn.hidden = armed || recovery || paused;
   armBtn.disabled = !hasQueued;
@@ -376,7 +423,7 @@ function appendJobEditor(container, entry, jobIndex) {
     ["megapixels", "number"],
     ["aspect", "text"]
   ];
-  const draftItem = { ...item };
+  const draftItem = cloneQueueJobDraft(item);
   for (const [field, type] of fields) {
     const label = document.createElement("label");
     label.textContent = field;
@@ -389,24 +436,34 @@ function appendJobEditor(container, entry, jobIndex) {
     label.append(input);
     body.append(label);
   }
-  const filesLabel = document.createElement("label");
-  filesLabel.textContent = "item.files (JSON)";
-  const filesInput = document.createElement("textarea");
-  filesInput.value = JSON.stringify(item.files || {}, null, 2);
-  filesInput.addEventListener("change", () => {
-    try {
-      draftItem.files = JSON.parse(filesInput.value || "{}");
-    } catch { /* ignore invalid json until save */ }
+  const { library, availability } = getQueueAssetContext();
+  appendQueueJobInputSection(document, body, {
+    source: entry.snapshot?.source,
+    item,
+    library,
+    draftItem,
+    availability
   });
-  filesLabel.append(filesInput);
-  body.append(filesLabel);
+  const tech = document.createElement("details");
+  tech.className = "batch-queue-tech-details";
+  const techSummary = document.createElement("summary");
+  techSummary.textContent = "Dettagli tecnici";
+  const techBody = document.createElement("pre");
+  techBody.className = "batch-queue-tech-pre";
+  techBody.textContent = [
+    `queueEntryId: ${entry.queueEntryId || "—"}`,
+    `queueJobId: ${item.queueJobId || item.id || "—"}`,
+    `item.files: ${JSON.stringify(item.files || {})}`
+  ].join("\n");
+  tech.append(techSummary, techBody);
+  body.append(tech);
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
   saveBtn.className = "secondary";
   saveBtn.textContent = "Salva job";
   saveBtn.addEventListener("click", () => {
     const items = entry.snapshot.items.map((jobItem, idx) => (
-      idx === jobIndex ? { ...jobItem, ...draftItem } : jobItem
+      idx === jobIndex ? buildSavedQueueJobItem(jobItem, draftItem) : jobItem
     ));
     void updateEntry(entry.queueEntryId, {
       snapshot: { ...entry.snapshot, items }
@@ -415,6 +472,18 @@ function appendJobEditor(container, entry, jobIndex) {
   body.append(saveBtn);
   details.append(body);
   container.append(details);
+}
+
+function getQueueAssetContext() {
+  const ctx = assetContextProvider?.() || {};
+  return {
+    library: ctx.library || { groups: [] },
+    availability: ctx.availability && typeof ctx.availability === "object" ? ctx.availability : {}
+  };
+}
+
+export function setBatchQueueAssetContextProvider(fn) {
+  assetContextProvider = typeof fn === "function" ? fn : null;
 }
 
 function renderEntryCard(entry, index, entries) {
@@ -445,10 +514,26 @@ function renderEntryCard(entry, index, entries) {
   const sourceMeta = document.createElement("div");
   sourceMeta.className = "batch-queue-card-source";
   const model = entry.snapshot?.source?.model || "—";
-  const sharedFiles = JSON.stringify(entry.snapshot?.source?.files || {});
-  sourceMeta.textContent = `Modello: ${model} · source.files: ${sharedFiles}`;
+  const quality = uniformQualitySummary(entry);
+  sourceMeta.textContent = quality
+    ? `Modello: ${model} · ${quality}`
+    : `Modello: ${model}`;
 
   card.append(head, meta, sourceMeta);
+
+  const tech = document.createElement("details");
+  tech.className = "batch-queue-tech-details";
+  const techSummary = document.createElement("summary");
+  techSummary.textContent = "Dettagli tecnici";
+  const techBody = document.createElement("pre");
+  techBody.className = "batch-queue-tech-pre";
+  techBody.textContent = [
+    `queueEntryId: ${entry.queueEntryId || "—"}`,
+    `queueRunId: ${runtimeView?.queueRunId || "—"}`,
+    `source.files: ${JSON.stringify(entry.snapshot?.source?.files || {})}`
+  ].join("\n");
+  tech.append(techSummary, techBody);
+  card.append(tech);
 
   if (entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED) {
     const recoveryTools = document.createElement("div");
@@ -662,14 +747,14 @@ async function resumeQueue() {
 
 function createUi() {
   if ($("batchQueueSection")) return;
-  const mount = $("batchMount");
+  const mount = $("codaMount") || $("batchMount");
   if (!mount) return;
   const section = document.createElement("section");
   section.id = "batchQueueSection";
   section.className = "batch-queue-section";
   section.innerHTML = `
-    <h3 class="batch-queue-heading">CODA BATCH</h3>
-    <p id="batchQueueSummary" class="batch-queue-summary">0 / 0 batch completati · 0 job rimanenti</p>
+    <h3 class="batch-queue-heading">CODA</h3>
+    <p id="batchQueueSummary" class="batch-queue-summary">0 Batch · 0 Job</p>
     <p id="batchQueueRecoveryBanner" class="batch-queue-recovery" hidden></p>
     <div class="batch-queue-controls">
       <label>Policy errori:

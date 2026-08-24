@@ -1,0 +1,225 @@
+/* v0.14.0 — SCENA · BATCH · CODA · OUTPUT primary workflow */
+
+.project-strip {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(10rem, 1fr) auto auto;
+  gap: 0.65rem 0.85rem;
+  align-items: end;
+  padding: 0.65rem 0 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.75rem;
+}
+
+.project-strip-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #9eabb8;
+}
+
+.project-strip-status {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+
+.workflow-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+}
+
+.workflow-nav-btn {
+  background: #191e24;
+  color: #c9d3dc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.7rem 0.5rem;
+}
+
+.workflow-nav-btn.active,
+.workflow-nav-btn[aria-selected="true"] {
+  background: #e7a55b;
+  color: #17100a;
+  border-color: #e7a55b;
+}
+
+.workflow-view[hidden] {
+  display: none !important;
+}
+
+.scena-first-frame {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.scena-first-frame-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.scena-first-frame-meta code {
+  font-size: 0.8rem;
+  color: #9eabb8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scena-first-frame-thumb {
+  flex: 0 0 4rem;
+  width: 4rem;
+  height: 4rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9eabb8;
+  font-size: 1.1rem;
+}
+
+.scena-first-frame-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.batch-job-first-frame {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.55rem;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.batch-job-first-frame.empty {
+  color: #9eabb8;
+  font-size: 0.75rem;
+}
+
+.batch-job-first-frame-thumb {
+  width: 2rem;
+  height: 2rem;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.batch-job-first-frame-name {
+  font-size: 0.72rem;
+  color: #9eabb8;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-advanced-actions {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+}
+
+.batch-advanced-actions > summary {
+  cursor: pointer;
+  color: #9eabb8;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+
+.batch-advanced-actions #batchQueue {
+  width: 100%;
+  background: #191e24;
+  color: #c9d3dc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+}
+
+#batchAddToQueue {
+  grid-column: 1 / -1;
+}
+
+.batch-queue-tech-details {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #9eabb8;
+}
+
+.batch-queue-tech-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.72rem;
+  opacity: 0.85;
+  margin: 0.35rem 0 0;
+}
+
+.batch-queue-job-inputs {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.batch-queue-job-inputs-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #c9d3dc;
+}
+
+.batch-queue-job-input-role {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.batch-queue-job-input-role select {
+  max-width: 100%;
+}
+
+.batch-queue-effective-input {
+  font-size: 0.72rem;
+  color: #9eabb8;
+}
+
+.session-clip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.session-clip-archive-status {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: #c9a36a;
+}
+
+.asset-library-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .project-strip {
+    grid-template-columns: 1fr;
+  }
+  .workflow-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

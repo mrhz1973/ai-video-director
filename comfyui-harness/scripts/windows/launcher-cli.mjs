@@ -236,7 +236,9 @@ export async function runStart({
   } else {
     log("[START]", "Director...");
     const nodeExecutable = config.nodeExecutable || "node";
-    const directorCmd = buildDirectorCommand(harnessRoot, nodeExecutable);
+    const directorCmd = buildDirectorCommand(harnessRoot, nodeExecutable, {
+      comfyRoot: config.comfyRoot
+    });
     spawnFn(directorCmd);
     directorSpawnCount = 1;
     const wait = await waitForHealth(
@@ -300,6 +302,7 @@ export async function runStart({
 export function spawnDetached(command) {
   const child = spawn(command.executable, command.arguments, {
     cwd: command.cwd,
+    env: command.env || process.env,
     detached: true,
     stdio: "ignore",
     windowsHide: true

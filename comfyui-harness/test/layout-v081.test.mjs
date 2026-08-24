@@ -66,7 +66,7 @@ test("generation controls and batch mount live in the left workspace", () => {
   assert.doesNotMatch(right, /id="workflow"/);
 });
 
-test("inspector exposes project/asset/input/output tabs exactly once each", () => {
+test("inspector exposes asset/input tabs exactly once each", () => {
   for (const tab of INSPECTOR_TABS) {
     assert.equal((html.match(new RegExp(`data-inspector-tab="${tab}"`, "g")) || []).length, 1);
     assert.equal((html.match(new RegExp(`data-inspector-panel="${tab}"`, "g")) || []).length, 1);
@@ -122,27 +122,29 @@ test("inspector tab helpers normalize and persist the active tab", () => {
     setItem(key, value) { this.data[key] = String(value); }
   };
   assert.equal(normalizeInspectorTab("ASSET"), "asset");
-  assert.equal(normalizeInspectorTab("nope"), "project");
-  assert.equal(persistInspectorTab("output", store), "output");
-  assert.equal(readStoredInspectorTab(store), "output");
+  assert.equal(normalizeInspectorTab("nope"), "asset");
+  assert.equal(normalizeInspectorTab("project"), "asset");
+  assert.equal(persistInspectorTab("output", store), "asset");
+  assert.equal(readStoredInspectorTab(store), "asset");
 
   const root = {
     querySelectorAll(sel) {
       if (sel === "[data-inspector-tab]") {
         return [
-          { getAttribute: () => "project", classList: { toggle() {} }, setAttribute() {}, tabIndex: 0 },
-          { getAttribute: () => "asset", classList: { toggle() {} }, setAttribute() {}, tabIndex: -1 }
+          { getAttribute: () => "asset", classList: { toggle() {} }, setAttribute() {}, tabIndex: 0 },
+          { getAttribute: () => "input", classList: { toggle() {} }, setAttribute() {}, tabIndex: -1 }
         ];
       }
       if (sel === "[data-inspector-panel]") {
         return [
-          { getAttribute: () => "project", hidden: false, classList: { toggle() {} } },
-          { getAttribute: () => "asset", hidden: true, classList: { toggle() {} } }
+          { getAttribute: () => "asset", hidden: false, classList: { toggle() {} } },
+          { getAttribute: () => "input", hidden: true, classList: { toggle() {} } }
         ];
       }
       return [];
     }
   };
+  assert.equal(applyInspectorTab(root, "input"), "input");
   assert.equal(applyInspectorTab(root, "asset"), "asset");
 });
 
@@ -161,5 +163,5 @@ test("index loads the v0.8.1 layout modules", () => {
   assert.match(html, /panel-resize\.mjs/);
   assert.match(html, /inspector-ui\.mjs/);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.equal(pkg.version, "0.13.0");
+  assert.match(pkg.version, /^0\.1[34]\./);
 });

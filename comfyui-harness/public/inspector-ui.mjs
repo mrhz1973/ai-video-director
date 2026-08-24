@@ -1,10 +1,12 @@
-/** Right inspector tab switching (v0.8.1). Isolated from sidebar width persistence. */
+/** Right inspector tab switching (v0.14.0). Project/Output moved to primary workflow views. */
 
 export const INSPECTOR_TAB_KEY = "h3InspectorTab:v1";
-export const INSPECTOR_TABS = Object.freeze(["project", "asset", "input", "output"]);
+export const INSPECTOR_TABS = Object.freeze(["asset", "input"]);
 
-export function normalizeInspectorTab(value, fallback = "project") {
+export function normalizeInspectorTab(value, fallback = "asset") {
   const key = String(value || "").trim().toLowerCase();
+  // Legacy tabs (project/output) migrate to Asset — those surfaces live in SCENA/OUTPUT now.
+  if (key === "project" || key === "output") return fallback;
   return INSPECTOR_TABS.includes(key) ? key : fallback;
 }
 
@@ -12,7 +14,7 @@ export function readStoredInspectorTab(storage = globalThis.localStorage) {
   try {
     return normalizeInspectorTab(storage?.getItem?.(INSPECTOR_TAB_KEY));
   } catch {
-    return "project";
+    return "asset";
   }
 }
 

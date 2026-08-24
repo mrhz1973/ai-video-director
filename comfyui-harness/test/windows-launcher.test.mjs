@@ -12,6 +12,7 @@ import {
   assertLauncherSourceSafe,
   buildComfyCommand,
   buildDirectorCommand,
+  deriveComfyOutputDirectoryFromComfyRoot,
   buildLauncherConfigPayload,
   classifyServiceState,
   decideServiceAction,
@@ -442,6 +443,16 @@ test("buildDirectorCommand targets server.mjs in harness root", () => {
   const cmd = buildDirectorCommand(harnessRoot, "node");
   assert.deepEqual(cmd.arguments, ["server.mjs"]);
   assert.equal(cmd.cwd, harnessRoot);
+});
+
+test("buildDirectorCommand derives Comfy output from comfyRoot", () => {
+  const derived = deriveComfyOutputDirectoryFromComfyRoot("D:/ComfyPortable");
+  assert.match(derived.replace(/\\/g, "/"), /D:\/ComfyPortable\/ComfyUI\/output$/);
+  const cmd = buildDirectorCommand(harnessRoot, "node", {
+    comfyRoot: "D:/ComfyPortable",
+    env: { NODE_ENV: "test" }
+  });
+  assert.equal(cmd.env.H3_COMFY_OUTPUT_DIRECTORY, derived);
 });
 
 test("probe helpers recognize healthy ComfyUI and Director responses", async () => {

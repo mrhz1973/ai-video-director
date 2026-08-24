@@ -57,6 +57,10 @@ import {
   addCurrentBatchToQueue,
   isBatchQueueArmed
 } from "./batch-queue-ui.mjs";
+import {
+  appendBatchFirstFrameSummary,
+  resolveEffectiveFirstFrame
+} from "./first-frame-view.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -220,6 +224,13 @@ export function setBatchAssetContextProvider(fn) {
   assetContextProvider = typeof fn === "function" ? fn : null;
 }
 
+/** Re-render compact cards (e.g. after availability / library refresh). */
+export function refreshBatchPresentation() {
+  if (typeof document !== "undefined" && document.getElementById?.("batchList")) {
+    renderBatch();
+  }
+}
+
 function getBatchAssetContext() {
   const ctx = assetContextProvider?.() || {};
   const unavailable = ctx.unavailableFilenames instanceof Set
@@ -227,7 +238,8 @@ function getBatchAssetContext() {
     : new Set(Array.isArray(ctx.unavailableFilenames) ? ctx.unavailableFilenames : []);
   return {
     library: ctx.library || { groups: [] },
-    unavailableFilenames: unavailable
+    unavailableFilenames: unavailable,
+    availability: ctx.availability && typeof ctx.availability === "object" ? ctx.availability : {}
   };
 }
 
@@ -519,6 +531,7 @@ function appendBatchJobInputSection(body, item) {
     select.addEventListener("change", () => {
       setItemFileOverride(item, role.key, select.value);
       markEdited();
+      if (role.key === "firstImage") renderBatch();
     });
     label.append(title, select);
     section.append(label);
@@ -577,10 +590,13 @@ function createUi() {
       <div class="batch-actions">
         <button type="button" class="secondary" id="batchAdd">+ Job</button>
         <button type="button" class="secondary" id="batchReset">Reset</button>
-        <button type="button" class="secondary" id="batchAddToQueue">Aggiungi alla coda</button>
-        <button type="button" id="batchQueue">Avvia batch</button>
+        <button type="button" id="batchAddToQueue">+ AGGIUNGI ALLA CODA</button>
+        <details class="batch-advanced-actions">
+          <summary>⋯ Avanzate</summary>
+          <button type="button" class="secondary" id="batchQueue">⋯ Avvia questo Batch immediatamente</button>
+        </details>
       </div>
-      <p id="batchFeedback" class="batch-feedback">Prepara il batch dal draft corrente. Nessuna modifica avvia una generazione.</p>
+      <p id="batchFeedback" class="batch-feedback">Prepara i job qui, poi aggiungili alla Coda. Nessuna modifica avvia una generazione.</p>
       <div id="batchRuntimeList" class="batch-runtime-list"></div>
     </details>`;
   if (mount.id === "batchMount") mount.appendChild(section);
@@ -686,6 +702,7 @@ function renderBatch() {
     return;
   }
 
+  const { library, availability } = getBatchAssetContext();
   items.forEach((item, index) => {
     const card = document.createElement("details");
     card.className = "batch-job";
@@ -694,7 +711,22 @@ function renderBatch() {
       batchExpandState.set(index, card.open);
     });
     const summary = document.createElement("summary");
-    summary.innerHTML = `<strong>Job ${index + 1}</strong><span>${formatBatchJobSummary(item)}</span>`;
+    const jobTitle = document.createElement("strong");
+    jobTitle.textContent = `Job ${index + 1}`;
+    const summaryText = document.createElement("span");
+    summaryText.className = "batch-job-summary-text";
+    summaryText.textContent = formatBatchJobSummary(item);
+    summary.append(jobTitle, summaryText);
+    appendBatchFirstFrameSummary(
+      document,
+      summary,
+      resolveEffectiveFirstFrame({
+        itemFiles: item.files || null,
+        sharedFiles: source?.files || null,
+        library,
+        availability
+      })
+    );
 
     const controls = document.createElement("div");
     controls.className = "batch-job-controls";
@@ -739,7 +771,7 @@ function renderBatch() {
       const update = () => {
         item[field] = field === "duration" ? String(normalizeDurationSeconds(input.value)) : input.value;
         if (field === "duration") input.value = item[field];
-        summary.querySelector("span").textContent = formatBatchJobSummary(item);
+        summaryText.textContent = formatBatchJobSummary(item);
         markEdited();
       };
       input.addEventListener("input", update);

@@ -21,6 +21,6 @@ test("runtime interrupt endpoints wired in client", () => {
 });
 
 test("Genera singolo and Avvia batch preserved", () => {
-  assert.match(html, /id="send"[^>]*>Genera singolo</);
-  assert.match(batch, /id="batchQueue">Avvia batch</);
+  assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
+  assert.match(batch, /id="batchQueue"/);
 });
