@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-08-24 — v0.14.1
+
+- Windows launcher: when `openBrowser` is true and startup succeeds, open **both** AI Video Director (`8787`) and ComfyUI (`8188`) in the default browser (Director first). `openBrowser=false` opens neither. No service lifecycle changes.
+
 ## 2026-08-24 — v0.14.0
 
 - Harness primary workflow navigation: **SCENA · BATCH · CODA · OUTPUT** (Issue #59).

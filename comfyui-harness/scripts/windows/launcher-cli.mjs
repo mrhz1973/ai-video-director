@@ -24,7 +24,9 @@ import {
   resolveHarnessRootFromScript,
   serviceBaseUrl,
   validateConfig,
-  waitForHealth
+  waitForHealth,
+  buildLauncherBrowserUrls,
+  openLauncherBrowserPages
 } from "../../lib/windows-launcher.mjs";
 
 function parseArgs(argv = []) {
@@ -282,9 +284,14 @@ export async function runStart({
   });
 
   if (startupPlan.openBrowser) {
-    const url = `${directorUrl}/`;
-    log("[OPEN]", url);
-    openBrowserFn(url);
+    const browserUrls = buildLauncherBrowserUrls(directorUrl, comfyUrl);
+    log("[OPEN]", browserUrls.directorUrl);
+    log("[OPEN]", browserUrls.comfyUrl);
+    openLauncherBrowserPages({
+      directorBaseUrl: directorUrl,
+      comfyBaseUrl: comfyUrl,
+      openBrowserFn
+    });
   }
 
   return {
@@ -292,6 +299,9 @@ export async function runStart({
     director: directorDecision,
     directorVersion: directorHealth.version || expectedVersion,
     browserOpened: startupPlan.openBrowser,
+    browserUrls: startupPlan.openBrowser
+      ? buildLauncherBrowserUrls(directorUrl, comfyUrl)
+      : null,
     spawns: {
       comfy: comfySpawnCount,
       director: directorSpawnCount

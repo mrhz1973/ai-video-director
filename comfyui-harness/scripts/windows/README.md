@@ -65,7 +65,7 @@ Startup order:
 3. Reuse healthy ComfyUI or start exactly one ComfyUI process
 4. Probe Director `/api/config`
 5. Reuse healthy Director or start exactly one `node server.mjs`
-6. Open `http://127.0.0.1:8787/` only when Director is healthy (if `openBrowser` is true)
+6. When `openBrowser` is true and both health gates succeed, open **AI Video Director** (`http://127.0.0.1:8787/`) first, then **ComfyUI** (`http://127.0.0.1:8188/`). When `openBrowser` is false, open neither.
 
 Re-running while both services are healthy is safe and idempotent.
 
