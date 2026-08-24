@@ -71,9 +71,12 @@ import {
 } from "./queue-coordinator.mjs";
 import {
   EXECUTION_LANE_KIND,
+  bindExecutionLaneUnloadRelease,
+  reconcileExecutionLaneAfterReload,
   releaseExecutionLane,
   reserveExecutionLane,
-  transferExecutionLaneKind
+  startExecutionLaneHeartbeat,
+  stopExecutionLaneHeartbeat
 } from "./execution-lane-client.mjs";
 import {
   buildSingleRenderPayload,
@@ -152,11 +155,18 @@ let completing = false;
 let busy = false;
 let submitting = false;
 let latestCompletion = null;
-const coordinator = setSharedCoordinator(createQueueCoordinator({
+let coordinator;
+coordinator = setSharedCoordinator(createQueueCoordinator({
   async submit(payload) {
+    const lane = coordinator.getLaneReservation?.();
+    const headers = { "content-type": "application/json" };
+    if (lane?.ownerId) {
+      headers["x-h3-lane-owner"] = lane.ownerId;
+      headers["x-h3-lane-kind"] = lane.kind;
+    }
     const response = await fetch("/api/queue", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: JSON.stringify(payload)
     });
     const data = await response.json();
@@ -165,6 +175,10 @@ const coordinator = setSharedCoordinator(createQueueCoordinator({
   }
 }));
 void shouldRestoreExecutionIntent();
+void reconcileExecutionLaneAfterReload({
+  hasLocalFutureIntent: Boolean(coordinator.getQueuedNext?.() || coordinator.getDeferredBatch?.())
+});
+bindExecutionLaneUnloadRelease();
 let jobCreatedAt = Number(sessionStorage.getItem("h3JobCreatedAt") || "") || null;
 let jobFirstSeenAt = Number(sessionStorage.getItem("h3JobFirstSeenAt") || "") || null;
 let monitorState = initialMonitorState();
@@ -610,6 +624,7 @@ function renderQueueWaitCard() {
     cancel.textContent = "Annulla";
     cancel.onclick = async () => {
       coordinator.cancelQueuedNext();
+      stopExecutionLaneHeartbeat();
       const lane = coordinator.getLaneReservation?.();
       if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT) {
         await releaseExecutionLane(lane);
@@ -644,6 +659,7 @@ function renderQueueWaitCard() {
     cancel.textContent = "Annulla attesa";
     cancel.onclick = async () => {
       coordinator.cancelDeferredBatch();
+      stopExecutionLaneHeartbeat();
       const lane = coordinator.getLaneReservation?.();
       if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH
         || lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
@@ -778,9 +794,24 @@ async function submitSingleRender({ action }) {
       throw new Error(armed.reason || "Impossibile mettere in coda il prossimo job.");
     }
     coordinator.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.QUEUED_NEXT });
+    startExecutionLaneHeartbeat(ownerId);
     return armed;
   }
-  return coordinator.tryImmediateGenerate(queueBody);
+
+  const ownerId = `immediate-single:${clientId}`;
+  const reserved = await reserveExecutionLane({
+    kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE,
+    ownerId,
+    projectId: draft?.id || $("project")?.value || null
+  });
+  if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+  coordinator.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE });
+  try {
+    return await coordinator.tryImmediateGenerate(queueBody);
+  } finally {
+    await releaseExecutionLane({ ownerId, kind: EXECUTION_LANE_KIND.IMMEDIATE_SINGLE });
+    coordinator.clearLaneReservation?.();
+  }
 }
 
 function renderPromptHistory() {
@@ -873,8 +904,10 @@ async function refreshQueueCounts() {
     await refreshSingleOwnership();
     const transition = await coordinator.observeQueue({ running, pending });
     if (transition.submitted === "queued-next") {
+      stopExecutionLaneHeartbeat();
       const lane = coordinator.getLaneReservation?.();
-      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT) {
+      if (lane?.kind === EXECUTION_LANE_KIND.QUEUED_NEXT
+        || lane?.kind === EXECUTION_LANE_KIND.IMMEDIATE_SINGLE) {
         await releaseExecutionLane(lane);
         coordinator.clearLaneReservation?.();
       }
@@ -882,15 +915,12 @@ async function refreshQueueCounts() {
         adoptSubmittedJob(transition.result.result);
       }
     } else if (transition.submitted === "deferred-batch") {
+      // runSequentialBatch already transferred deferred→active and released in finally.
+      stopExecutionLaneHeartbeat();
       const lane = coordinator.getLaneReservation?.();
-      if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH) {
-        const transferred = await transferExecutionLaneKind({
-          ownerId: lane.ownerId,
-          kind: EXECUTION_LANE_KIND.ACTIVE_BATCH
-        });
-        if (transferred.ok) {
-          coordinator.setLaneReservation?.({ ownerId: lane.ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH });
-        }
+      if (lane) {
+        await releaseExecutionLane(lane);
+        coordinator.clearLaneReservation?.();
       }
     }
     renderMonitor();

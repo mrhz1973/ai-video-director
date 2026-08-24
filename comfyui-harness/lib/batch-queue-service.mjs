@@ -491,6 +491,42 @@ export function createBatchQueueRuntimeService({
 
     async resume({ projectId, plan, expectedRevision = null }) {
       const bucket = getBucket(projectId);
+
+      // Explicit exit from RECOVERY_REQUIRED while runtime remains armed.
+      if (bucket.runtime?.queueRunId && bucket.runtime.armed
+        && bucket.runtime.overallState === QUEUE_OVERALL_STATE.RECOVERY_REQUIRED) {
+        if (plan) {
+          const sync = this.syncPlan({ projectId, plan, expectedRevision });
+          if (!sync.ok) return sync;
+        }
+        const hasRecovery = bucket.plan?.entries?.some(
+          entry => entry.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED
+        );
+        if (hasRecovery) {
+          return {
+            ok: false,
+            code: "recovery-unresolved",
+            error: "Risolvi i batch in RECUPERO RICHIESTO prima di riprendere la coda.",
+            view: publicView(projectId)
+          };
+        }
+        try {
+          await checkpointDescriptivePlan(bucket, "resume-from-recovery");
+        } catch (error) {
+          return {
+            ok: false,
+            code: "checkpoint-failed",
+            error: error?.message || "Persistenza coda non disponibile: ripresa rifiutata (fail-closed).",
+            view: publicView(projectId)
+          };
+        }
+        bucket.runtime.overallState = QUEUE_OVERALL_STATE.WAITING;
+        bucket.runtime.pauseRequested = false;
+        log("batch_queue_resumed_from_recovery", { project_id: String(projectId).slice(0, 8) });
+        await tickProject(projectId);
+        return { ok: true, status: "resumed-from-recovery", view: publicView(projectId) };
+      }
+
       if (bucket.runtime?.queueRunId && bucket.runtime.armed) {
         if (bucket.runtime.overallState === QUEUE_OVERALL_STATE.PAUSED
           || bucket.runtime.overallState === QUEUE_OVERALL_STATE.PAUSED_FAILURE) {
@@ -618,6 +654,14 @@ export function createBatchQueueRuntimeService({
               project_id: String(projectId).slice(0, 8),
               reason: error?.message || String(error)
             });
+            // Durable CANCELLED not confirmed — require explicit user resolution.
+            if (entryIndex >= 0) {
+              bucket.plan.entries[entryIndex] = {
+                ...bucket.plan.entries[entryIndex],
+                state: QUEUE_ENTRY_STATE.RECOVERY_REQUIRED,
+                everClaimed: true
+              };
+            }
             bucket.runtime.overallState = QUEUE_OVERALL_STATE.RECOVERY_REQUIRED;
             bucket.runtime.pauseRequested = true;
             return {

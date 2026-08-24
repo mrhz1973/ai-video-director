@@ -36,7 +36,10 @@ import {
 import {
   EXECUTION_LANE_KIND,
   releaseExecutionLane,
-  reserveExecutionLane
+  reserveExecutionLane,
+  startExecutionLaneHeartbeat,
+  stopExecutionLaneHeartbeat,
+  transferExecutionLaneKind
 } from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
 import {
@@ -821,24 +824,36 @@ function payloadFor(item, snapshot) {
 async function runSequentialBatch(snapshot) {
   const coord = getSharedCoordinator();
   const clientId = sessionStorage.getItem("h3ClientId") || crypto.randomUUID();
-  const ownerId = `active-batch:${clientId}`;
-  const existingLane = coord?.getLaneReservation?.();
-  if (!existingLane || existingLane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
-    if (!existingLane || existingLane.kind !== EXECUTION_LANE_KIND.DEFERRED_BATCH) {
-      const reserved = await reserveExecutionLane({
-        kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
-        ownerId,
-        projectId: null
-      });
-      if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
-      coord?.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH });
+  let lane = coord?.getLaneReservation?.();
+
+  // Deferred → active MUST complete before the first /api/queue.
+  if (lane?.kind === EXECUTION_LANE_KIND.DEFERRED_BATCH) {
+    const transferred = await transferExecutionLaneKind({
+      ownerId: lane.ownerId,
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH
+    });
+    if (!transferred.ok) {
+      throw new Error(transferred.error || "Impossibile attivare la lane batch.");
     }
+    lane = { ownerId: lane.ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH };
+    coord?.setLaneReservation?.(lane);
+  } else if (!lane || lane.kind !== EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+    const ownerId = `active-batch:${clientId}`;
+    const reserved = await reserveExecutionLane({
+      kind: EXECUTION_LANE_KIND.ACTIVE_BATCH,
+      ownerId,
+      projectId: null
+    });
+    if (!reserved.ok) throw new Error(reserved.error || "Lane di esecuzione già riservata.");
+    lane = { ownerId, kind: EXECUTION_LANE_KIND.ACTIVE_BATCH };
+    coord?.setLaneReservation?.(lane);
   }
+
   const claimed = coord?.beginActiveBatch?.();
   if (claimed && !claimed.ok && claimed.reason === "locked") {
-    const lane = coord?.getLaneReservation?.();
-    if (lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
-      await releaseExecutionLane(lane);
+    const held = coord?.getLaneReservation?.();
+    if (held?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(held);
       coord?.clearLaneReservation?.();
     }
     throw new Error("Un altro invio è già in corso.");
@@ -849,11 +864,22 @@ async function runSequentialBatch(snapshot) {
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
     const snapshotItems = items.map(item => cloneBatchItemSnapshot(item));
+    const laneHeaders = () => {
+      const current = coord?.getLaneReservation?.();
+      return current
+        ? { "x-h3-lane-owner": current.ownerId, "x-h3-lane-kind": current.kind }
+        : {};
+    };
 
     const result = await submitBatchSequentially(snapshotItems, async (item, index) => {
       const response = await fetch("/api/queue", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-h3-batch-id": batchId, "x-h3-batch-index": String(index) },
+        headers: {
+          "content-type": "application/json",
+          "x-h3-batch-id": batchId,
+          "x-h3-batch-index": String(index),
+          ...laneHeaders()
+        },
         body: JSON.stringify(payloadFor(item, snapshot))
       });
       const data = await response.json();
@@ -897,9 +923,10 @@ async function runSequentialBatch(snapshot) {
   } finally {
     submitting = false;
     coord?.endActiveBatch?.();
-    const lane = coord?.getLaneReservation?.();
-    if (lane?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
-      await releaseExecutionLane(lane);
+    stopExecutionLaneHeartbeat();
+    const held = coord?.getLaneReservation?.();
+    if (held?.kind === EXECUTION_LANE_KIND.ACTIVE_BATCH) {
+      await releaseExecutionLane(held);
       coord?.clearLaneReservation?.();
     }
     updateQueueButton();
@@ -965,6 +992,7 @@ async function queueBatch() {
         throw new Error("Impossibile armare il batch in attesa.");
       }
       coord.setLaneReservation?.({ ownerId, kind: EXECUTION_LANE_KIND.DEFERRED_BATCH });
+      startExecutionLaneHeartbeat(ownerId);
       setFeedback(`BATCH · ${items.length} job preparati. In attesa che il render corrente termini. Nessun job inviato.`, "ok");
       return;
     }

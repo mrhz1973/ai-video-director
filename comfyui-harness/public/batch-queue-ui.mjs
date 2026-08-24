@@ -27,6 +27,7 @@ import {
 } from "./runtime-interrupt-ui.mjs";
 import { buildSessionOutputRecords, upsertSessionOutputs, notifySessionOutputsChanged } from "./session-outputs.mjs";
 import { canArmMultiBatchQueue, getSharedCoordinator } from "./queue-coordinator.mjs";
+import { formatQueueBatchStopFeedback } from "./execution-lane-client.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -231,7 +232,8 @@ async function stopCurrentQueueBatch() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Interruzione batch non disponibile.");
-    setFeedback("Batch corrente interrotto. La coda multi-batch è in pausa.", "warn");
+    const feedback = formatQueueBatchStopFeedback(data);
+    setFeedback(feedback.message, feedback.level);
     await fetchRuntime();
   } catch (error) {
     setFeedback(error.message, "error");

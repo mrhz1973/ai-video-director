@@ -374,6 +374,19 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, result.ok ? 200 : 409, result);
     }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/heartbeat") {
+      const input = await readJsonBody(req);
+      const result = executionLane.heartbeat({ ownerId: input.ownerId });
+      return json(res, result.ok ? 200 : 409, result);
+    }
+    if (req.method === "POST" && url.pathname === "/api/execution-lane/reclaim-stale") {
+      const input = await readJsonBody(req);
+      const result = executionLane.reclaimStale({
+        requesterId: input.requesterId,
+        staleAfterMs: input.staleAfterMs
+      });
+      return json(res, result.ok ? 200 : 409, result);
+    }
     if (req.method === "GET" && url.pathname === "/api/batch-queue/runtime") {
       const projectId = url.searchParams.get("projectId") || "";
       return json(res, 200, batchQueueRuntime.getRuntime(projectId));
@@ -560,6 +573,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/queue") {
+      const laneOwner = String(req.headers["x-h3-lane-owner"] || "").trim();
+      const laneKind = String(req.headers["x-h3-lane-kind"] || "").trim() || null;
+      const laneGate = executionLane.assertSubmitAllowed({
+        ownerId: laneOwner || null,
+        kind: laneKind
+      });
+      if (!laneGate.ok) {
+        logger.error("queue_rejected", { reason: "execution_lane", code: laneGate.code });
+        return json(res, 409, {
+          error: laneGate.error,
+          code: laneGate.code || "lane-busy",
+          reservation: laneGate.reservation || null
+        });
+      }
       const input = JSON.parse((await body(req)).toString("utf8"));
       logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
       const { preset, workflow } = await loadPreset(input.workflowId);
