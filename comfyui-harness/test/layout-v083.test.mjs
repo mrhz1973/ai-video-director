@@ -43,5 +43,5 @@ test("v083 stylesheet styles load states", () => {
 
 test("package version is 0.8.6", () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
-  assert.match(pkg.version, /^0\.1[34]\./);
+  assert.match(pkg.version, /^0\.1[345]\./);
 });

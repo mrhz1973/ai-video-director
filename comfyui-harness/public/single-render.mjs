@@ -4,6 +4,7 @@
  */
 
 import { normalizeDurationSeconds } from "../lib/duration.mjs";
+import { normalizeLoraId } from "../lib/h3-lora-validation.mjs";
 import { isValidMegapixels } from "./resolution.mjs";
 import {
   BATCH_EXECUTION_LABELS,
@@ -42,6 +43,8 @@ export function buildSingleRenderPayload({
   duration,
   aspect = "16:9",
   seed,
+  loraId,
+  loraStrength,
   files = {}
 } = {}) {
   const trimmedPrompt = String(prompt ?? "").trim();
@@ -60,6 +63,8 @@ export function buildSingleRenderPayload({
     duration: normalizeDurationSeconds(duration),
     aspect: String(aspect || "16:9"),
     seed: seed,
+    loraId: normalizeLoraId(loraId),
+    ...(loraStrength != null && loraStrength !== "" ? { loraStrength: Number(loraStrength) } : {}),
     files: { ...(files || {}) }
   });
 }

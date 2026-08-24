@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-24 — v0.15.0
+
+- MiniMax H3 **single-LoRA** support (I2VA + FL2VA): SCENA controls **LoRA** + **Forza LoRA** with stable profile IDs (`off`, `realism-people`, `spatial-physics`, `camera-motion`, `action`). OFF remains default for existing projects, Batch drafts and queue snapshots.
+- Server validates allowlisted catalog IDs and strength (0.0–1.5); optional `LoraLoaderModelOnly` MODEL-path patch applied only on submission clone. ComfyUI discovery exposes per-profile availability (fail-closed when missing).
+- Project settings persist `loraId` / `loraStrength`; Batch source snapshots carry the same profile for all jobs in a Batch.
+
 ## 2026-08-24 — v0.14.2
 
 - Fix frontend bootstrap regression: browser module graph no longer transitively imports Node-only modules (`node:crypto`) via `execution-lane.mjs` and `batch-queue-plan.mjs`. Shared pure definitions moved to `execution-lane-kinds.mjs` and `batch-queue-plan-core.mjs`; server UUID generation unchanged.

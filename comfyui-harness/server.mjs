@@ -3,7 +3,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cloneAndBind, resolutionSettings, selectMegapixels, collectOutputs } from "./lib/workflow.mjs";
+import { cloneAndBind, collectOutputs } from "./lib/workflow.mjs";
 import { createLogger } from "./lib/logger.mjs";
 import "./lib/batch-queue-plan.mjs";
 import { createProjectStore } from "./lib/project-store.mjs";
@@ -49,6 +49,8 @@ import { showComfyOutputInFolder } from "./lib/comfy-output-actions.mjs";
 import { submitWorkflowToComfy } from "./lib/queue-submit.mjs";
 import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
+import { publicH3LoraCatalog } from "./lib/h3-lora-catalog.mjs";
+import { fetchComfyLoraNames, buildH3LoraAvailability } from "./lib/h3-lora-availability.mjs";
 
 function resolveConfiguredFilesystemPath(baseRoot, value) {
   const raw = String(value || "").trim();
@@ -88,6 +90,16 @@ const runtimeControl = createRuntimeControlService({
   logger
 });
 
+async function readComfyLoraAvailability() {
+  try {
+    const names = await fetchComfyLoraNames(comfy);
+    return { names, availability: buildH3LoraAvailability(names) };
+  } catch (error) {
+    logger.error("lora_availability_failed", { reason: error.message });
+    return { names: [], availability: buildH3LoraAvailability([]) };
+  }
+}
+
 const batchQueueRuntime = createBatchQueueRuntimeService({
   submitJob: async (input, meta = {}) => {
     const { preset, workflow } = await loadPreset(input.workflowId);
@@ -95,11 +107,13 @@ const batchQueueRuntime = createBatchQueueRuntimeService({
       { files: input.files },
       input.sharedFiles || {}
     );
+    const loraState = await readComfyLoraAvailability();
     const result = await submitWorkflowToComfy({
       input: { ...input, files },
       preset,
       workflow,
-      comfyUrl: comfy
+      comfyUrl: comfy,
+      availableComfyPaths: loraState.names
     });
     if (!result.ok || !result.data?.prompt_id) {
       const error = new Error(result.data?.error || "Queue submission failed");
@@ -246,13 +260,18 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "GET" && url.pathname === "/api/config") {
+      const loraAvailability = await readComfyLoraAvailability();
       return json(res, 200, {
         version: packageInfo.version,
         comfyUrl: comfy,
         wsUrl: comfy.replace(/^http/, "ws") + "/ws",
         presets: await presets(),
         projects: await projects(),
-        comfyOutputConfigured: Boolean(comfyOutputDirectory)
+        comfyOutputConfigured: Boolean(comfyOutputDirectory),
+        h3Lora: {
+          profiles: publicH3LoraCatalog(),
+          availability: loraAvailability.availability
+        }
       });
     }
     if (req.method === "GET" && url.pathname === "/api/projects") return json(res, 200, await projects());
@@ -740,27 +759,18 @@ const server = http.createServer(async (req, res) => {
         const input = JSON.parse((await body(req)).toString("utf8"));
         logger.info("queue_submit", { workflow: input.workflowId, client_id: shortId(input.clientId) });
         const { preset, workflow } = await loadPreset(input.workflowId);
-        const fit = inspectH3SafeFit(workflow, { mode: preset.mode });
-        if (safeFitBlocksGenerate(fit.status)) {
-          const gate = describeSafeFitBlocker(fit.status);
-          logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: fit.status });
-          return json(res, 409, { error: gate.reason, safeFit: publicSafeFitSummary(fit) });
-        }
-        let requested;
+        const loraState = await readComfyLoraAvailability();
         try {
-          requested = selectMegapixels(input);
-        } catch (error) {
-          logger.error("queue_rejected", { workflow: input.workflowId, reason: "invalid_megapixels" });
-          return json(res, 400, { error: error.message });
-        }
-        const { aspectRatio, megapixels } = resolutionSettings(input.aspect, requested);
-        const values = { prompt: input.prompt, model: input.model, steps: Number(input.steps), duration: Number(input.duration), seed: Number(input.seed), aspectRatio, megapixels, firstImage: input.firstImage, lastImage: input.lastImage, ...(input.files || {}) };
-        const bound = cloneAndBind(workflow, preset.bindings || {}, values);
-        try {
-          const upstream = await fetch(`${comfy}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: bound, client_id: input.clientId }) });
-          const data = await upstream.json();
-          if (!upstream.ok || !data.prompt_id) {
-            logger.error("queue_rejected", { workflow: input.workflowId, status: upstream.status });
+          const result = await submitWorkflowToComfy({
+            input,
+            preset,
+            workflow,
+            comfyUrl: comfy,
+            availableComfyPaths: loraState.names
+          });
+          const data = result.data;
+          if (!result.ok || !data?.prompt_id) {
+            logger.error("queue_rejected", { workflow: input.workflowId, status: result.status });
           } else {
             executionLane.notePromptAccepted(data.prompt_id, submitBinding);
             const batchId = req.headers["x-h3-batch-id"];
@@ -773,8 +783,20 @@ const server = http.createServer(async (req, res) => {
             });
             logger.info("queue_accepted", { workflow: input.workflowId, prompt_id: shortId(data.prompt_id) });
           }
-          return json(res, upstream.status, data);
+          return json(res, result.status, data);
         } catch (error) {
+          if (error.code === "safe_fit_blocked") {
+            logger.error("queue_rejected", { workflow: input.workflowId, reason: "safe_fit_blocked", status: error.safeFit?.status });
+            return json(res, error.status || 409, { error: error.message, safeFit: error.safeFit });
+          }
+          if (error.code === "lora-invalid" || error.code === "lora-unavailable") {
+            logger.error("queue_rejected", { workflow: input.workflowId, reason: error.code });
+            return json(res, error.status || 400, { error: error.message, code: error.code });
+          }
+          if (error.message && /Megapixel|LoRA|Campo LoRA/.test(error.message)) {
+            logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
+            return json(res, error.status || 400, { error: error.message });
+          }
           logger.error("queue_rejected", { workflow: input.workflowId, reason: error.message });
           return json(res, 502, { error: "Queue submission failed" });
         }

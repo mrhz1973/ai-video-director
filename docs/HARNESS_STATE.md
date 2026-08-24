@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.14.2, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.15.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -66,7 +66,7 @@ On Windows a normal user cannot run `nvidia-smi -pl` (real-GPU smoke of v0.7.4 c
 
 For viewports wider than 800px the Director uses a two-pane layout:
 
-- **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`). The legacy Attività/Output drawer was removed in v0.9.0.
+- **Left canvas:** header → single `#prompt` (no native resize corner; dedicated height handle + `h3PromptHeight:v1`) → quick generation controls (`#workflow` / `#model` / MP / aspect / steps / duration / seed / **LoRA** + strength) → Batch (`#batchSection` mounted in `#batchMount`) → compact resizable render monitor (`h3MonitorHeight:v1`). The legacy Attività/Output drawer was removed in v0.9.0.
 - **Right inspector:** sticky GPU Power header, then mutually exclusive tabs Progetto / Asset / Input / Output (`h3InspectorTab:v1`). Only the active tab body scrolls; the inspector fits the viewport height. Output prioritizes the session clip gallery (v0.9.0); Destinazione/naming settings stay under a compact secondary section.
 - **Asset labels:** `member.label` is the primary human-facing name in Asset cards and role selects (`Group / Member label`). Physical filenames remain secondary/tooltip identity and are never renamed by label edits.
 - **Autosave:** unsaved work survives reload via isolated `h3RecoveryDraft:v1` (references only). Saved projects debounce-persist through existing `PUT /api/projects/<id>` (700 ms, single-flight). Manual **Salva** creates a new project (`POST /api/projects`) or updates the current id (`PUT /api/projects/<id>`). **Salva come…** (v0.10.0) duplicates the current editor into a new project id after POST success; the source project is unchanged. Recovery/autosave never submit Generate, Batch, or GPU Power. Armed queued-next / deferred-Batch intent is session/in-memory only and is never written to the recovery draft, saved projects, or prompt history.
@@ -277,6 +277,17 @@ Current sampler choices are inherited from the source workflows:
 - Ref2VA: `er_sde`
 
 This sampler difference is not documented here as an official MiniMax requirement. Do not change it merely for naming consistency; change only after controlled testing or stronger evidence.
+
+## MiniMax H3 single-LoRA (v0.15.0)
+
+v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only. T2VA and Ref2VA keep LoRA disabled in the UI and reject non-OFF LoRA on submit.
+
+- Catalog: `comfyui-harness/lib/h3-lora-catalog.mjs` — stable IDs (`off`, `realism-people`, `spatial-physics`, `camera-motion`, `action`) map to allowlisted ComfyUI-relative filenames under `minimax_h3\production\`. Experimental/turbo inventory is not exposed.
+- UI: SCENA generation grid — **LoRA** select + **Forza LoRA** (0.0–1.5, step 0.05). OFF is default. Profile hints are display-only; prompts are never auto-modified (e.g. Realism trigger `r34l1sm`).
+- Persistence: project `settings.loraId` / `settings.loraStrength`; Batch `source` snapshots the active profile for all jobs in that Batch.
+- Runtime: `cloneAndBind` then optional deterministic insert of one `LoraLoaderModelOnly` node (`900001`) between UNet loader node `136` and MODEL consumers (`BasicScheduler`, `BasicGuider`). OFF leaves the graph unchanged.
+- Availability: `GET /api/config` → `h3Lora.availability` from ComfyUI `object_info/LoraLoaderModelOnly`. Missing files stay visible but block Generate (fail-closed, no silent fallback).
+- Validation: `lib/h3-lora-validation.mjs` rejects unknown IDs, forbidden client paths (`lora_name`, etc.) and out-of-range strength before `/prompt`.
 
 ## Megapixels and resolution
 

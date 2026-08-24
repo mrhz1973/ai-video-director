@@ -4,6 +4,7 @@
  */
 
 import { normalizeDurationSeconds } from "./duration.mjs";
+import { normalizePersistedLoraSettings } from "./h3-lora-validation.mjs";
 
 export const BATCH_DRAFT_VERSION = 1;
 export const LEGACY_DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -115,7 +116,8 @@ function normalizeSource(raw = null) {
       steps: String(base.steps ?? "20"),
       megapixels: String(base.megapixels ?? "0.3"),
       aspect: String(base.aspect || "16:9")
-    }
+    },
+    ...normalizePersistedLoraSettings(source)
   };
 }
 

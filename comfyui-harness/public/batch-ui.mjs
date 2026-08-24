@@ -416,7 +416,11 @@ function collectSourceSnapshot() {
       steps: $("steps")?.value || "20",
       megapixels: $("megapixels")?.value || "0.3",
       aspect: $("aspect")?.value || "16:9"
-    }
+    },
+    loraId: $("loraId")?.value || "off",
+    ...( $("loraId")?.value && $("loraId").value !== "off"
+      ? { loraStrength: $("loraStrength")?.value }
+      : {})
   };
 }
 
