@@ -21,6 +21,7 @@ import {
   getCloudMirrorEnabled,
   setCloudMirrorEnabled,
   hasCloudMirrorEnabledOverride,
+  normalizePersistedCloudFolderKey,
   cloudMirrorRecordKey,
   projectMirrorSubdir,
   publicCloudMirrorView,
@@ -175,6 +176,81 @@ test("malformed store enabled fail-closed + legacy scalar migration", () => {
   assert.equal(store.records.k.bytes, 12);
   assert.equal(getCloudMirrorEnabled(setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", "yes"), "global"), false);
   assert.equal(getCloudMirrorEnabled(setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", true), "global"), true);
+});
+
+test("persisted invalid folder keys never become global (enabled + destinations)", () => {
+  assert.equal(normalizePersistedCloudFolderKey("junk"), null);
+  assert.equal(normalizePersistedCloudFolderKey("project:../x"), null);
+  assert.equal(normalizePersistedCloudFolderKey("project:a/b"), null);
+  assert.equal(normalizePersistedCloudFolderKey("project:a\\b"), null);
+  assert.equal(normalizePersistedCloudFolderKey("global"), "global");
+  assert.equal(normalizePersistedCloudFolderKey("project:good"), "project:good");
+
+  // 1–2: junk / invalid project enabled ignored
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: { junk: true } }).enabled, { global: false });
+  assert.deepEqual(
+    normalizeCloudMirrorStore({ enabled: { "project:../x": true } }).enabled,
+    { global: false }
+  );
+
+  // 3–4: property-order independence with global false
+  assert.deepEqual(
+    normalizeCloudMirrorStore({
+      enabled: { global: false, "project:../x": true }
+    }).enabled,
+    { global: false }
+  );
+  assert.deepEqual(
+    normalizeCloudMirrorStore({
+      enabled: { "project:../x": true, global: false }
+    }).enabled,
+    { global: false }
+  );
+
+  // 5: valid project preserved
+  const good = normalizeCloudMirrorStore({ enabled: { "project:good": true } });
+  assert.equal(good.enabled.global, false);
+  assert.equal(good.enabled["project:good"], true);
+  assert.equal(getCloudMirrorEnabled(good, "project:good"), true);
+
+  // 6: invalid project must not clear / overwrite global true
+  assert.deepEqual(
+    normalizeCloudMirrorStore({
+      enabled: { global: true, "project:../x": false }
+    }).enabled,
+    { global: true }
+  );
+  assert.deepEqual(
+    normalizeCloudMirrorStore({
+      enabled: { "project:../x": false, global: true }
+    }).enabled,
+    { global: true }
+  );
+
+  // 7–8: invalid destination cannot overwrite global (order-independent)
+  const destA = normalizeCloudMirrorStore({
+    destinations: { global: "G:\\Good", "project:../x": "D:\\Bad" }
+  });
+  const destB = normalizeCloudMirrorStore({
+    destinations: { "project:../x": "D:\\Bad", global: "G:\\Good" }
+  });
+  assert.equal(destA.destinations.global, "G:\\Good");
+  assert.equal(destB.destinations.global, "G:\\Good");
+  assert.equal(destA.destinations["project:../x"], undefined);
+  assert.equal(destB.destinations["project:../x"], undefined);
+
+  // 9: junk destination creates no global
+  const junkDest = normalizeCloudMirrorStore({ destinations: { junk: "D:\\Bad" } });
+  assert.deepEqual(junkDest.destinations, {});
+  assert.equal(getCloudMirrorDestination(junkDest, "global"), null);
+
+  // 10: valid project destination remains
+  const projDest = normalizeCloudMirrorStore({
+    destinations: { "project:martino": "G:\\Martino", global: "G:\\Good" }
+  });
+  assert.equal(projDest.destinations.global, "G:\\Good");
+  assert.equal(projDest.destinations["project:martino"], "G:\\Martino");
+  assert.equal(getCloudMirrorDestination(projDest, "project:martino"), "G:\\Martino");
 });
 
 test("resolveCloudMirrorStorePath uses H3_CLOUD_MIRROR_STORE_PATH", () => {

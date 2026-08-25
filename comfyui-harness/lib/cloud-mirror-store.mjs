@@ -45,9 +45,26 @@ export function emptyCloudMirrorStore() {
 }
 
 /**
+ * Strict folder-key validator for persisted cloud-mirror.json maps.
+ * Valid ONLY: "global" or "project:<id>" with non-empty id, no "..", no "\\"/"/".
+ * Invalid keys return null — never mapped to "global" (unlike normalizeFolderKey).
+ */
+export function normalizePersistedCloudFolderKey(raw) {
+  const key = String(raw ?? "").trim();
+  if (key === "global") return "global";
+  if (key.startsWith("project:")) {
+    const id = key.slice("project:".length).trim();
+    if (!id || id.includes("..") || /[\\/]/.test(id)) return null;
+    return `project:${id}`;
+  }
+  return null;
+}
+
+/**
  * Normalize scoped auto-copy enable map.
  * Legacy scalar `enabled: true|false` migrates to `enabled.global` only when
  * the value is a strict boolean. Malformed scalars fail closed to global false.
+ * Invalid persisted scope keys are ignored (never become global).
  */
 export function normalizeCloudMirrorEnabledMap(sourceEnabled) {
   const map = { global: false };
@@ -63,7 +80,8 @@ export function normalizeCloudMirrorEnabledMap(sourceEnabled) {
     return map;
   }
   for (const [rawKey, value] of Object.entries(sourceEnabled)) {
-    const folderKey = normalizeFolderKey(rawKey);
+    const folderKey = normalizePersistedCloudFolderKey(rawKey);
+    if (!folderKey) continue;
     if (value === true) map[folderKey] = true;
     else if (value === false) map[folderKey] = false;
     // Non-boolean values for a key are omitted (project inherits; global stays false).
@@ -96,7 +114,8 @@ export function normalizeCloudMirrorStore(raw = null) {
   const source = raw && typeof raw === "object" ? raw : {};
   const destinations = {};
   for (const [key, value] of Object.entries(source.destinations || {})) {
-    const folderKey = normalizeFolderKey(key);
+    const folderKey = normalizePersistedCloudFolderKey(key);
+    if (!folderKey) continue;
     const dest = String(value || "").trim();
     if (dest) destinations[folderKey] = dest;
   }
