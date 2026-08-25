@@ -117,7 +117,9 @@ export function normalizeCloudMirrorStore(raw = null) {
     const folderKey = normalizePersistedCloudFolderKey(key);
     if (!folderKey) continue;
     const dest = String(value || "").trim();
-    if (dest) destinations[folderKey] = dest;
+    // Persist only non-empty absolute paths. Existence is runtime-validated.
+    if (!dest || !path.isAbsolute(dest)) continue;
+    destinations[folderKey] = dest;
   }
   const records = {};
   for (const [key, value] of Object.entries(source.records || {})) {
@@ -207,7 +209,7 @@ export function setCloudMirrorDestination(store, folderKey, absolutePath) {
   const next = normalizeCloudMirrorStore(store);
   const key = normalizeFolderKey(folderKey);
   const dest = String(absolutePath || "").trim();
-  if (!dest) delete next.destinations[key];
+  if (!dest || !path.isAbsolute(dest)) delete next.destinations[key];
   else next.destinations[key] = dest;
   return next;
 }
@@ -255,12 +257,20 @@ export function publicCloudMirrorView(store, folderKey = "global") {
 
 /**
  * Destination must exist, be absolute, writable, and a directory (not a file).
+ * Validates the RAW trimmed path before resolve — relative values never become cwd.
  */
 export async function assertCloudDirectoryWritable(absolutePath, {
   accessImpl = access,
   statImpl = stat
 } = {}) {
-  const resolved = path.resolve(String(absolutePath || ""));
+  const raw = String(absolutePath || "").trim();
+  if (!raw || !path.isAbsolute(raw)) {
+    throw new ComfyOutputPathError("Cloud destination must be absolute.", {
+      code: "cloud-path-invalid",
+      status: 400
+    });
+  }
+  const resolved = path.resolve(raw);
   if (!path.isAbsolute(resolved)) {
     throw new ComfyOutputPathError("Cloud destination must be absolute.", {
       code: "cloud-path-invalid",

@@ -22,6 +22,7 @@ import {
   setCloudMirrorEnabled,
   hasCloudMirrorEnabledOverride,
   normalizePersistedCloudFolderKey,
+  assertCloudDirectoryWritable,
   cloudMirrorRecordKey,
   projectMirrorSubdir,
   publicCloudMirrorView,
@@ -32,6 +33,7 @@ import {
 } from "../lib/cloud-mirror-store.mjs";
 import {
   allocateCloudMirrorFilename,
+  cloudMirrorReservedFinalPathCount,
   configureCloudMirrorDestination,
   ensureCloudProjectDirectory,
   mirrorCompletedOutput,
@@ -42,6 +44,8 @@ import {
   configureArchiveDestination,
   archiveCompletedOutput
 } from "../lib/output-archive.mjs";
+import { copyFile } from "node:fs/promises";
+import { ComfyOutputPathError } from "../lib/comfy-output-path.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -251,6 +255,50 @@ test("persisted invalid folder keys never become global (enabled + destinations)
   assert.equal(projDest.destinations.global, "G:\\Good");
   assert.equal(projDest.destinations["project:martino"], "G:\\Martino");
   assert.equal(getCloudMirrorDestination(projDest, "project:martino"), "G:\\Martino");
+});
+
+test("relative cloud destinations fail closed (runtime + persisted)", async () => {
+  const dir = tempDir("h3-cloud-relpath-");
+  try {
+    await assert.rejects(
+      () => assertCloudDirectoryWritable("."),
+      error => error instanceof ComfyOutputPathError && error.code === "cloud-path-invalid"
+    );
+    await assert.rejects(
+      () => assertCloudDirectoryWritable("relative-folder"),
+      error => error instanceof ComfyOutputPathError && error.code === "cloud-path-invalid"
+    );
+    await assert.rejects(
+      () => assertCloudDirectoryWritable("..\\sync"),
+      error => error instanceof ComfyOutputPathError && error.code === "cloud-path-invalid"
+    );
+
+    const abs = path.join(dir, "sync");
+    mkdirSync(abs);
+    const resolved = await assertCloudDirectoryWritable(abs);
+    assert.equal(path.isAbsolute(resolved), true);
+    assert.equal(resolved, path.resolve(abs));
+
+    const cwd = process.cwd();
+    const ignoredDot = normalizeCloudMirrorStore({ destinations: { global: "." } });
+    assert.deepEqual(ignoredDot.destinations, {});
+    assert.equal(publicCloudMirrorView(ignoredDot, "global").configured, false);
+    assert.equal(process.cwd(), cwd);
+
+    const ignoredRelProj = normalizeCloudMirrorStore({
+      destinations: { "project:martino": "cloud", global: abs }
+    });
+    assert.equal(ignoredRelProj.destinations["project:martino"], undefined);
+    assert.equal(ignoredRelProj.destinations.global, abs);
+
+    const keptAbs = normalizeCloudMirrorStore({
+      destinations: { global: abs, "project:ok": path.join(dir, "proj") }
+    });
+    assert.equal(keptAbs.destinations.global, abs);
+    assert.equal(keptAbs.destinations["project:ok"], path.join(dir, "proj"));
+  } finally {
+    cleanup(dir);
+  }
 });
 
 test("resolveCloudMirrorStorePath uses H3_CLOUD_MIRROR_STORE_PATH", () => {
@@ -569,11 +617,6 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
     const sync = path.join(root, "sync");
     mkdirSync(comfy);
     mkdirSync(sync);
-    // Distinct Comfy source names that archive/mirror prefer as-is from source.preferredName.
-    // Force same preferredName by using identical source filenames in different folders? 
-    // Simpler: two prompts with same filename "clip.mp4" in same output root can't coexist;
-    // instead write one file and use preferred via archive, OR place files with same name
-    // using subfolders. Use subfolder identity.
     mkdirSync(path.join(comfy, "a"));
     mkdirSync(path.join(comfy, "b"));
     writeFileSync(path.join(comfy, "a", "clip.mp4"), "AAAA1111");
@@ -594,7 +637,23 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
       })
     });
 
-    const [a, b] = await Promise.all([
+    let releaseCopy;
+    const copyGate = new Promise(resolve => {
+      releaseCopy = resolve;
+    });
+    let paused = 0;
+    const delayedCopy = async (src, dest) => {
+      paused += 1;
+      while (paused < 2) {
+        await new Promise(r => setTimeout(r, 5));
+      }
+      assert.equal(existsSync(path.join(sync, "clip.mp4")), false);
+      assert.equal(existsSync(path.join(sync, "clip_0002.mp4")), false);
+      await copyGate;
+      await copyFile(src, dest);
+    };
+
+    const pending = Promise.all([
       mirrorCompletedOutput({
         storePath,
         archiveStorePath: path.join(root, "archive.json"),
@@ -603,7 +662,8 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
         promptId: "pa",
         filename: "clip.mp4",
         subfolder: "a",
-        fetchFn: fetchA
+        fetchFn: fetchA,
+        copyFileImpl: delayedCopy
       }),
       mirrorCompletedOutput({
         storePath,
@@ -613,9 +673,19 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
         promptId: "pb",
         filename: "clip.mp4",
         subfolder: "b",
-        fetchFn: fetchB
+        fetchFn: fetchB,
+        copyFileImpl: delayedCopy
       })
     ]);
+
+    while (paused < 2) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    assert.equal(existsSync(path.join(sync, "clip.mp4")), false);
+    assert.equal(existsSync(path.join(sync, "clip_0002.mp4")), false);
+    assert.ok(cloudMirrorReservedFinalPathCount() >= 2);
+    releaseCopy();
+    const [a, b] = await pending;
 
     assert.equal(a.status, "copied");
     assert.equal(b.status, "copied");
@@ -626,6 +696,66 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
     assert.deepEqual(bytes, ["AAAA1111", "BBBB2222"]);
     const store = await readCloudMirrorStore(storePath);
     assert.equal(Object.keys(store.records).length, 2);
+    assert.equal(listTmpArtifacts(root).length, 0);
+    assert.equal(cloudMirrorReservedFinalPathCount(), 0);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("final cloud path absent until verified rename (delayed copy)", async () => {
+  const root = tempDir("h3-cloud-delayed-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    const payload = Buffer.from("DELAYED-COPY-BYTES-OK");
+    writeFileSync(path.join(comfy, "clip.mp4"), payload);
+    const storePath = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
+
+    const finalPath = path.join(sync, "Demo", "clip.mp4");
+    let releaseCopy;
+    const copyGate = new Promise(resolve => {
+      releaseCopy = resolve;
+    });
+    let paused = false;
+    const delayedCopy = async (src, dest) => {
+      paused = true;
+      assert.equal(existsSync(finalPath), false);
+      await copyGate;
+      assert.equal(existsSync(finalPath), false);
+      await copyFile(src, dest);
+    };
+
+    const pending = mirrorCompletedOutput({
+      storePath,
+      archiveStorePath: path.join(root, "archive.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://x",
+      promptId: "delay1",
+      filename: "clip.mp4",
+      projectLabel: "Demo",
+      fetchFn: historyFetch("delay1", "clip.mp4"),
+      copyFileImpl: delayedCopy
+    });
+
+    while (!paused) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    assert.equal(existsSync(finalPath), false);
+    assert.ok(cloudMirrorReservedFinalPathCount() >= 1);
+    // No zero-byte final placeholder; temps may appear only after copy resumes.
+    assert.equal(existsSync(finalPath), false);
+    releaseCopy();
+    const result = await pending;
+    assert.equal(result.status, "copied");
+    assert.equal(existsSync(finalPath), true);
+    assert.equal(statSync(finalPath).size, payload.length);
+    assert.equal(readFileSync(finalPath).equals(payload), true);
+    assert.equal(listTmpArtifacts(root).length, 0);
+    assert.equal(cloudMirrorReservedFinalPathCount(), 0);
   } finally {
     cleanup(root);
   }

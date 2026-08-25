@@ -11,7 +11,6 @@ import {
   stat,
   rename,
   unlink,
-  open,
   realpath as fsRealpath
 } from "node:fs/promises";
 import { constants as fsConst } from "node:fs";
@@ -45,6 +44,17 @@ import {
 const inflightByRecord = new Map();
 /** Serialize filename allocation / exclusive claims per destination root. */
 const destinationAllocLocks = new Map();
+/**
+ * In-memory reservation of FINAL destination paths that are allocated but not
+ * yet renamed. Avoids creating a zero-byte final filename that sync clients
+ * could observe before the verified copy completes.
+ */
+const reservedFinalPaths = new Set();
+
+/** Test helper: reserved final paths still held (should be 0 when idle). */
+export function cloudMirrorReservedFinalPathCount() {
+  return reservedFinalPaths.size;
+}
 
 async function withDestinationAllocLock(destinationRoot, fn) {
   const key = path.resolve(String(destinationRoot || ""));
@@ -145,12 +155,14 @@ export async function ensureCloudProjectDirectory({
 /**
  * Allocate destination filename under optional project subdir.
  * Prefer exact preferredName; on collision use _0002 suffix (never overwrite unrelated).
+ * Considers filesystem occupancy and in-memory reserved final paths.
  */
 export async function allocateCloudMirrorFilename({
   destinationRoot,
   preferredName,
   projectSubdir = "",
-  accessImpl = access
+  accessImpl = access,
+  reservedPaths = reservedFinalPaths
 } = {}) {
   assertSafeOutputBasename(preferredName);
   const root = path.resolve(destinationRoot);
@@ -162,6 +174,7 @@ export async function allocateCloudMirrorFilename({
     });
   }
   const dir = sub ? path.join(root, sub) : root;
+  const reserved = reservedPaths instanceof Set ? reservedPaths : null;
 
   for (let counter = 1; counter <= 10000; counter += 1) {
     const filename = counter === 1
@@ -176,6 +189,7 @@ export async function allocateCloudMirrorFilename({
         status: 400
       });
     }
+    if (reserved && reserved.has(absolutePath)) continue;
     if (!(await fileExists(absolutePath, { accessImpl }))) {
       return {
         filename,
@@ -287,7 +301,6 @@ export async function mirrorCompletedOutput(opts = {}) {
     statImpl = stat,
     renameImpl = rename,
     unlinkImpl = unlink,
-    openImpl = open,
     readStore = readCloudMirrorStore,
     readArchive = readArchiveStore,
     randomBytesImpl = randomBytes
@@ -403,12 +416,12 @@ export async function mirrorCompletedOutput(opts = {}) {
         destinationRoot,
         preferredName: source.preferredName,
         projectSubdir: projectSub,
-        accessImpl
+        accessImpl,
+        reservedPaths: reservedFinalPaths
       });
 
-      // Exclusive claim of the final path so concurrent allocators see it as taken.
-      const claimHandle = await openImpl(allocation.absolutePath, "wx");
-      await claimHandle.close();
+      // In-memory reservation only — do not create the final filename yet.
+      reservedFinalPaths.add(allocation.absolutePath);
 
       const tmpName = `${allocation.filename}.tmp-${randomBytesImpl(8).toString("hex")}`;
       const tmpPath = path.join(allocation.directory, tmpName);
@@ -419,7 +432,7 @@ export async function mirrorCompletedOutput(opts = {}) {
 
     const { allocation, tmpPath } = claim;
     try {
-      // Large copy outside store/alloc locks.
+      // Large copy outside store/alloc locks into a unique temp path.
       await copyFileImpl(source.absolutePath, tmpPath);
       const srcStat = await statImpl(source.absolutePath);
       const tmpStat = await statImpl(tmpPath);
@@ -432,6 +445,12 @@ export async function mirrorCompletedOutput(opts = {}) {
       await accessImpl(source.absolutePath, fsConst.F_OK);
 
       await withDestinationAllocLock(destinationRoot, async () => {
+        if (await fileExists(allocation.absolutePath, { accessImpl })) {
+          throw new ComfyOutputPathError("Cloud destination appeared before rename.", {
+            code: "cloud-destination-collision",
+            status: 409
+          });
+        }
         await renameImpl(tmpPath, allocation.absolutePath);
       });
 
@@ -468,18 +487,13 @@ export async function mirrorCompletedOutput(opts = {}) {
       try {
         if (await fileExists(tmpPath, { accessImpl })) await unlinkImpl(tmpPath);
       } catch { /* exact temp only */ }
-      try {
-        // Remove exclusive empty/partial claim if rename never completed.
-        if (await fileExists(allocation.absolutePath, { accessImpl })) {
-          const st = await statImpl(allocation.absolutePath);
-          if (st.size === 0) await unlinkImpl(allocation.absolutePath);
-        }
-      } catch { /* exact claim only */ }
       if (error instanceof ComfyOutputPathError) throw error;
       throw new ComfyOutputPathError(error?.message || "Cloud copy failed.", {
         code: "cloud-destination-unavailable",
         status: 409
       });
+    } finally {
+      reservedFinalPaths.delete(allocation.absolutePath);
     }
   })();
 
