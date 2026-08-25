@@ -45,6 +45,10 @@ import {
   configureArchiveDestination,
   archiveCompletedOutput
 } from "../lib/output-archive.mjs";
+import {
+  archivedRecordKey,
+  readArchiveStore
+} from "../lib/archive-store.mjs";
 import { copyFile } from "node:fs/promises";
 import { ComfyOutputPathError } from "../lib/comfy-output-path.mjs";
 
@@ -1005,6 +1009,106 @@ test("archive disabled: cloud copies from authoritative comfy-output", async () 
     assert.equal(mirrored.ok, true);
     assert.equal(mirrored.sourceKind, "comfy-output");
     assert.equal(mirrored.destinationFilename, "MiniMax_H3_00999_.mp4");
+  } finally {
+    cleanup(root);
+  }
+});
+
+/**
+ * Copilot P1 regression: project-scoped LOCAL ARCHIVE + GLOBAL-only CLOUD destination.
+ * Cloud request scope is project:martino (inherits global cloud root). Archive lookup
+ * must use archived.folderKey (project:martino), not the cloud destination's global
+ * scope — even when archiveFolderKey is wrongly supplied as "global".
+ */
+test("project archive + global-only cloud: source uses archived.folderKey", async () => {
+  const root = tempDir("h3-cloud-copilot-p1-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const archiveMartino = path.join(root, "archive-martino");
+    const cloudGlobal = path.join(root, "cloud-global");
+    mkdirSync(comfy);
+    mkdirSync(archiveMartino);
+    mkdirSync(cloudGlobal);
+    const comfyName = "MiniMax_H3_00123_.mp4";
+    const payload = Buffer.from("ARCHIVED-SOURCE-BYTES");
+    writeFileSync(path.join(comfy, comfyName), payload);
+
+    const archiveStore = path.join(root, "archive.json");
+    const cloudStore = path.join(root, "cloud-mirror.json");
+
+    await configureArchiveDestination({
+      storePath: archiveStore,
+      folderKey: "project:martino",
+      absolutePath: archiveMartino
+    });
+
+    const archived = await archiveCompletedOutput({
+      storePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "p1-scope",
+      filename: comfyName,
+      folderKey: "project:martino",
+      plan: {
+        enabled: true,
+        projectId: "martino",
+        projectLabel: "Martino",
+        scene: "S01",
+        folderKey: "project:martino",
+        template: "Martino_S01_I2V_Q8_{counter:04}"
+      },
+      fetchFn: historyFetch("p1-scope", comfyName)
+    });
+    assert.equal(archived.ok, true);
+    assert.ok(archived.archivedFilename);
+    assert.match(archived.archivedFilename, /^Martino_S01_I2V_Q8_\d{4}\.mp4$/);
+    assert.notEqual(archived.archivedFilename, comfyName);
+
+    const archiveSnap = await readArchiveStore(archiveStore);
+    const recKey = archivedRecordKey("p1-scope", comfyName, "");
+    assert.equal(archiveSnap.archived[recKey]?.folderKey, "project:martino");
+    assert.equal(existsSync(path.join(archiveMartino, archived.archivedFilename)), true);
+
+    // Cloud: ONLY global destination — no project:martino cloud destination.
+    await configureCloudMirrorDestination({
+      storePath: cloudStore,
+      folderKey: "global",
+      absolutePath: cloudGlobal
+    });
+    await updateCloudMirrorSettings({ storePath: cloudStore, folderKey: "global", enabled: true });
+
+    const cloudSnap = await readCloudMirrorStore(cloudStore);
+    assert.equal(getCloudMirrorDestination(cloudSnap, "project:martino"), cloudGlobal);
+    assert.equal(cloudSnap.destinations["project:martino"], undefined);
+    assert.equal(getCloudMirrorEnabled(cloudSnap, "project:martino"), true);
+
+    const mirrored = await tryAutoCloudMirror({
+      storePath: cloudStore,
+      archiveStorePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "p1-scope",
+      filename: comfyName,
+      folderKey: "project:martino",
+      // Intentionally wrong: simulates resolving archive via cloud's GLOBAL fallback scope.
+      archiveFolderKey: "global",
+      projectId: "martino",
+      projectLabel: "Martino",
+      fetchFn: historyFetch("p1-scope", comfyName)
+    });
+
+    assert.equal(mirrored.ok, true);
+    assert.equal(mirrored.sourceKind, "local-archive");
+    assert.equal(mirrored.destinationFilename, archived.archivedFilename);
+    assert.notEqual(mirrored.destinationFilename, comfyName);
+
+    const cloudFile = path.join(cloudGlobal, "Martino", mirrored.destinationFilename);
+    assert.equal(existsSync(cloudFile), true);
+    assert.equal(readFileSync(cloudFile).equals(payload), true);
+    assert.equal(existsSync(path.join(comfy, comfyName)), true);
+    assert.equal(existsSync(path.join(archiveMartino, archived.archivedFilename)), true);
+    assert.equal(existsSync(path.join(cloudGlobal, "Martino", comfyName)), false);
+    assert.equal(existsSync(path.join(cloudGlobal, comfyName)), false);
   } finally {
     cleanup(root);
   }
