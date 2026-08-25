@@ -34,6 +34,7 @@ import {
   publicCloudMirrorView,
   readCloudMirrorStore,
   setCloudMirrorDestination,
+  getCloudMirrorEnabled,
   setCloudMirrorEnabled,
   updateCloudMirrorStore,
   withCloudMirrorStoreLock,
@@ -301,7 +302,7 @@ export async function mirrorCompletedOutput(opts = {}) {
 
   const run = (async () => {
     const storePeek = await readStore(storePath);
-    if (requireEnabled && !storePeek.enabled) {
+    if (requireEnabled && !getCloudMirrorEnabled(storePeek, key)) {
       return { ok: true, skipped: true, status: "disabled", reason: "auto-cloud-off" };
     }
 
@@ -550,11 +551,12 @@ export async function updateCloudMirrorSettings({
       status: 400
     });
   }
+  const key = normalizeFolderKey(folderKey);
   const store = await updateCloudMirrorStore(storePath, current => {
     if (enabled === undefined) return current;
-    return setCloudMirrorEnabled(current, enabled);
+    return setCloudMirrorEnabled(current, key, enabled);
   });
-  return publicCloudMirrorView(store, folderKey);
+  return publicCloudMirrorView(store, key);
 }
 
 export {
@@ -565,5 +567,6 @@ export {
   updateCloudMirrorStore,
   cloudMirrorRecordKey,
   getCloudMirrorDestination,
+  getCloudMirrorEnabled,
   normalizeFolderKey
 };

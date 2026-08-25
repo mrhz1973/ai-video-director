@@ -18,7 +18,9 @@ import {
   normalizeCloudMirrorStore,
   getCloudMirrorDestination,
   setCloudMirrorDestination,
+  getCloudMirrorEnabled,
   setCloudMirrorEnabled,
+  hasCloudMirrorEnabledOverride,
   cloudMirrorRecordKey,
   projectMirrorSubdir,
   publicCloudMirrorView,
@@ -96,9 +98,11 @@ test("missing cloud store -> disabled defaults", async () => {
   try {
     const storePath = path.join(dir, "cloud-mirror.json");
     const store = await readCloudMirrorStore(storePath);
-    assert.equal(store.enabled, false);
+    assert.deepEqual(store.enabled, { global: false });
+    assert.equal(getCloudMirrorEnabled(store, "global"), false);
     assert.deepEqual(store.destinations, {});
     assert.equal(publicCloudMirrorView(store).configured, false);
+    assert.equal(publicCloudMirrorView(store).enabled, false);
   } finally {
     cleanup(dir);
   }
@@ -113,23 +117,64 @@ test("global and project destinations with global fallback", () => {
   assert.equal(getCloudMirrorDestination(store, "project:missing"), "G:\\My Drive\\AI");
 });
 
-test("malformed store enabled fail-closed", () => {
-  assert.equal(normalizeCloudMirrorStore({ enabled: "false" }).enabled, false);
-  assert.equal(normalizeCloudMirrorStore({ enabled: "yes" }).enabled, false);
-  assert.equal(normalizeCloudMirrorStore({ enabled: 1 }).enabled, false);
-  assert.equal(normalizeCloudMirrorStore({ enabled: true }).enabled, true);
-  assert.equal(normalizeCloudMirrorStore({ enabled: false }).enabled, false);
+test("scoped enabled: inherit / override / views", () => {
+  let store = emptyCloudMirrorStore();
+  store = setCloudMirrorEnabled(store, "global", true);
+  assert.equal(getCloudMirrorEnabled(store, "global"), true);
+  assert.equal(getCloudMirrorEnabled(store, "project:martino"), true);
+  assert.equal(hasCloudMirrorEnabledOverride(store, "project:martino"), false);
+  assert.equal(publicCloudMirrorView(store, "global").enabled, true);
+  assert.equal(publicCloudMirrorView(store, "project:martino").enabled, true);
+  assert.equal(publicCloudMirrorView(store, "project:martino").enabledInherited, true);
+
+  store = setCloudMirrorEnabled(store, "project:martino", false);
+  assert.equal(getCloudMirrorEnabled(store, "global"), true);
+  assert.equal(getCloudMirrorEnabled(store, "project:martino"), false);
+  assert.equal(publicCloudMirrorView(store, "project:martino").enabled, false);
+  assert.equal(publicCloudMirrorView(store, "project:martino").enabledInherited, false);
+
+  store = setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", false);
+  store = setCloudMirrorEnabled(store, "project:b", true);
+  assert.equal(getCloudMirrorEnabled(store, "global"), false);
+  assert.equal(getCloudMirrorEnabled(store, "project:b"), true);
+  assert.equal(publicCloudMirrorView(store, "project:b").enabled, true);
+});
+
+test("project toggle leaves global unchanged; global toggle leaves project override", () => {
+  let store = setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", true);
+  store = setCloudMirrorEnabled(store, "project:a", true);
+  assert.equal(store.enabled.global, true);
+  store = setCloudMirrorEnabled(store, "project:a", false);
+  assert.equal(store.enabled.global, true);
+  assert.equal(store.enabled["project:a"], false);
+
+  store = setCloudMirrorEnabled(store, "project:a", true);
+  assert.equal(store.enabled.global, true);
+  store = setCloudMirrorEnabled(store, "global", false);
+  assert.equal(store.enabled.global, false);
+  assert.equal(store.enabled["project:a"], true);
+  assert.equal(getCloudMirrorEnabled(store, "project:a"), true);
+});
+
+test("malformed store enabled fail-closed + legacy scalar migration", () => {
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: "false" }).enabled, { global: false });
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: "yes" }).enabled, { global: false });
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: 1 }).enabled, { global: false });
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: true }).enabled, { global: true });
+  assert.deepEqual(normalizeCloudMirrorStore({ enabled: false }).enabled, { global: false });
+  assert.equal(getCloudMirrorEnabled(normalizeCloudMirrorStore({ enabled: true }), "global"), true);
+  assert.equal(getCloudMirrorEnabled(normalizeCloudMirrorStore({ enabled: false }), "global"), false);
   const store = normalizeCloudMirrorStore({
     enabled: "yes",
     destinations: { "project:../x": "bad", global: "C:\\ok", junk: "" },
     records: { k: { destinationFilename: "a.mp4", bytes: "12" } }
   });
-  assert.equal(store.enabled, false);
+  assert.deepEqual(store.enabled, { global: false });
   assert.equal(store.destinations.global, "C:\\ok");
   assert.equal(store.destinations["project:../x"], undefined);
   assert.equal(store.records.k.bytes, 12);
-  assert.equal(setCloudMirrorEnabled(emptyCloudMirrorStore(), "yes").enabled, false);
-  assert.equal(setCloudMirrorEnabled(emptyCloudMirrorStore(), true).enabled, true);
+  assert.equal(getCloudMirrorEnabled(setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", "yes"), "global"), false);
+  assert.equal(getCloudMirrorEnabled(setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", true), "global"), true);
 });
 
 test("resolveCloudMirrorStorePath uses H3_CLOUD_MIRROR_STORE_PATH", () => {
@@ -273,7 +318,7 @@ test("successful copy preserves source and verifies size; no orphan temps", asyn
     writeFileSync(sourcePath, Buffer.from("video-bytes-12345"));
     const storePath = path.join(root, "cloud-mirror.json");
     await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
-    await updateCloudMirrorStore(storePath, s => setCloudMirrorEnabled(s, true));
+    await updateCloudMirrorStore(storePath, s => setCloudMirrorEnabled(s, "global", true));
 
     const result = await mirrorCompletedOutput({
       storePath,
@@ -514,7 +559,7 @@ test("missing destination -> clean failure; auto does not throw", async () => {
   const root = tempDir("h3-cloud-missdest-");
   try {
     const storePath = path.join(root, "cloud-mirror.json");
-    await writeCloudMirrorStore(storePath, setCloudMirrorEnabled(emptyCloudMirrorStore(), true));
+    await writeCloudMirrorStore(storePath, setCloudMirrorEnabled(emptyCloudMirrorStore(), "global", true));
     const auto = await tryAutoCloudMirror({
       storePath,
       archiveStorePath: path.join(root, "a.json"),
@@ -546,7 +591,7 @@ test("destination disappears mid-flight -> clean failure code", async () => {
     mkdirSync(sync);
     const storePath = path.join(root, "cloud-mirror.json");
     let store = setCloudMirrorDestination(emptyCloudMirrorStore(), "global", sync);
-    store = setCloudMirrorEnabled(store, true);
+    store = setCloudMirrorEnabled(store, "global", true);
     await writeCloudMirrorStore(storePath, store);
     rmSync(sync, { recursive: true, force: true });
     const result = await tryAutoCloudMirror({
@@ -818,12 +863,84 @@ test("settings: non-boolean enabled rejected; boolean false accepted", async () 
       () => updateCloudMirrorSettings({ storePath, enabled: "false" }),
       error => error?.code === "cloud-settings-invalid"
     );
-    const view = await updateCloudMirrorSettings({ storePath, enabled: false });
+    const view = await updateCloudMirrorSettings({ storePath, folderKey: "global", enabled: false });
     assert.equal(view.enabled, false);
     const store = await readCloudMirrorStore(storePath);
-    assert.equal(store.enabled, false);
+    assert.equal(store.enabled.global, false);
   } finally {
     cleanup(dir);
+  }
+});
+
+test("settings persist against requested folderKey; project does not mutate global", async () => {
+  const dir = tempDir("h3-cloud-settings-scope-");
+  try {
+    const storePath = path.join(dir, "cloud-mirror.json");
+    await writeCloudMirrorStore(storePath, emptyCloudMirrorStore());
+    await updateCloudMirrorSettings({ storePath, folderKey: "global", enabled: true });
+    const proj = await updateCloudMirrorSettings({
+      storePath,
+      folderKey: "project:martino",
+      enabled: false
+    });
+    assert.equal(proj.enabled, false);
+    const store = await readCloudMirrorStore(storePath);
+    assert.equal(store.enabled.global, true);
+    assert.equal(store.enabled["project:martino"], false);
+    assert.equal(getCloudMirrorEnabled(store, "project:martino"), false);
+    assert.equal(publicCloudMirrorView(store, "global").enabled, true);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("auto-copy uses effective project enabled value", async () => {
+  const root = tempDir("h3-cloud-scope-auto-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "scope.mp4"), Buffer.from("SCOPEAUTO"));
+    const storePath = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
+
+    // project false + global true => skipped for project
+    await updateCloudMirrorSettings({ storePath, folderKey: "global", enabled: true });
+    await updateCloudMirrorSettings({ storePath, folderKey: "project:off", enabled: false });
+    const skipped = await tryAutoCloudMirror({
+      storePath,
+      archiveStorePath: path.join(root, "a.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://x",
+      promptId: "s1",
+      filename: "scope.mp4",
+      folderKey: "project:off",
+      projectLabel: "Off",
+      fetchFn: historyFetch("s1", "scope.mp4")
+    });
+    assert.equal(skipped.skipped, true);
+    assert.equal(skipped.status, "disabled");
+
+    // project true + global false => allowed for project
+    await updateCloudMirrorSettings({ storePath, folderKey: "global", enabled: false });
+    await updateCloudMirrorSettings({ storePath, folderKey: "project:on", enabled: true });
+    const copied = await tryAutoCloudMirror({
+      storePath,
+      archiveStorePath: path.join(root, "a.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://x",
+      promptId: "s2",
+      filename: "scope.mp4",
+      folderKey: "project:on",
+      projectLabel: "On",
+      fetchFn: historyFetch("s2", "scope.mp4")
+    });
+    assert.equal(copied.ok, true);
+    assert.equal(copied.status, "copied");
+    assert.equal(existsSync(path.join(sync, "On", "scope.mp4")), true);
+  } finally {
+    cleanup(root);
   }
 });
 

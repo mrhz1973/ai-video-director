@@ -44,6 +44,7 @@ let archiveDestination = {
 };
 let cloudMirrorState = {
   enabled: false,
+  enabledInherited: false,
   configured: false,
   absolutePath: null,
   folderLabel: null
@@ -135,6 +136,7 @@ async function refreshCloudMirrorConfig() {
     if (!response.ok) throw new Error(data.error || "Cloud mirror config failed");
     cloudMirrorState = {
       enabled: Boolean(data.enabled),
+      enabledInherited: Boolean(data.enabledInherited),
       configured: Boolean(data.configured),
       absolutePath: data.absolutePath || null,
       folderLabel: data.folderLabel || null
@@ -149,12 +151,25 @@ async function refreshCloudMirrorConfig() {
     if (!cloudMirrorState.enabled) {
       setCloudMirrorStatus("Disattivato. Nessuna copia automatica nella cartella cloud.", "neutral");
     } else if (!cloudMirrorState.configured) {
-      setCloudMirrorStatus("Attivo ma senza cartella: scegli una cartella Google Drive / sync.", "warn");
+      setCloudMirrorStatus(
+        cloudMirrorState.enabledInherited
+          ? "Attivo (ereditato dalla configurazione globale) ma senza cartella: scegli una cartella Google Drive / sync."
+          : "Attivo ma senza cartella: scegli una cartella Google Drive / sync.",
+        "warn"
+      );
+    } else if (cloudMirrorState.enabledInherited) {
+      setCloudMirrorStatus("Attivo (ereditato dalla configurazione globale). Copia secondaria nella cartella sync.", "ok");
     } else {
       setCloudMirrorStatus("Pronto. Copia secondaria nella cartella sync (non conferma upload remoto).", "ok");
     }
   } catch {
-    cloudMirrorState = { enabled: false, configured: false, absolutePath: null, folderLabel: null };
+    cloudMirrorState = {
+      enabled: false,
+      enabledInherited: false,
+      configured: false,
+      absolutePath: null,
+      folderLabel: null
+    };
     if (label) label.textContent = "Cartella non disponibile";
     if (openBtn) openBtn.disabled = true;
     setCloudMirrorStatus("Impossibile leggere la configurazione cloud mirror.", "warn");

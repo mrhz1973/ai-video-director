@@ -38,10 +38,58 @@ export function resolveCloudMirrorStorePath({
 export function emptyCloudMirrorStore() {
   return {
     version: CLOUD_MIRROR_STORE_VERSION,
-    enabled: false,
+    enabled: { global: false },
     destinations: {},
     records: {}
   };
+}
+
+/**
+ * Normalize scoped auto-copy enable map.
+ * Legacy scalar `enabled: true|false` migrates to `enabled.global` only when
+ * the value is a strict boolean. Malformed scalars fail closed to global false.
+ */
+export function normalizeCloudMirrorEnabledMap(sourceEnabled) {
+  const map = { global: false };
+  if (sourceEnabled === true) {
+    map.global = true;
+    return map;
+  }
+  if (sourceEnabled === false || sourceEnabled == null) {
+    return map;
+  }
+  if (typeof sourceEnabled !== "object" || Array.isArray(sourceEnabled)) {
+    // "true" / "false" / "yes" / 1 / etc. → fail closed
+    return map;
+  }
+  for (const [rawKey, value] of Object.entries(sourceEnabled)) {
+    const folderKey = normalizeFolderKey(rawKey);
+    if (value === true) map[folderKey] = true;
+    else if (value === false) map[folderKey] = false;
+    // Non-boolean values for a key are omitted (project inherits; global stays false).
+  }
+  if (map.global !== true) map.global = false;
+  return map;
+}
+
+/**
+ * Effective auto-copy enable for a scope: project override if present, else global.
+ */
+export function getCloudMirrorEnabled(store, folderKey = "global") {
+  const map = normalizeCloudMirrorEnabledMap(store?.enabled);
+  const key = normalizeFolderKey(folderKey);
+  if (key !== "global" && Object.prototype.hasOwnProperty.call(map, key)) {
+    return map[key] === true;
+  }
+  return map.global === true;
+}
+
+/** True when folderKey has an explicit override (project scopes only). */
+export function hasCloudMirrorEnabledOverride(store, folderKey = "global") {
+  const key = normalizeFolderKey(folderKey);
+  if (key === "global") return true;
+  const map = normalizeCloudMirrorEnabledMap(store?.enabled);
+  return Object.prototype.hasOwnProperty.call(map, key);
 }
 
 export function normalizeCloudMirrorStore(raw = null) {
@@ -67,8 +115,7 @@ export function normalizeCloudMirrorStore(raw = null) {
   }
   return {
     version: CLOUD_MIRROR_STORE_VERSION,
-    // Fail closed: only strict boolean true enables auto-copy.
-    enabled: source.enabled === true,
+    enabled: normalizeCloudMirrorEnabledMap(source.enabled),
     destinations,
     records
   };
@@ -146,11 +193,15 @@ export function setCloudMirrorDestination(store, folderKey, absolutePath) {
   return next;
 }
 
-export function setCloudMirrorEnabled(store, enabled) {
+/**
+ * Persist auto-copy enable for one scope. Project toggles never mutate global.
+ * Non-boolean `enabled` fail closed to false for that scope.
+ */
+export function setCloudMirrorEnabled(store, folderKey = "global", enabled) {
   const next = normalizeCloudMirrorStore(store);
-  // Fail closed: non-booleans never enable. Callers that need rejection use
-  // updateCloudMirrorSettings() which validates typeof === "boolean".
-  next.enabled = enabled === true;
+  const key = normalizeFolderKey(folderKey);
+  next.enabled = { ...normalizeCloudMirrorEnabledMap(next.enabled) };
+  next.enabled[key] = enabled === true;
   return next;
 }
 
@@ -170,9 +221,12 @@ export function publicCloudMirrorView(store, folderKey = "global") {
   const key = normalizeFolderKey(folderKey);
   const absolutePath = getCloudMirrorDestination(store, key);
   const configured = Boolean(absolutePath);
+  const enabled = getCloudMirrorEnabled(store, key);
+  const inherited = key !== "global" && !hasCloudMirrorEnabledOverride(store, key);
   return {
     folderKey: key,
-    enabled: store?.enabled === true,
+    enabled,
+    enabledInherited: inherited,
     configured,
     absolutePath: configured ? absolutePath : null,
     folderLabel: configured ? (path.basename(absolutePath) || absolutePath) : null,
