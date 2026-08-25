@@ -297,10 +297,14 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 
 ### CODA/BATCH runtime progress (v0.18.0)
 
-- Armed CODA shows a display-only progress panel: overall job counts, current entry/job pointer, Comfy step progress when WS `value`/`max` matches the active `promptId`, elapsed from runtime `startedAt`, optional approximate ETA from completed-job mean duration.
+- Armed CODA shows a display-only progress panel: overall job counts from per-job runtime evidence, current entry/job pointer, Comfy render progress when WS events match the active `promptId`, elapsed from runtime `startedAt`, optional approximate ETA from completed-job mean duration.
+- **Step X / Y** is shown only when `displayNode` is a known sampler (`SamplerCustomAdvanced`, `SamplerCustom`, `KSampler`, `KSamplerAdvanced`). Generic numeric node progress uses **Progresso nodo** / **Render N%**. Never infer sampler steps from `value`/`max` alone.
+- Job accounting precedence: current `entryJobs` → historical `acceptedJobs` by `queueEntryId` → entry-level state fallback only when no per-job evidence exists. Current entry is not double-counted.
+- Percent bar = successful completion only (`completed / total`); textual counts include failed / interrupted / cancelled.
 - Immediate BATCH monitor summary reuses the same pure helpers (`public/batch-queue-progress.mjs`).
 - Per-entry “Dettagli tecnici” disclosure is UI session state keyed by `queueEntryId` and survives poll rerenders; it is not project authority.
-- Progress UI never arms, submits, or otherwise becomes execution authority.- Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
+- Progress UI never arms, submits, or otherwise becomes execution authority.
+- Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
 
 ## Output archive — Archivio locale Director (v0.16.0)
 

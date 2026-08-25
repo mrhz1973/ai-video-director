@@ -2,8 +2,10 @@
 
 ## 2026-08-25 — v0.18.0
 
-- **Visible CODA/BATCH runtime progress**: armed CODA shows overall job progress (completed / running / pending), current entry + job X/Y, Comfy step value/max when authoritative progress events match the active prompt, elapsed time from queue `startedAt`, and an approximate ETA only when enough completed-job data exists (never fake %).
-- Immediate BATCH monitor summary uses the same progress helpers for job X/Y, optional step progress, elapsed, and honest ETA.
+- **Visible CODA/BATCH runtime progress**: armed CODA shows overall job progress (completed / running / pending / failed / interrupted / cancelled), current entry + job X/Y, Comfy render progress when WS events match the active prompt, elapsed time from queue `startedAt`, and an approximate ETA only when enough completed-job data exists (never fake %).
+- Numeric Comfy progress is labeled **Step X / Y** only for known sampler nodes (`SamplerCustomAdvanced`, `SamplerCustom`, `KSampler`, `KSamplerAdvanced`). Other nodes show **Progresso nodo X / Y · N%** (or **Render N%** when node identity is unknown). `BasicScheduler` / VAE / loaders are never called sampler steps.
+- Overall CODA job counts use per-job evidence (`entryJobs` for the current entry, `acceptedJobs` grouped by `queueEntryId` for historical entries) before any entry-level fallback — mixed terminal entries no longer map all jobs to failed.
+- Immediate BATCH monitor summary uses the same progress helpers for job X/Y, optional sampler/node progress, elapsed, and honest ETA.
 - **Stable technical details**: per-entry “Dettagli tecnici” (and job editors) keep open/closed state across CODA polling rerenders via UI-only Sets keyed by immutable `queueEntryId`.
 
 ## 2026-08-25 — v0.17.0

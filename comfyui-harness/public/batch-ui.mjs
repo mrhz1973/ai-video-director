@@ -74,7 +74,10 @@ import {
   validateBatchOwnedLora
 } from "../lib/batch-lora-snapshot.mjs";
 import { H3_LORA_OFF } from "../lib/h3-lora-catalog.mjs";
-import { buildBatchProgressView } from "./batch-queue-progress.mjs";
+import {
+  buildBatchProgressView,
+  enrichProgressWithNodeContext
+} from "./batch-queue-progress.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -97,6 +100,7 @@ let assetContextProvider = null;
 /** UI-session only: index -> expanded. Not persisted to project JSON. */
 const batchExpandState = new Map();
 let liveBatchRenderProgress = null;
+const batchNodeDisplayById = new Map();
 let batchRunStartedAt = null;
 
 function clearBatchExpandState() {
@@ -1288,9 +1292,9 @@ function renderRuntime() {
   });
   const runtimeSummary = formatBatchRuntimeSummary(runtime.jobs);
   const renderBits = progress.render.kind === "numeric"
-    ? ` · Step ${progress.render.value}/${progress.render.max}`
+    ? ` · ${progress.render.label}`
     : progress.running
-      ? " · Rendering…"
+      ? ` · ${progress.render.label && progress.render.kind === "indeterminate" ? progress.render.label : "Rendering…"}`
       : "";
   const etaBits = progress.etaText ? ` · ETA ${progress.etaText}` : "";
   monitor.innerHTML = `<strong>BATCH ${progress.completed}/${progress.total}</strong><span>${progress.label}${renderBits} · ${runtimeSummary} · ${summary.running} running · ${summary.pending} pending · Tempo ${progress.elapsed.text}${etaBits}</span>`;
@@ -1434,7 +1438,11 @@ async function init() {
   window.addEventListener("h3-batch-queue-changed", () => updateQueueButton());
   window.addEventListener("h3-batch-queue-runtime", () => updateQueueButton());
   window.addEventListener("h3-comfy-progress", event => {
-    liveBatchRenderProgress = event?.detail?.progress || null;
+    const raw = event?.detail?.progress || null;
+    if (raw?.nodeId && raw?.displayNode) {
+      batchNodeDisplayById.set(String(raw.nodeId), String(raw.displayNode));
+    }
+    liveBatchRenderProgress = enrichProgressWithNodeContext(raw, batchNodeDisplayById);
     if (runtime?.jobs?.length) renderRuntime();
   });
   window.addEventListener("h3-deferred-batch-cancel", () => {

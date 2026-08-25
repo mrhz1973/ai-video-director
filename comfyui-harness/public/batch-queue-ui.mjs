@@ -37,7 +37,11 @@ import {
 } from "./batch-queue-job-input.mjs";
 import {
   buildCodaProgressView,
-  entryStatusLabel
+  collectActivePromptIds,
+  enrichProgressWithNodeContext,
+  entryStatusLabel,
+  formatRenderProgressLabel,
+  progressForActivePrompt
 } from "./batch-queue-progress.mjs";
 
 const $ = id => document.getElementById(id);
@@ -60,6 +64,8 @@ const techDetailsOpen = new Set();
 const jobDisclosureOpen = new Set();
 /** Latest Comfy progress event matched to active CODA promptIds (display-only). */
 let liveRenderProgress = null;
+/** nodeId → displayNode from executing events (sampler-step identification). */
+const nodeDisplayById = new Map();
 
 function currentProjectId() {
   return String(projectIdProvider() || "").trim();
@@ -382,6 +388,7 @@ function renderCodaProgressPanel(view) {
   ];
   if (jobs.failed) bits.push(`${jobs.failed} falliti`);
   if (jobs.interrupted) bits.push(`${jobs.interrupted} interrotti`);
+  if (jobs.cancelled) bits.push(`${jobs.cancelled} annullati/non inviati`);
   counts.textContent = bits.join(" · ");
 
   const current = document.createElement("div");
@@ -404,7 +411,7 @@ function renderCodaProgressPanel(view) {
   if (view.render.kind === "numeric") {
     renderBar.max = view.render.max;
     renderBar.value = view.render.value;
-    renderMeta.textContent = `Step ${view.render.value} / ${view.render.max} · ${view.render.percent}%`;
+    renderMeta.textContent = view.render.label || formatRenderProgressLabel(view.render);
   } else if (view.render.kind === "complete") {
     renderBar.max = 1;
     renderBar.value = 1;
@@ -412,7 +419,7 @@ function renderCodaProgressPanel(view) {
   } else if (jobs.running > 0) {
     renderBar.removeAttribute("value");
     renderBar.max = 1;
-    renderMeta.textContent = "Processing current node";
+    renderMeta.textContent = view.render.label || "Processing current node";
   } else {
     renderBar.max = 1;
     renderBar.value = 0;
@@ -626,10 +633,17 @@ function renderEntryCard(entry, index, entries) {
   if (isCurrent && runtimeView?.armed) {
     const live = document.createElement("div");
     live.className = "batch-queue-card-live";
-    if (liveRenderProgress?.kind === "numeric") {
-      live.textContent = `Render step ${liveRenderProgress.value} / ${liveRenderProgress.max}`;
+    // Prompt-matched only — never show raw liveRenderProgress from another prompt.
+    const matched = progressForActivePrompt({
+      progress: liveRenderProgress,
+      activePromptIds: collectActivePromptIds({ runtimeView })
+    });
+    if (matched.kind === "numeric") {
+      live.textContent = matched.label || formatRenderProgressLabel(matched);
     } else if (entry.state === QUEUE_ENTRY_STATE.RUNNING || entry.state === QUEUE_ENTRY_STATE.SUBMITTING) {
-      live.textContent = "Rendering…";
+      live.textContent = matched.label && matched.kind === "indeterminate"
+        ? matched.label
+        : "Rendering…";
     }
     if (live.textContent) card.append(live);
   }
@@ -916,8 +930,11 @@ export function initBatchQueueUi({ getProjectId, onPlanDirty } = {}) {
     void fetchRuntime();
   });
   window.addEventListener("h3-comfy-progress", event => {
-    const progress = event?.detail?.progress || null;
-    liveRenderProgress = progress;
+    const raw = event?.detail?.progress || null;
+    if (raw?.nodeId && raw?.displayNode) {
+      nodeDisplayById.set(String(raw.nodeId), String(raw.displayNode));
+    }
+    liveRenderProgress = enrichProgressWithNodeContext(raw, nodeDisplayById);
     // Refresh progress panel without waiting for the next poll.
     const entries = displayEntries();
     if (entries.length) renderSummary(entries);
