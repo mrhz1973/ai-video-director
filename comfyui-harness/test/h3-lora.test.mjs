@@ -351,3 +351,14 @@ test("index exposes LoRA controls in SCENA generation grid", () => {
 test("normalizePersistedLoraSettings defaults missing fields to OFF", () => {
   assert.deepEqual(normalizePersistedLoraSettings({}), { loraId: H3_LORA_OFF });
 });
+
+test("normalizePersistedLoraSettings keeps explicit invalid strength distinguishable from missing", () => {
+  assert.deepEqual(
+    normalizePersistedLoraSettings({ loraId: "realism-people", loraStrength: "abc" }),
+    { loraId: "realism-people", loraStrength: "abc" }
+  );
+  assert.deepEqual(
+    normalizePersistedLoraSettings({ loraId: "realism-people" }),
+    { loraId: "realism-people" }
+  );
+});
