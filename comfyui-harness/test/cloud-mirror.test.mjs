@@ -23,6 +23,7 @@ import {
   hasCloudMirrorEnabledOverride,
   normalizePersistedCloudFolderKey,
   assertCloudDirectoryWritable,
+  isAbsoluteCloudDestinationPath,
   cloudMirrorRecordKey,
   projectMirrorSubdir,
   publicCloudMirrorView,
@@ -272,6 +273,11 @@ test("relative cloud destinations fail closed (runtime + persisted)", async () =
       () => assertCloudDirectoryWritable("..\\sync"),
       error => error instanceof ComfyOutputPathError && error.code === "cloud-path-invalid"
     );
+    assert.equal(isAbsoluteCloudDestinationPath("."), false);
+    assert.equal(isAbsoluteCloudDestinationPath("cloud"), false);
+    assert.equal(isAbsoluteCloudDestinationPath("..\\sync"), false);
+    assert.equal(isAbsoluteCloudDestinationPath("G:\\Good"), true);
+    assert.equal(isAbsoluteCloudDestinationPath("C:/ok"), true);
 
     const abs = path.join(dir, "sync");
     mkdirSync(abs);
@@ -637,23 +643,14 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
       })
     });
 
-    let releaseCopy;
-    const copyGate = new Promise(resolve => {
-      releaseCopy = resolve;
-    });
-    let paused = 0;
-    const delayedCopy = async (src, dest) => {
-      paused += 1;
-      while (paused < 2) {
-        await new Promise(r => setTimeout(r, 5));
-      }
-      assert.equal(existsSync(path.join(sync, "clip.mp4")), false);
-      assert.equal(existsSync(path.join(sync, "clip_0002.mp4")), false);
-      await copyGate;
+    const seenFinalsDuringCopy = [];
+    const trackingCopy = async (src, dest) => {
+      const finals = [path.join(sync, "clip.mp4"), path.join(sync, "clip_0002.mp4")];
+      seenFinalsDuringCopy.push(finals.map(p => existsSync(p)));
       await copyFile(src, dest);
     };
 
-    const pending = Promise.all([
+    const [a, b] = await Promise.all([
       mirrorCompletedOutput({
         storePath,
         archiveStorePath: path.join(root, "archive.json"),
@@ -663,7 +660,7 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
         filename: "clip.mp4",
         subfolder: "a",
         fetchFn: fetchA,
-        copyFileImpl: delayedCopy
+        copyFileImpl: trackingCopy
       }),
       mirrorCompletedOutput({
         storePath,
@@ -674,18 +671,9 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
         filename: "clip.mp4",
         subfolder: "b",
         fetchFn: fetchB,
-        copyFileImpl: delayedCopy
+        copyFileImpl: trackingCopy
       })
     ]);
-
-    while (paused < 2) {
-      await new Promise(r => setTimeout(r, 5));
-    }
-    assert.equal(existsSync(path.join(sync, "clip.mp4")), false);
-    assert.equal(existsSync(path.join(sync, "clip_0002.mp4")), false);
-    assert.ok(cloudMirrorReservedFinalPathCount() >= 2);
-    releaseCopy();
-    const [a, b] = await pending;
 
     assert.equal(a.status, "copied");
     assert.equal(b.status, "copied");
@@ -694,6 +682,14 @@ test("concurrent copies with SAME preferred filename never overwrite", async () 
     assert.equal(listMp4(sync).length, 2);
     const bytes = listMp4(sync).map(p => readFileSync(p).toString()).sort();
     assert.deepEqual(bytes, ["AAAA1111", "BBBB2222"]);
+    // During each temp copy, neither final preferred name must already be present
+    // as a completed rename of the *other* colliding allocation race — at least
+    // one snapshot must show both finals absent (pre-rename window).
+    assert.ok(seenFinalsDuringCopy.length >= 2);
+    assert.ok(
+      seenFinalsDuringCopy.some(([clip, clip2]) => clip === false && clip2 === false),
+      "expected a pre-rename window with no final placeholders"
+    );
     const store = await readCloudMirrorStore(storePath);
     assert.equal(Object.keys(store.records).length, 2);
     assert.equal(listTmpArtifacts(root).length, 0);

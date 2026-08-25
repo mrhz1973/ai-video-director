@@ -118,7 +118,7 @@ export function normalizeCloudMirrorStore(raw = null) {
     if (!folderKey) continue;
     const dest = String(value || "").trim();
     // Persist only non-empty absolute paths. Existence is runtime-validated.
-    if (!dest || !path.isAbsolute(dest)) continue;
+    if (!dest || !isAbsoluteCloudDestinationPath(dest)) continue;
     destinations[folderKey] = dest;
   }
   const records = {};
@@ -209,7 +209,7 @@ export function setCloudMirrorDestination(store, folderKey, absolutePath) {
   const next = normalizeCloudMirrorStore(store);
   const key = normalizeFolderKey(folderKey);
   const dest = String(absolutePath || "").trim();
-  if (!dest || !path.isAbsolute(dest)) delete next.destinations[key];
+  if (!dest || !isAbsoluteCloudDestinationPath(dest)) delete next.destinations[key];
   else next.destinations[key] = dest;
   return next;
 }
@@ -256,22 +256,34 @@ export function publicCloudMirrorView(store, folderKey = "global") {
 }
 
 /**
- * Destination must exist, be absolute, writable, and a directory (not a file).
- * Validates the RAW trimmed path before resolve — relative values never become cwd.
+ * Absolute destination check for persisted/runtime cloud paths.
+ * Accepts host-native absolutes plus Windows drive/UNC forms so a store
+ * authored on Windows is not silently dropped when tests run on POSIX.
+ * Relative values (".", "cloud", "..\\sync") remain false.
  */
+export function isAbsoluteCloudDestinationPath(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return false;
+  if (path.isAbsolute(value)) return true;
+  if (/^[A-Za-z]:[\\/]/.test(value)) return true;
+  if (value.startsWith("\\\\") || value.startsWith("//")) return true;
+  return false;
+}
 export async function assertCloudDirectoryWritable(absolutePath, {
   accessImpl = access,
   statImpl = stat
 } = {}) {
   const raw = String(absolutePath || "").trim();
-  if (!raw || !path.isAbsolute(raw)) {
+  if (!raw || !isAbsoluteCloudDestinationPath(raw)) {
     throw new ComfyOutputPathError("Cloud destination must be absolute.", {
       code: "cloud-path-invalid",
       status: 400
     });
   }
+  // Relative values never reach resolve(). Windows drive paths stay as-is on POSIX
+  // hosts only for the absolute check; runtime resolve still uses the raw absolute.
   const resolved = path.resolve(raw);
-  if (!path.isAbsolute(resolved)) {
+  if (!isAbsoluteCloudDestinationPath(resolved) && !path.isAbsolute(resolved)) {
     throw new ComfyOutputPathError("Cloud destination must be absolute.", {
       code: "cloud-path-invalid",
       status: 400
