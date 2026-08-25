@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.18.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.19.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -305,6 +305,14 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 - Per-entry “Dettagli tecnici” disclosure is UI session state keyed by `queueEntryId` and survives poll rerenders; it is not project authority.
 - Progress UI never arms, submits, or otherwise becomes execution authority.
 - Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
+
+### Secondary cloud mirror (v0.19.0)
+
+- Optional secondary COPY into a local sync-folder destination (Google Drive for desktop / OneDrive / Dropbox / Syncthing-style folders). Machine-local `cloud-mirror.json` under `%LOCALAPPDATA%\AI Video Director\` (override `H3_CLOUD_MIRROR_STORE_PATH`).
+- No Google API / OAuth. Browser configures via native folder picker semantic `folderKey` only — never posts absolute paths.
+- Source preference: successful local archive file, else authoritative Comfy output. Temp file + rename, size verification, idempotent records, collision suffixes. In-process per-record lock.
+- Auto-copy default OFF. Cloud failure is isolated: render success, local archive success, and CODA/Batch continue. UI status = “copied to sync folder”, never “synced to remote Google cloud”.
+- APIs: `GET/POST /api/cloud-mirror/*` (`config`, `settings`, `pick-folder`, `open-folder`, `copy-output`). Hooked after successful `/api/archive-output` via `tryAutoCloudMirror` and independently from OUTPUT `/api/outputs` observation when auto is enabled.
 
 ## Output archive — Archivio locale Director (v0.16.0)
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-25 — v0.19.0
+
+- **Optional secondary cloud mirror**: copy completed videos into a user-selected local sync folder (Google Drive for desktop / OneDrive / similar) via server-side filesystem COPY only.
+- No Google Drive REST API, OAuth, credentials, or browser filesystem write authority.
+- Machine-local store `%LOCALAPPDATA%\AI Video Director\cloud-mirror.json` (override `H3_CLOUD_MIRROR_STORE_PATH`); global + optional per-project destinations with global fallback.
+- Auto-copy defaults OFF; cloud failure never fails render, stops CODA/Batch, or invalidates local archive.
+- Prefers successful local-archive file as source; otherwise authoritative Comfy output resolution. Temp + rename, size verify, idempotent records, collision suffixes.
+- OUTPUT UI: CLOUD MIRROR controls + session “Copia nel cloud” / retry. Status means **copied to sync folder**, not confirmed remote Google upload.
+
 ## 2026-08-25 — v0.18.0
 
 - **Visible CODA/BATCH runtime progress**: armed CODA shows overall job progress (completed / running / pending / failed / interrupted / cancelled), current entry + job X/Y, Comfy render progress when WS events match the active prompt, elapsed time from queue `startedAt`, and an approximate ETA only when enough completed-job data exists (never fake %).

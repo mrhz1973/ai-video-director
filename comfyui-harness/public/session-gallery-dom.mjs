@@ -55,7 +55,8 @@ function buildDownloadUrl(item) {
  */
 export function createSessionClipCard(doc, item, {
   onPreviewError = null,
-  onShowInFolder = null
+  onShowInFolder = null,
+  onCloudMirrorCopy = null
 } = {}) {
   const card = doc.createElement("article");
   card.className = `session-clip${item.available === false ? " unavailable" : ""}`;
@@ -105,6 +106,34 @@ export function createSessionClipCard(doc, item, {
     paths.append(archiveStatus);
   }
 
+  const localeLine = doc.createElement("div");
+  localeLine.className = "session-clip-cloud-status";
+  localeLine.textContent = item.archive?.filename ? "Locale: copiato" : "Locale: originale ComfyUI";
+  paths.append(localeLine);
+
+  const cloudLine = doc.createElement("div");
+  cloudLine.className = "session-clip-cloud-status";
+  const cm = item.cloudMirror;
+  if (cm?.status === "copied" || cm?.status === "already-copied") {
+    cloudLine.textContent = cm.status === "already-copied"
+      ? "Cloud: già copiato nella cartella"
+      : "Cloud: copiato nella cartella";
+  } else if (cm?.status === "failed") {
+    cloudLine.textContent = "Cloud: errore";
+  } else if (cm?.status === "disabled") {
+    cloudLine.textContent = "Cloud: disattivato";
+  } else if (cm?.status === "not-configured") {
+    cloudLine.textContent = "Cloud: non configurato";
+  } else {
+    cloudLine.textContent = "Cloud: in attesa / non copiato";
+  }
+  paths.append(cloudLine);
+
+  if (cm?.filename) {
+    const folder = cm.folderLabel ? `${cm.folderLabel} / ` : "";
+    appendCodeLine(doc, paths, "Copia cartella cloud", `${folder}${cm.filename}`);
+  }
+
   const actions = doc.createElement("div");
   actions.className = "session-clip-actions";
   if (item.available === false) {
@@ -129,6 +158,22 @@ export function createSessionClipCard(doc, item, {
       if (typeof onShowInFolder === "function") onShowInFolder(item);
     });
     actions.append(show);
+
+    const cloudBtn = doc.createElement("button");
+    cloudBtn.type = "button";
+    cloudBtn.className = "secondary session-clip-cloud-copy";
+    if (cm?.status === "copied" || cm?.status === "already-copied") {
+      cloudBtn.textContent = "Già copiato nel cloud";
+      cloudBtn.disabled = true;
+    } else if (cm?.status === "failed") {
+      cloudBtn.textContent = "Riprova copia cloud";
+    } else {
+      cloudBtn.textContent = "Copia nel cloud";
+    }
+    cloudBtn.addEventListener("click", () => {
+      if (typeof onCloudMirrorCopy === "function") onCloudMirrorCopy(item);
+    });
+    actions.append(cloudBtn);
 
     const isMp4 = /\.mp4$/i.test(String(item.filename || ""));
     if (isMp4) {
