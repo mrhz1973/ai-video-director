@@ -8,6 +8,7 @@ import {
   formatElapsed,
   initialMonitorState,
   mergeTerminalEntries,
+  progressFromMessage,
   resolveJobStartMs,
   resolveObserverClientId,
   summarizeMonitor
@@ -1074,6 +1075,16 @@ async function pollHistory() {
 
 async function handleMessage(event) {
   const message = JSON.parse(event.data);
+  // Broadcast Comfy progress for CODA/BATCH UIs before single-prompt filtering.
+  // Display-only: does not change submission authority or currentPrompt.
+  if (["progress", "progress_state", "executing", "execution_error", "execution_interrupted"].includes(message.type)) {
+    try {
+      const progress = progressFromMessage(message);
+      if (progress) {
+        window.dispatchEvent(new CustomEvent("h3-comfy-progress", { detail: { message, progress } }));
+      }
+    } catch { /* ignore */ }
+  }
   if (message.data?.prompt_id && currentPrompt && message.data.prompt_id !== currentPrompt) return;
   if (message.type === "logs") {
     pushMonitorMessage(message);

@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.17.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.18.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -294,7 +294,13 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 - Batch **Impostazioni globali batch** exposes **LoRA** / **Forza LoRA**. **Prepara dal draft** copies the current SCENA selection into Batch `source`; afterward Batch LoRA is independent of SCENA.
 - LoRA is never stored on individual Batch items. Immediate/deferred Batch freezes `source` LoRA into the submission snapshot and forwards it on `/api/queue` with the same semantics as multi-Batch CODA.
 - Submission gates (`getCurrentBatchSnapshotForQueue`, `queueBatch`) call `validateBatchOwnedLora()` before queue; `normalizePersistedLoraSettings` is persistence compatibility only and preserves explicitly invalid strengths so they remain distinguishable from a missing strength (profile default). Invalid persisted IDs render as an explicit invalid selector option (not OFF).
-- Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
+
+### CODA/BATCH runtime progress (v0.18.0)
+
+- Armed CODA shows a display-only progress panel: overall job counts, current entry/job pointer, Comfy step progress when WS `value`/`max` matches the active `promptId`, elapsed from runtime `startedAt`, optional approximate ETA from completed-job mean duration.
+- Immediate BATCH monitor summary reuses the same pure helpers (`public/batch-queue-progress.mjs`).
+- Per-entry “Dettagli tecnici” disclosure is UI session state keyed by `queueEntryId` and survives poll rerenders; it is not project authority.
+- Progress UI never arms, submits, or otherwise becomes execution authority.- Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
 
 ## Output archive — Archivio locale Director (v0.16.0)
 

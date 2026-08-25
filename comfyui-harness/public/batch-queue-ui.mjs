@@ -12,7 +12,6 @@ import {
   normalizeBatchQueuePlan,
   serializeBatchQueuePlan,
   setBatchQueuePlanRandomIdFactory,
-  summarizeQueuePlan,
   validateQueueCapacity
 } from "../lib/batch-queue-plan-core.mjs";
 
@@ -36,6 +35,10 @@ import {
   buildSavedQueueJobItem,
   cloneQueueJobDraft
 } from "./batch-queue-job-input.mjs";
+import {
+  buildCodaProgressView,
+  entryStatusLabel
+} from "./batch-queue-progress.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -51,16 +54,12 @@ let queueInterruptPending = false;
 let queueStopPending = false;
 let assetContextProvider = null;
 const reconstructedPromptIds = new Set();
-
-const ENTRY_STATE_LABELS = {
-  [QUEUE_ENTRY_STATE.QUEUED]: "IN CODA",
-  [QUEUE_ENTRY_STATE.SUBMITTING]: "IN ESECUZIONE",
-  [QUEUE_ENTRY_STATE.RUNNING]: "IN ESECUZIONE",
-  [QUEUE_ENTRY_STATE.COMPLETED]: "COMPLETATO",
-  [QUEUE_ENTRY_STATE.FAILED]: "FALLITO",
-  [QUEUE_ENTRY_STATE.CANCELLED]: "ANNULLATO",
-  [QUEUE_ENTRY_STATE.RECOVERY_REQUIRED]: "RECUPERO RICHIESTO"
-};
+/** UI-only: per-entry technical details disclosure across polling (not project authority). */
+const techDetailsOpen = new Set();
+/** UI-only: queueEntryId:job:N / queueEntryId:jobtech:N */
+const jobDisclosureOpen = new Set();
+/** Latest Comfy progress event matched to active CODA promptIds (display-only). */
+let liveRenderProgress = null;
 
 function currentProjectId() {
   return String(projectIdProvider() || "").trim();
@@ -327,25 +326,110 @@ function displayEntries() {
 }
 
 function renderSummary(entries) {
-  const summary = summarizeQueuePlan(entries);
   const node = $("batchQueueSummary");
   if (!node) return;
+  const view = buildCodaProgressView({
+    entries,
+    runtimeView,
+    renderProgress: liveRenderProgress
+  });
   const batchCount = entries.length;
-  const jobCount = summary.totalJobs ?? entries.reduce((n, e) => n + (e.snapshot?.items?.length || 0), 0);
+  const jobCount = view.jobs.total;
   const parts = [`${batchCount} Batch · ${jobCount} Job`];
-  if (runtimeView?.armed && runtimeView?.currentEntryId) {
-    const idx = entries.findIndex(e => e.queueEntryId === runtimeView.currentEntryId);
-    if (idx >= 0) {
-      parts.push(`Batch ${idx + 1} / ${batchCount}`);
-      const jobs = entries[idx]?.snapshot?.items || [];
-      if (runtimeView.currentJobIndex != null && jobs.length) {
-        parts.push(`Job ${Number(runtimeView.currentJobIndex) + 1} / ${jobs.length}`);
-      }
-    }
-  } else if (summary.remainingJobs != null) {
-    parts.push(`${summary.remainingJobs} job rimanenti`);
+  if (view.armed && view.pointer.entryName) {
+    const idx = entries.findIndex(e => e.queueEntryId === runtimeView?.currentEntryId);
+    if (idx >= 0) parts.push(`Batch ${idx + 1} / ${batchCount}`);
+    if (view.pointer.label) parts.push(view.pointer.label);
+  } else if (view.jobs.pending != null) {
+    parts.push(`${view.jobs.pending} job in attesa`);
   }
   node.textContent = parts.join(" · ");
+  renderCodaProgressPanel(view);
+}
+
+function renderCodaProgressPanel(view) {
+  const panel = $("batchQueueProgress");
+  if (!panel) return;
+  if (!view?.armed || !view.jobs.total) {
+    panel.hidden = true;
+    panel.replaceChildren();
+    return;
+  }
+  panel.hidden = false;
+  panel.replaceChildren();
+
+  const jobs = view.jobs;
+  const overall = document.createElement("div");
+  overall.className = "batch-queue-progress-row";
+  const overallLabel = document.createElement("div");
+  overallLabel.className = "batch-queue-progress-label";
+  overallLabel.textContent = "CODA";
+  const overallBar = document.createElement("progress");
+  overallBar.max = Math.max(1, jobs.total);
+  overallBar.value = Math.min(jobs.completed, jobs.total);
+  overallBar.setAttribute("aria-label", `Progresso coda ${jobs.completed} su ${jobs.total}`);
+  const overallMeta = document.createElement("div");
+  overallMeta.className = "batch-queue-progress-meta";
+  overallMeta.textContent = `${jobs.completed} / ${jobs.total}`;
+  overall.append(overallLabel, overallBar, overallMeta);
+
+  const counts = document.createElement("p");
+  counts.className = "batch-queue-progress-counts";
+  const bits = [
+    `${jobs.completed} completati`,
+    `${jobs.running} in corso`,
+    `${jobs.pending} in attesa`
+  ];
+  if (jobs.failed) bits.push(`${jobs.failed} falliti`);
+  if (jobs.interrupted) bits.push(`${jobs.interrupted} interrotti`);
+  counts.textContent = bits.join(" · ");
+
+  const current = document.createElement("div");
+  current.className = "batch-queue-progress-current";
+  const currentName = document.createElement("div");
+  currentName.innerHTML = `<span>Corrente</span><strong>${view.pointer.entryName || "—"}</strong>`;
+  const currentJob = document.createElement("div");
+  currentJob.innerHTML = `<span>Job</span><strong>${view.pointer.label || "—"}</strong>`;
+  current.append(currentName, currentJob);
+
+  const renderRow = document.createElement("div");
+  renderRow.className = "batch-queue-progress-row";
+  const renderLabel = document.createElement("div");
+  renderLabel.className = "batch-queue-progress-label";
+  renderLabel.textContent = "Render";
+  const renderBar = document.createElement("progress");
+  renderBar.setAttribute("aria-label", "Progresso render corrente");
+  const renderMeta = document.createElement("div");
+  renderMeta.className = "batch-queue-progress-meta";
+  if (view.render.kind === "numeric") {
+    renderBar.max = view.render.max;
+    renderBar.value = view.render.value;
+    renderMeta.textContent = `Step ${view.render.value} / ${view.render.max} · ${view.render.percent}%`;
+  } else if (view.render.kind === "complete") {
+    renderBar.max = 1;
+    renderBar.value = 1;
+    renderMeta.textContent = "Completato";
+  } else if (jobs.running > 0) {
+    renderBar.removeAttribute("value");
+    renderBar.max = 1;
+    renderMeta.textContent = "Processing current node";
+  } else {
+    renderBar.max = 1;
+    renderBar.value = 0;
+    renderMeta.textContent = "In attesa";
+  }
+  renderRow.append(renderLabel, renderBar, renderMeta);
+
+  const timeRow = document.createElement("div");
+  timeRow.className = "batch-queue-progress-time";
+  timeRow.innerHTML = `<span>Tempo</span><strong>${view.elapsed.text}</strong>`;
+  if (view.etaText) {
+    const eta = document.createElement("div");
+    eta.innerHTML = `<span>ETA</span><strong>${view.etaText}</strong>`;
+    timeRow.append(eta);
+  }
+
+  panel.append(overall, counts, current, renderRow, timeRow);
 }
 
 function uniformQualitySummary(entry) {
@@ -413,6 +497,12 @@ function appendJobEditor(container, entry, jobIndex) {
   if (!item) return;
   const details = document.createElement("details");
   details.className = "batch-queue-job-editor";
+  const jobKey = `${entry.queueEntryId}:job:${jobIndex}`;
+  details.open = jobDisclosureOpen.has(jobKey);
+  details.addEventListener("toggle", () => {
+    if (details.open) jobDisclosureOpen.add(jobKey);
+    else jobDisclosureOpen.delete(jobKey);
+  });
   const summary = document.createElement("summary");
   summary.textContent = `Job ${jobIndex + 1}`;
   details.append(summary);
@@ -449,6 +539,12 @@ function appendJobEditor(container, entry, jobIndex) {
   });
   const tech = document.createElement("details");
   tech.className = "batch-queue-tech-details";
+  const techKey = `${entry.queueEntryId}:jobtech:${jobIndex}`;
+  tech.open = jobDisclosureOpen.has(techKey);
+  tech.addEventListener("toggle", () => {
+    if (tech.open) jobDisclosureOpen.add(techKey);
+    else jobDisclosureOpen.delete(techKey);
+  });
   const techSummary = document.createElement("summary");
   techSummary.textContent = "Dettagli tecnici";
   const techBody = document.createElement("pre");
@@ -493,12 +589,15 @@ function renderEntryCard(entry, index, entries) {
   const card = document.createElement("div");
   card.className = "batch-queue-card";
   card.dataset.entryId = entry.queueEntryId;
+  card.dataset.entryState = entry.state || "";
   const jobs = entry.snapshot?.items || [];
   const editable = entry.state === QUEUE_ENTRY_STATE.QUEUED;
   const isCurrent = runtimeView?.currentEntryId === entry.queueEntryId;
   const jobProgress = isCurrent && runtimeView?.currentJobIndex != null
     ? `Job ${Number(runtimeView.currentJobIndex) + 1} / ${jobs.length}`
-    : `${jobs.length} job`;
+    : entry.state === QUEUE_ENTRY_STATE.COMPLETED
+      ? `${jobs.length}/${jobs.length} job`
+      : `${jobs.length} job`;
   const workflow = entry.snapshot?.source?.workflowLabel || entry.snapshot?.source?.workflowId || "—";
 
   const head = document.createElement("div");
@@ -506,8 +605,8 @@ function renderEntryCard(entry, index, entries) {
   const title = document.createElement("strong");
   title.textContent = `${index + 1}. ${entry.name}`;
   const state = document.createElement("span");
-  state.className = "batch-queue-state";
-  state.textContent = ENTRY_STATE_LABELS[entry.state] || entry.state;
+  state.className = `batch-queue-state state-${entry.state || "unknown"}`;
+  state.textContent = entryStatusLabel(entry.state);
   head.append(title, state);
 
   const meta = document.createElement("div");
@@ -524,8 +623,24 @@ function renderEntryCard(entry, index, entries) {
 
   card.append(head, meta, sourceMeta);
 
+  if (isCurrent && runtimeView?.armed) {
+    const live = document.createElement("div");
+    live.className = "batch-queue-card-live";
+    if (liveRenderProgress?.kind === "numeric") {
+      live.textContent = `Render step ${liveRenderProgress.value} / ${liveRenderProgress.max}`;
+    } else if (entry.state === QUEUE_ENTRY_STATE.RUNNING || entry.state === QUEUE_ENTRY_STATE.SUBMITTING) {
+      live.textContent = "Rendering…";
+    }
+    if (live.textContent) card.append(live);
+  }
+
   const tech = document.createElement("details");
   tech.className = "batch-queue-tech-details";
+  tech.open = techDetailsOpen.has(entry.queueEntryId);
+  tech.addEventListener("toggle", () => {
+    if (tech.open) techDetailsOpen.add(entry.queueEntryId);
+    else techDetailsOpen.delete(entry.queueEntryId);
+  });
   const techSummary = document.createElement("summary");
   techSummary.textContent = "Dettagli tecnici";
   const techBody = document.createElement("pre");
@@ -758,6 +873,7 @@ function createUi() {
   section.innerHTML = `
     <h3 class="batch-queue-heading">CODA</h3>
     <p id="batchQueueSummary" class="batch-queue-summary">0 Batch · 0 Job</p>
+    <div id="batchQueueProgress" class="batch-queue-progress" hidden></div>
     <p id="batchQueueRecoveryBanner" class="batch-queue-recovery" hidden></p>
     <div class="batch-queue-controls">
       <label>Policy errori:
@@ -799,6 +915,22 @@ export function initBatchQueueUi({ getProjectId, onPlanDirty } = {}) {
     void syncBatchQueuePlanToServer();
     void fetchRuntime();
   });
+  window.addEventListener("h3-comfy-progress", event => {
+    const progress = event?.detail?.progress || null;
+    liveRenderProgress = progress;
+    // Refresh progress panel without waiting for the next poll.
+    const entries = displayEntries();
+    if (entries.length) renderSummary(entries);
+  });
+}
+
+/** Test helpers: disclosure UI state (not project authority). */
+export function __testGetTechDetailsOpen() {
+  return new Set(techDetailsOpen);
+}
+export function __testSetTechDetailsOpen(ids = []) {
+  techDetailsOpen.clear();
+  for (const id of ids) techDetailsOpen.add(id);
 }
 
 export function bindBatchQueueProject(projectId = "") {

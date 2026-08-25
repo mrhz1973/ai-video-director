@@ -74,6 +74,7 @@ import {
   validateBatchOwnedLora
 } from "../lib/batch-lora-snapshot.mjs";
 import { H3_LORA_OFF } from "../lib/h3-lora-catalog.mjs";
+import { buildBatchProgressView } from "./batch-queue-progress.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -95,6 +96,8 @@ let suppressLocalLoad = false;
 let assetContextProvider = null;
 /** UI-session only: index -> expanded. Not persisted to project JSON. */
 const batchExpandState = new Map();
+let liveBatchRenderProgress = null;
+let batchRunStartedAt = null;
 
 function clearBatchExpandState() {
   batchExpandState.clear();
@@ -417,7 +420,10 @@ function persistRuntime() {
 
 function loadRuntime() {
   const saved = safeParse(localStorage.getItem(RUNTIME_KEY) || "null");
-  if (saved?.version === 1 && Array.isArray(saved.jobs) && saved.jobs.length) runtime = saved;
+  if (saved?.version === 1 && Array.isArray(saved.jobs) && saved.jobs.length) {
+    runtime = saved;
+    batchRunStartedAt = saved.startedAt || saved.createdAt || null;
+  }
   renderRuntime();
   if (runtime?.jobs?.some(job => !isTerminalBatchState(job.state))) startPolling();
 }
@@ -1015,6 +1021,7 @@ async function runSequentialBatch(snapshot) {
       version: 1,
       batchId,
       createdAt: Date.now(),
+      startedAt: Date.now(),
       workflowId: snapshot.workflowId,
       workflowLabel: snapshot.workflowLabel,
       model: snapshot.model,
@@ -1029,6 +1036,7 @@ async function runSequentialBatch(snapshot) {
         outputsFetched: false
       }))
     };
+    batchRunStartedAt = runtime.startedAt;
     persistRuntime();
     submitted = result.accepted.length > 0;
     renderRuntime();
@@ -1273,8 +1281,19 @@ function renderRuntime() {
   }
   const summary = summarizeBatchJobs(runtime.jobs);
   monitor.hidden = false;
+  const progress = buildBatchProgressView({
+    jobs: runtime.jobs,
+    renderProgress: liveBatchRenderProgress,
+    startedAt: batchRunStartedAt || runtime.startedAt || null
+  });
   const runtimeSummary = formatBatchRuntimeSummary(runtime.jobs);
-  monitor.innerHTML = `<strong>BATCH ${summary.completed}/${summary.total}</strong><span>${runtimeSummary} · ${summary.running} running · ${summary.pending} pending</span>`;
+  const renderBits = progress.render.kind === "numeric"
+    ? ` · Step ${progress.render.value}/${progress.render.max}`
+    : progress.running
+      ? " · Rendering…"
+      : "";
+  const etaBits = progress.etaText ? ` · ETA ${progress.etaText}` : "";
+  monitor.innerHTML = `<strong>BATCH ${progress.completed}/${progress.total}</strong><span>${progress.label}${renderBits} · ${runtimeSummary} · ${summary.running} running · ${summary.pending} pending · Tempo ${progress.elapsed.text}${etaBits}</span>`;
   renderBatchInterruptControls();
 
   const title = document.createElement("div");
@@ -1414,6 +1433,10 @@ async function init() {
   window.addEventListener("h3-batch-queue-armed", () => updateQueueButton());
   window.addEventListener("h3-batch-queue-changed", () => updateQueueButton());
   window.addEventListener("h3-batch-queue-runtime", () => updateQueueButton());
+  window.addEventListener("h3-comfy-progress", event => {
+    liveBatchRenderProgress = event?.detail?.progress || null;
+    if (runtime?.jobs?.length) renderRuntime();
+  });
   window.addEventListener("h3-deferred-batch-cancel", () => {
     setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
     updateQueueButton();

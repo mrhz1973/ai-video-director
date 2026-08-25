@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-25 — v0.18.0
+
+- **Visible CODA/BATCH runtime progress**: armed CODA shows overall job progress (completed / running / pending), current entry + job X/Y, Comfy step value/max when authoritative progress events match the active prompt, elapsed time from queue `startedAt`, and an approximate ETA only when enough completed-job data exists (never fake %).
+- Immediate BATCH monitor summary uses the same progress helpers for job X/Y, optional step progress, elapsed, and honest ETA.
+- **Stable technical details**: per-entry “Dettagli tecnici” (and job editors) keep open/closed state across CODA polling rerenders via UI-only Sets keyed by immutable `queueEntryId`.
+
 ## 2026-08-25 — v0.17.0
 
 - **Batch-owned global LoRA + strength** under **Impostazioni globali batch**: after **Prepara dal draft**, the Batch inherits the current SCENA LoRA once, then owns `source.loraId` / `source.loraStrength` independently (SCENA edits no longer mutate a prepared Batch).

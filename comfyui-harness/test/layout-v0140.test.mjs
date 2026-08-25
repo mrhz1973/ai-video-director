@@ -35,7 +35,14 @@ const pkg = JSON.parse(readFileSync(path.join(root, "../package.json"), "utf8"))
 const galleryDom = readFileSync(path.join(root, "../public/session-gallery-dom.mjs"), "utf8");
 
 test("v0.14.x package version", () => {
-  assert.match(pkg.version, /^0\.1[567]\./);
+  assert.match(pkg.version, /^0\.1[5678]\./);
+});
+
+test("CODA progress panel and stable tech details contracts exist", () => {
+  assert.match(batchQueueUi, /id="batchQueueProgress"/);
+  assert.match(batchQueueUi, /techDetailsOpen/);
+  assert.match(batchQueueUi, /buildCodaProgressView/);
+  assert.match(batchUi, /buildBatchProgressView/);
 });
 
 test("SCENA/BATCH/CODA/OUTPUT primary navigation present", () => {

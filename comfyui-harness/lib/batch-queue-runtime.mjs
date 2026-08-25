@@ -141,6 +141,8 @@ export function mergeRuntimePublicView({
     overallState: runtime?.overallState || QUEUE_OVERALL_STATE.IDLE,
     armed: Boolean(runtime?.armed),
     authorityPresent: Boolean(runtime?.queueRunId),
+    // Session clock for display elapsed/ETA only — not execution authority.
+    startedAt: Number.isFinite(Number(runtime?.startedAt)) ? Number(runtime.startedAt) : null,
     currentEntryId: runtime?.currentEntryId || null,
     currentBatchId: runtime?.currentBatchId || null,
     currentJobIndex: runtime?.currentJobIndex ?? null,
