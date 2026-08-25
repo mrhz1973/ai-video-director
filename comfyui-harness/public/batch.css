@@ -9,4 +9,22 @@
 .batch-queue-job-body textarea,.batch-queue-job-body input{background:#0f1317;color:#edf1f4;border:1px solid #343b45;border-radius:6px;padding:6px;font-size:11px}
 .batch-queue-recovery-tools,.batch-queue-card-source{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:10px;color:#9eabb8}
 .batch-queue-recovery-tools button{font-size:10px;padding:3px 8px}
+.batch-queue-progress{margin:0 0 12px;padding:10px;border:1px solid #2c343d;border-radius:9px;background:#12161a;display:grid;gap:8px}
+.batch-queue-progress-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:8px;align-items:center}
+.batch-queue-progress-label{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9eabb8}
+.batch-queue-progress-meta{font-size:11px;color:#c7d0d8;white-space:nowrap}
+.batch-queue-progress progress{width:100%;height:10px;accent-color:#c9893d}
+.batch-queue-progress-counts{margin:0;font-size:11px;color:#9eabb8}
+.batch-queue-progress-current{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;color:#9eabb8}
+.batch-queue-progress-current span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#7f8b97}
+.batch-queue-progress-current strong{color:#edf1f4;font-size:12px}
+.batch-queue-progress-time{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:#9eabb8}
+.batch-queue-progress-time span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#7f8b97}
+.batch-queue-progress-time strong{color:#edf1f4}
+.batch-queue-card-live{margin-top:6px;font-size:11px;color:#f1c58e}
+.batch-queue-state.state-completed{color:#8ed3b2}
+.batch-queue-state.state-failed,.batch-queue-state.state-cancelled{color:#e2a0a0}
+.batch-queue-state.state-running,.batch-queue-state.state-submitting{color:#f1c58e}
+.batch-queue-state.state-queued{color:#9eabb8}
+.batch-queue-state.state-recovery_required{color:#f1c58e}
 .batch-global-lora{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.8fr);gap:8px;margin:8px 0}.batch-global-lora label{margin:0;font-size:11px}.batch-global-lora .hint{display:block;margin-top:2px;color:#8b96a3;font-size:10px;font-weight:400;text-transform:none;letter-spacing:0}.batch-global-lora input.inactive{opacity:.55}.batch-global-apply-note{margin:6px 0 0;font-size:10px;color:#8b96a3;line-height:1.35}
