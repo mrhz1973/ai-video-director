@@ -6,6 +6,7 @@
 - LoRA remains shared for the whole Batch (not per-job). **Applica a tutti** still updates only Megapixel / Aspect / Steps.
 - Immediate and deferred Batch submission now freeze and forward the prepared Batch LoRA into `/api/queue` with the same semantics as multi-Batch CODA (`loraId`, optional `loraStrength` when active). OFF omits active strength.
 - Persistence via existing Batch draft / project `source` LoRA fields; legacy drafts without LoRA normalize to OFF.
+- **Client validation:** Batch CODA add and immediate/deferred queue gate on `validateBatchOwnedLora()` (wraps `validateLoraSelection`); invalid strength / unknown ID / unavailable / unsupported workflow fail closed. Unknown persisted `loraId` is shown as an explicit invalid option, never as OFF while source stays invalid.
 
 ## 2026-08-25 — v0.16.0
 

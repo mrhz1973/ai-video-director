@@ -293,6 +293,7 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 
 - Batch **Impostazioni globali batch** exposes **LoRA** / **Forza LoRA**. **Prepara dal draft** copies the current SCENA selection into Batch `source`; afterward Batch LoRA is independent of SCENA.
 - LoRA is never stored on individual Batch items. Immediate/deferred Batch freezes `source` LoRA into the submission snapshot and forwards it on `/api/queue` with the same semantics as multi-Batch CODA.
+- Submission gates (`getCurrentBatchSnapshotForQueue`, `queueBatch`) call `validateBatchOwnedLora()` before queue; `normalizePersistedLoraSettings` is persistence compatibility only. Invalid persisted IDs render as an explicit invalid selector option (not OFF).
 - Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
 
 ## Output archive — Archivio locale Director (v0.16.0)

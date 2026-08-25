@@ -63,17 +63,17 @@ import {
 } from "./first-frame-view.mjs";
 import {
   applyBatchH3LoraCapability,
-  batchH3LoraSelectionBlockedReason,
+  getH3LoraAvailability,
   initBatchH3LoraControls,
   readBatchH3LoraFromDom,
   syncBatchH3LoraFromSettings
 } from "./h3-lora-ui.mjs";
 import {
   freezeBatchLoraFields,
-  queuePayloadLoraFields
+  queuePayloadLoraFields,
+  validateBatchOwnedLora
 } from "../lib/batch-lora-snapshot.mjs";
-import { normalizePersistedLoraSettings } from "../lib/h3-lora-validation.mjs";
-import { presetSupportsH3Lora } from "../lib/h3-lora-catalog.mjs";
+import { H3_LORA_OFF } from "../lib/h3-lora-catalog.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -125,14 +125,38 @@ function syncBatchLoraControls() {
   applyBatchH3LoraCapability({ enabled: hasBatch, preset });
 }
 
+/**
+ * Persist Batch-owned LoRA from DOM without coerce-to-default.
+ * Invalid explicit strength is kept so validateBatchOwnedLora can fail closed.
+ * Empty strength on a legitimate profile remains omitted (profile default at validate).
+ */
 function commitBatchLoraFromDom() {
   if (!source || !items.length) return;
-  const next = normalizePersistedLoraSettings(readBatchH3LoraFromDom());
-  const updated = { ...source, loraId: next.loraId };
-  if (next.loraStrength != null) updated.loraStrength = next.loraStrength;
-  else delete updated.loraStrength;
+  const next = readBatchH3LoraFromDom();
+  const loraId =
+    next.loraId == null || next.loraId === ""
+      ? H3_LORA_OFF
+      : String(next.loraId);
+  const updated = { ...source, loraId };
+  if (loraId === H3_LORA_OFF) {
+    delete updated.loraStrength;
+  } else if (next.loraStrength != null && next.loraStrength !== "") {
+    updated.loraStrength = next.loraStrength;
+  } else {
+    delete updated.loraStrength;
+  }
   source = updated;
   markEdited();
+}
+
+/** Authoritative Batch LoRA gate for CODA snapshot + immediate/deferred queue. */
+function validatePreparedBatchLora(loraSource = source) {
+  return validateBatchOwnedLora({
+    loraId: loraSource?.loraId,
+    loraStrength: loraSource?.loraStrength,
+    preset: batchPresetForSource(loraSource) || batchPresetForSource(source),
+    availability: config?.h3Lora?.availability ?? getH3LoraAvailability()
+  });
 }
 
 function syncBatchGlobalControls() {
@@ -363,12 +387,8 @@ export function getCurrentBatchSnapshotForQueue() {
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return { ok: false, error: validation.errors.join(" ") };
   if (!source) return { ok: false, error: "Nessun batch preparato." };
-  const loraBlocked = batchH3LoraSelectionBlockedReason(source);
-  if (loraBlocked) return { ok: false, error: loraBlocked };
-  const preset = batchPresetForSource(source);
-  if (!presetSupportsH3Lora(preset) && source.loraId && source.loraId !== "off") {
-    return { ok: false, error: "LoRA non supportato per questo workflow." };
-  }
+  const loraCheck = validatePreparedBatchLora(source);
+  if (!loraCheck.ok) return { ok: false, error: loraCheck.error };
   return {
     ok: true,
     draft: {
@@ -1044,12 +1064,8 @@ async function queueBatch() {
   const snapshot = freezeSubmissionSnapshot(source, live);
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
-  const loraBlocked = batchH3LoraSelectionBlockedReason(snapshot);
-  if (loraBlocked) return setFeedback(loraBlocked, "error");
-  const preset = batchPresetForSource(source);
-  if (!presetSupportsH3Lora(preset) && snapshot.loraId && snapshot.loraId !== "off") {
-    return setFeedback("LoRA non supportato per questo workflow.", "error");
-  }
+  const loraCheck = validatePreparedBatchLora(snapshot);
+  if (!loraCheck.ok) return setFeedback(loraCheck.error, "error");
 
   submitting = true;
   updateQueueButton();
