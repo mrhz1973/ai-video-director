@@ -61,6 +61,19 @@ import {
   appendBatchFirstFrameSummary,
   resolveEffectiveFirstFrame
 } from "./first-frame-view.mjs";
+import {
+  applyBatchH3LoraCapability,
+  getH3LoraAvailability,
+  initBatchH3LoraControls,
+  readBatchH3LoraFromDom,
+  syncBatchH3LoraFromSettings
+} from "./h3-lora-ui.mjs";
+import {
+  freezeBatchLoraFields,
+  queuePayloadLoraFields,
+  validateBatchOwnedLora
+} from "../lib/batch-lora-snapshot.mjs";
+import { H3_LORA_OFF } from "../lib/h3-lora-catalog.mjs";
 
 const $ = id => document.getElementById(id);
 const DRAFT_PREFIX = "h3BatchDraft:v1:";
@@ -95,6 +108,57 @@ function setAllBatchJobsExpanded(open) {
   renderBatch();
 }
 
+function batchPresetForSource(prepared = source) {
+  const workflowId = prepared?.workflowId;
+  if (!workflowId || !config?.presets) return null;
+  return config.presets.find(preset => preset.id === workflowId) || null;
+}
+
+function syncBatchLoraControls() {
+  const hasBatch = Boolean(items.length && source);
+  const preset = batchPresetForSource(source);
+  if (hasBatch) {
+    syncBatchH3LoraFromSettings(source);
+  } else {
+    syncBatchH3LoraFromSettings({ loraId: "off" });
+  }
+  applyBatchH3LoraCapability({ enabled: hasBatch, preset });
+}
+
+/**
+ * Persist Batch-owned LoRA from DOM without coerce-to-default.
+ * Invalid explicit strength is kept so validateBatchOwnedLora can fail closed.
+ * Empty strength on a legitimate profile remains omitted (profile default at validate).
+ */
+function commitBatchLoraFromDom() {
+  if (!source || !items.length) return;
+  const next = readBatchH3LoraFromDom();
+  const loraId =
+    next.loraId == null || next.loraId === ""
+      ? H3_LORA_OFF
+      : String(next.loraId);
+  const updated = { ...source, loraId };
+  if (loraId === H3_LORA_OFF) {
+    delete updated.loraStrength;
+  } else if (next.loraStrength != null && next.loraStrength !== "") {
+    updated.loraStrength = next.loraStrength;
+  } else {
+    delete updated.loraStrength;
+  }
+  source = updated;
+  markEdited();
+}
+
+/** Authoritative Batch LoRA gate for CODA snapshot + immediate/deferred queue. */
+function validatePreparedBatchLora(loraSource = source) {
+  return validateBatchOwnedLora({
+    loraId: loraSource?.loraId,
+    loraStrength: loraSource?.loraStrength,
+    preset: batchPresetForSource(loraSource) || batchPresetForSource(source),
+    availability: config?.h3Lora?.availability ?? getH3LoraAvailability()
+  });
+}
+
 function syncBatchGlobalControls() {
   const mpField = $("batchGlobalMp");
   const aspectField = $("batchGlobalAspect");
@@ -102,6 +166,7 @@ function syncBatchGlobalControls() {
   const applyBtn = $("batchGlobalApply");
   const hasBatch = items.length > 0;
   if (applyBtn) applyBtn.disabled = !hasBatch;
+  syncBatchLoraControls();
   if (!hasBatch) {
     if (mpField) { mpField.value = ""; mpField.placeholder = "—"; }
     if (aspectField) aspectField.value = "";
@@ -321,6 +386,9 @@ export function getCurrentBatchSnapshotForQueue() {
   if (snapshot.error) return { ok: false, error: snapshot.error };
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return { ok: false, error: validation.errors.join(" ") };
+  if (!source) return { ok: false, error: "Nessun batch preparato." };
+  const loraCheck = validatePreparedBatchLora(source);
+  if (!loraCheck.ok) return { ok: false, error: loraCheck.error };
   return {
     ok: true,
     draft: {
@@ -452,6 +520,7 @@ function freezeSubmissionSnapshot(preparedSource = source, live = null) {
   for (const role of attachmentRoles) {
     if (role?.key) roleLabels[role.key] = role.label || role.key;
   }
+  const lora = freezeBatchLoraFields(base);
   return {
     workflowId: base.workflowId,
     workflowLabel: base.workflowLabel || base.workflowId,
@@ -468,7 +537,8 @@ function freezeSubmissionSnapshot(preparedSource = source, live = null) {
     megapixelsMax: Number(liveMeta.megapixelsMax ?? base.megapixelsMax ?? 16),
     durationMin: Number(liveMeta.durationMin ?? base.durationMin ?? 4),
     durationMax: Number(liveMeta.durationMax ?? base.durationMax ?? 15),
-    base: base.base ? { ...base.base } : (liveMeta.base ? { ...liveMeta.base } : {})
+    base: base.base ? { ...base.base } : (liveMeta.base ? { ...liveMeta.base } : {}),
+    ...lora
   };
 }
 
@@ -567,7 +637,7 @@ function createUi() {
   section.innerHTML = `
     <details id="batchDetails">
       <summary><span>${BATCH_OPTIONAL_HEADING}</span><span id="batchBadge" class="batch-badge">nessun job</span></summary>
-      <p class="batch-help">Usa questa sezione solo per preparare più render. <strong>Genera singolo</strong> crea sempre una sola clip e non modifica i job preparati qui sotto. Workflow e modello restano comuni; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job.</p>
+      <p class="batch-help">Usa questa sezione solo per preparare più render. <strong>Genera singolo</strong> crea sempre una sola clip e non modifica i job preparati qui sotto. Workflow, modello e LoRA restano impostazioni comuni del Batch; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job. Dopo «Prepara dal draft» il LoRA del Batch è indipendente da SCENA.</p>
       <div class="batch-prepare-row">
         <label>Numero job<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
         <button type="button" class="secondary" id="batchPrepare">Prepara dal draft</button>
@@ -588,7 +658,12 @@ function createUi() {
           </select></label>
           <label>Steps<input id="batchGlobalSteps" type="number" min="1" disabled></label>
         </div>
+        <div class="batch-global-lora">
+          <label>LoRA<select id="batchLoraId" disabled></select><small id="batchLoraHint" class="hint"></small></label>
+          <label>Forza LoRA<input id="batchLoraStrength" type="number" min="0" max="1.5" step="0.05" value="0.7" disabled></label>
+        </div>
         <button type="button" class="secondary" id="batchGlobalApply" disabled>Applica a tutti gli 0 job</button>
+        <p class="batch-global-apply-note">«Applica a tutti» aggiorna solo Megapixel, Aspect e Steps su ogni job. LoRA è condiviso a livello Batch e si salva subito.</p>
       </div>
       <div id="batchList" class="batch-list"></div>
       <div class="batch-actions">
@@ -642,6 +717,7 @@ function createUi() {
     if (!result.ok) setFeedback(result.error, "error");
     else setFeedback(`Impostazioni globali applicate a ${items.length} job.`, "ok");
   });
+  initBatchH3LoraControls({ onChange: () => commitBatchLoraFromDom() });
   $("batchAdd").onclick = () => {
     if (!items.length) return prepareFromDraft();
     if (items.length >= MAX_BATCH_JOBS) return;
@@ -855,6 +931,7 @@ function payloadFor(item, snapshot) {
     duration: normalizeDurationSeconds(item.duration),
     aspect: item.aspect,
     seed: Number(item.seed),
+    ...queuePayloadLoraFields(snapshot),
     files: resolveBatchItemFiles(item, snapshot.files || {})
   };
 }
@@ -987,6 +1064,8 @@ async function queueBatch() {
   const snapshot = freezeSubmissionSnapshot(source, live);
   const validation = validateCurrentBatch(snapshot);
   if (!validation.valid) return setFeedback(validation.errors.join(" "), "error");
+  const loraCheck = validatePreparedBatchLora(snapshot);
+  if (!loraCheck.ok) return setFeedback(loraCheck.error, "error");
 
   submitting = true;
   updateQueueButton();

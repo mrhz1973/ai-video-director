@@ -91,15 +91,28 @@ export function validateLoraSelection(input = {}) {
   };
 }
 
-/** Normalize persisted project/batch settings with backward compatibility. */
+/**
+ * Normalize persisted project/batch settings with backward compatibility.
+ *
+ * Genuinely missing strength on an active profile is omitted (profile default
+ * applies only at validation/submit). An explicitly present invalid strength
+ * (non-numeric or out-of-range numeric) is preserved so Batch/UI gates can
+ * fail closed instead of silently substituting the profile default.
+ */
 export function normalizePersistedLoraSettings(settings = {}) {
   const loraId = normalizeLoraId(settings.loraId);
-  const loraStrength = isActiveH3LoraId(loraId)
-    ? normalizeLoraStrength(settings.loraStrength, { loraId })
-    : null;
   const out = { loraId };
-  if (isActiveH3LoraId(loraId) && Number.isFinite(loraStrength)) {
-    out.loraStrength = loraStrength;
+  if (!isActiveH3LoraId(loraId)) return out;
+
+  const raw = settings.loraStrength;
+  if (raw == null || raw === "") return out;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) {
+    out.loraStrength = numeric;
+    return out;
   }
+  // Keep non-numeric explicit value distinguishable from absent strength.
+  out.loraStrength = typeof raw === "string" ? raw : String(raw);
   return out;
 }

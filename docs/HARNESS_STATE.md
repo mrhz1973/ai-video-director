@@ -9,7 +9,7 @@ This file is the source of truth for the current MiniMax H3 / ComfyUI harness ar
 
 ## What the harness is
 
-The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.16.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
+The operational harness lives in `comfyui-harness/` and is a small Node.js application (`ai-video-director-harness`, v0.17.0, Node >=20) that provides a local browser UI plus an HTTP/SSE bridge to a separately running ComfyUI instance.
 
 Default local endpoints:
 
@@ -288,6 +288,13 @@ v0.15.0 adds optional **single-LoRA** selection for I2VA and FL2VA presets only.
 - Runtime: `cloneAndBind` then optional deterministic insert of one `LoraLoaderModelOnly` node (`900001`) between UNet loader node `136` and MODEL consumers (`BasicScheduler`, `BasicGuider`). OFF leaves the graph unchanged.
 - Availability: `GET /api/config` → `h3Lora.availability` from ComfyUI `object_info/LoraLoaderModelOnly`. Missing files stay visible but block Generate (fail-closed, no silent fallback).
 - Validation: `lib/h3-lora-validation.mjs` rejects unknown IDs, forbidden client paths (`lora_name`, etc.) and out-of-range strength before `/prompt`.
+
+### Batch-owned global LoRA (v0.17.0)
+
+- Batch **Impostazioni globali batch** exposes **LoRA** / **Forza LoRA**. **Prepara dal draft** copies the current SCENA selection into Batch `source`; afterward Batch LoRA is independent of SCENA.
+- LoRA is never stored on individual Batch items. Immediate/deferred Batch freezes `source` LoRA into the submission snapshot and forwards it on `/api/queue` with the same semantics as multi-Batch CODA.
+- Submission gates (`getCurrentBatchSnapshotForQueue`, `queueBatch`) call `validateBatchOwnedLora()` before queue; `normalizePersistedLoraSettings` is persistence compatibility only and preserves explicitly invalid strengths so they remain distinguishable from a missing strength (profile default). Invalid persisted IDs render as an explicit invalid selector option (not OFF).
+- Availability and allowlisted catalog validation remain shared with SCENA; the server remains authoritative.
 
 ## Output archive — Archivio locale Director (v0.16.0)
 

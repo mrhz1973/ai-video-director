@@ -213,7 +213,10 @@ test("global batch settings UI and explicit apply only", () => {
   assert.match(batchUi, /Comprimi tutti/);
   const applyRegion = batchUi.slice(batchUi.indexOf("function applyBatchGlobalSettings"), batchUi.indexOf("function collectSourceSnapshot"));
   assert.match(applyRegion, /markEdited\(\)/);
-  const expandRegion = batchUi.slice(batchUi.indexOf("function setAllBatchJobsExpanded"), batchUi.indexOf("function syncBatchGlobalControls"));
+  const expandRegion = batchUi.slice(
+    batchUi.indexOf("function setAllBatchJobsExpanded"),
+    batchUi.indexOf("\nfunction batchPresetForSource")
+  );
   assert.doesNotMatch(expandRegion, /markEdited/);
   assert.doesNotMatch(expandRegion, /persistDraft/);
 });
