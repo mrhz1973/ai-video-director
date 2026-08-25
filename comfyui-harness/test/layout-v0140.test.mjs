@@ -35,7 +35,7 @@ const pkg = JSON.parse(readFileSync(path.join(root, "../package.json"), "utf8"))
 const galleryDom = readFileSync(path.join(root, "../public/session-gallery-dom.mjs"), "utf8");
 
 test("v0.14.x package version", () => {
-  assert.match(pkg.version, /^0\.1[5678]\./);
+  assert.match(pkg.version, /^0\.1[56789]\./);
 });
 
 test("CODA progress panel and stable tech details contracts exist", () => {
@@ -290,14 +290,16 @@ test("inspector secondary tabs are Asset/Input only", () => {
 });
 
 test("OUTPUT tab renders Destinazione e nomi before Clip sessione", () => {
-  const outputView = html.match(/id="view-output"[\s\S]*?<\/div>\s*<\/section>/);
-  assert.ok(outputView, "OUTPUT tab panel markup expected");
-  const panel = outputView[0];
+  const start = html.indexOf('id="view-output"');
+  assert.ok(start >= 0, "OUTPUT tab panel markup expected");
+  const end = html.indexOf('id="inspector"', start);
+  const panel = end > start ? html.slice(start, end) : html.slice(start);
   const destinationIdx = panel.indexOf('id="outputSettingsDetails"');
   const galleryIdx = panel.indexOf('id="sessionGallerySection"');
   assert.ok(destinationIdx >= 0, "Destinazione e nomi section expected in OUTPUT tab");
   assert.ok(galleryIdx >= 0, "Clip sessione section expected in OUTPUT tab");
   assert.ok(destinationIdx < galleryIdx, "Destinazione e nomi must appear before Clip sessione");
+  assert.match(panel, /id="cloudMirrorSection"/);
 });
 
 test("F5 persistence surfaces still present (draft/queue/session outputs)", () => {

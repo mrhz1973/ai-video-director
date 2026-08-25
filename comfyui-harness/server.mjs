@@ -65,6 +65,17 @@ import {
   archiveCompletedOutput,
   configureArchiveDestination
 } from "./lib/output-archive.mjs";
+import {
+  resolveCloudMirrorStorePath,
+  readCloudMirrorStore,
+  publicCloudMirrorView
+} from "./lib/cloud-mirror-store.mjs";
+import {
+  configureCloudMirrorDestination,
+  mirrorCompletedOutput,
+  tryAutoCloudMirror,
+  updateCloudMirrorSettings
+} from "./lib/cloud-mirror.mjs";
 
 function resolveConfiguredFilesystemPath(baseRoot, value) {
   const raw = String(value || "").trim();
@@ -87,6 +98,7 @@ const projectDir = path.resolve(root, config.projectDirectory || "./projects");
 const comfyOutputDirectory = resolveConfiguredFilesystemPath(root, config.comfyOutputDirectory)
   || resolveConfiguredFilesystemPath(root, process.env.H3_COMFY_OUTPUT_DIRECTORY);
 const archiveStorePath = resolveArchiveStorePath({ env: process.env });
+const cloudMirrorStorePath = resolveCloudMirrorStorePath({ env: process.env });
 const projectStore = createProjectStore(projectDir);
 const logger = createLogger(path.join(root, "logs", "harness.log"));
 const runtimeOwnership = createRuntimeOwnershipRegistry();
@@ -286,6 +298,9 @@ const server = http.createServer(async (req, res) => {
         archiveConfigured: Boolean(
           publicArchiveDestinationView(await readArchiveStore(archiveStorePath), "global").configured
         ),
+        cloudMirrorConfigured: Boolean(
+          publicCloudMirrorView(await readCloudMirrorStore(cloudMirrorStorePath), "global").configured
+        ),
         h3Lora: {
           profiles: publicH3LoraCatalog(),
           availability: loraAvailability.availability
@@ -390,19 +405,182 @@ const server = http.createServer(async (req, res) => {
           plan: input.plan && typeof input.plan === "object" ? input.plan : {},
           folderKey: input.folderKey || input.plan?.folderKey || "global"
         });
+        // Secondary cloud mirror — isolated; never fails archive/render.
+        const cloudMirror = await tryAutoCloudMirror({
+          storePath: cloudMirrorStorePath,
+          archiveStorePath,
+          outputRoot: comfyOutputDirectory,
+          comfyUrl: comfy,
+          promptId: input.promptId,
+          filename: input.filename,
+          subfolder: input.subfolder || "",
+          type: input.type || "output",
+          folderKey: input.folderKey || input.plan?.folderKey || "global",
+          archiveFolderKey: input.folderKey || input.plan?.folderKey || "global",
+          projectId: input.plan?.projectId || "",
+          projectLabel: input.plan?.projectLabel || ""
+        });
         logger.info("archive_output", {
           prompt_id: shortId(input.promptId),
           filename: String(input.filename || "").slice(0, 64),
           skipped: Boolean(result.skipped),
-          already: Boolean(result.alreadyArchived)
+          already: Boolean(result.alreadyArchived),
+          cloud_status: cloudMirror?.status || null
         });
-        return json(res, 200, result);
+        return json(res, 200, { ...result, cloudMirror });
       } catch (error) {
         if (error instanceof ComfyOutputPathError) {
           return json(res, error.status || 400, { error: error.message, code: error.code });
         }
         logger.error("archive_output", { reason: error.message });
         return json(res, 500, { error: "Archive failed", code: "archive-failed" });
+      }
+    }
+    if (req.method === "GET" && url.pathname === "/api/cloud-mirror/config") {
+      const folderKey = normalizeFolderKey(url.searchParams.get("folderKey") || "global");
+      const store = await readCloudMirrorStore(cloudMirrorStorePath);
+      return json(res, 200, {
+        ...publicCloudMirrorView(store, folderKey),
+        mode: "sync-folder-copy"
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/cloud-mirror/settings") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      if (
+        input.absolutePath || input.destination || input.path || input.folderPath
+        || input.destinationPath || input.sourcePath
+      ) {
+        return json(res, 400, {
+          error: "Il percorso destinazione non può essere imposto dal browser.",
+          code: "cloud-destination-rejected"
+        });
+      }
+      try {
+        const view = await updateCloudMirrorSettings({
+          storePath: cloudMirrorStorePath,
+          enabled: input.enabled,
+          folderKey: normalizeFolderKey(input.folderKey || "global")
+        });
+        return json(res, 200, { ok: true, ...view, mode: "sync-folder-copy" });
+      } catch (error) {
+        logger.error("cloud_mirror_settings", { reason: error.message });
+        return json(res, 500, { error: "Cloud mirror settings failed", code: "cloud-settings-failed" });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/cloud-mirror/pick-folder") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      if (input.absolutePath || input.destination || input.path || input.folderPath || input.destinationPath) {
+        return json(res, 400, {
+          error: "Il percorso destinazione non può essere imposto dal browser.",
+          code: "cloud-destination-rejected"
+        });
+      }
+      try {
+        const folderKey = normalizeFolderKey(input.folderKey || "global");
+        const selected = await pickArchiveFolderNative();
+        const view = await configureCloudMirrorDestination({
+          storePath: cloudMirrorStorePath,
+          folderKey,
+          absolutePath: selected
+        });
+        logger.info("cloud_mirror_pick_folder", { folder_key: folderKey });
+        return json(res, 200, { ok: true, ...view, mode: "sync-folder-copy" });
+      } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
+        logger.error("cloud_mirror_pick_folder", { reason: error.message });
+        return json(res, 500, { error: "Folder picker failed", code: "cloud-pick-failed" });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/cloud-mirror/open-folder") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      try {
+        const folderKey = normalizeFolderKey(input.folderKey || "global");
+        const store = await readCloudMirrorStore(cloudMirrorStorePath);
+        const view = publicCloudMirrorView(store, folderKey);
+        if (!view.configured || !view.absolutePath) {
+          return json(res, 409, {
+            error: "Cartella cloud non configurata.",
+            code: "cloud-unconfigured"
+          });
+        }
+        const result = await openArchiveFolder({ absolutePath: view.absolutePath });
+        return json(res, 200, { ...result, ...view });
+      } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
+        logger.error("cloud_mirror_open_folder", { reason: error.message });
+        return json(res, 500, { error: "Open cloud folder failed", code: "cloud-open-failed" });
+      }
+    }
+    if (req.method === "POST" && url.pathname === "/api/cloud-mirror/copy-output") {
+      let input;
+      try {
+        input = await readJsonBody(req);
+      } catch (error) {
+        return json(res, error.status || 400, { error: error.message, code: "invalid-json" });
+      }
+      if (
+        input.sourcePath
+        || input.absoluteSource
+        || input.absolutePath
+        || input.destination
+        || input.destinationPath
+        || input.folderPath
+      ) {
+        return json(res, 400, {
+          error: "Percorsi assoluti client non consentiti per la copia cloud.",
+          code: "cloud-path-rejected"
+        });
+      }
+      try {
+        const common = {
+          storePath: cloudMirrorStorePath,
+          archiveStorePath,
+          outputRoot: comfyOutputDirectory,
+          comfyUrl: comfy,
+          promptId: input.promptId,
+          filename: input.filename,
+          subfolder: input.subfolder || "",
+          type: input.type || "output",
+          folderKey: input.folderKey || "global",
+          archiveFolderKey: input.archiveFolderKey || input.folderKey || "global",
+          projectId: input.projectId || "",
+          projectLabel: input.projectLabel || ""
+        };
+        const result = input.auto
+          ? await tryAutoCloudMirror(common)
+          : await mirrorCompletedOutput({ ...common, requireEnabled: false });
+        logger.info("cloud_mirror_copy", {
+          prompt_id: shortId(input.promptId),
+          status: result.status || null,
+          already: Boolean(result.alreadyCopied),
+          auto: Boolean(input.auto)
+        });
+        return json(res, 200, result);
+      } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
+        logger.error("cloud_mirror_copy", { reason: error.message });
+        return json(res, 500, { error: "Cloud mirror copy failed", code: "cloud-copy-failed" });
       }
     }
     if (req.method === "GET" && url.pathname === "/api/projects") return json(res, 200, await projects());

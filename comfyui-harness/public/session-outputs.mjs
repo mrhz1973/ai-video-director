@@ -51,6 +51,16 @@ export function normalizeSessionOutput(raw = null) {
       bytes: Number.isFinite(Number(raw.archive.bytes)) ? Number(raw.archive.bytes) : null
     }
     : null;
+  const cloudMirror = raw.cloudMirror && typeof raw.cloudMirror === "object"
+    ? {
+      status: String(raw.cloudMirror.status || "").trim() || null,
+      filename: String(raw.cloudMirror.filename || "").trim() || null,
+      folderLabel: String(raw.cloudMirror.folderLabel || "").trim() || null,
+      copiedAt: Number(raw.cloudMirror.copiedAt) || null,
+      bytes: Number.isFinite(Number(raw.cloudMirror.bytes)) ? Number(raw.cloudMirror.bytes) : null,
+      error: String(raw.cloudMirror.error || "").trim() || null
+    }
+    : null;
   return {
     id,
     promptId,
@@ -73,6 +83,7 @@ export function normalizeSessionOutput(raw = null) {
     completedAt: Number(raw.completedAt) || Date.now(),
     available: raw.available !== false,
     archive: archive && (archive.filename || archive.folderLabel) ? archive : null,
+    cloudMirror: cloudMirror && (cloudMirror.status || cloudMirror.filename) ? cloudMirror : null,
     queueEntryId: String(raw.queueEntryId || "").trim(),
     queueBatchName: String(raw.queueBatchName || "").trim(),
     queueJobId: String(raw.queueJobId || "").trim()
@@ -222,6 +233,7 @@ export function upsertSessionOutputs(storage, records = []) {
       aspect: next.aspect || prev.aspect,
       steps: next.steps !== "" ? next.steps : prev.steps,
       archive: next.archive || prev.archive || null,
+      cloudMirror: next.cloudMirror || prev.cloudMirror || null,
       available: next.available !== false && prev.available !== false
     });
   }
@@ -246,6 +258,27 @@ export function attachArchiveMetadata(storage, {
     archive: {
       ...(current.archive || {}),
       ...(archive || {})
+    }
+  });
+  return writeSessionOutputs(storage, items);
+}
+
+export function attachCloudMirrorMetadata(storage, {
+  promptId = "",
+  filename = "",
+  subfolder = "",
+  cloudMirror = null
+} = {}) {
+  const id = sessionOutputId({ promptId, subfolder, filename });
+  const items = readSessionOutputs(storage);
+  const index = items.findIndex(item => item.id === id);
+  if (index < 0) return readSessionOutputs(storage);
+  const current = items[index];
+  items[index] = normalizeSessionOutput({
+    ...current,
+    cloudMirror: {
+      ...(current.cloudMirror || {}),
+      ...(cloudMirror || {})
     }
   });
   return writeSessionOutputs(storage, items);

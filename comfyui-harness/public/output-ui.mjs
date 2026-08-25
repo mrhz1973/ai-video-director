@@ -15,6 +15,7 @@ import {
   SESSION_OUTPUTS_CHANGED,
   applySessionGalleryReconstruction,
   attachArchiveMetadata,
+  attachCloudMirrorMetadata,
   clearSessionOutputs,
   markSessionOutputUnavailable,
   notifySessionOutputsChanged,
@@ -30,9 +31,16 @@ const PLAN_PREFIX = "h3OutputPlan:v1:";
 const ARCHIVED_PREFIX = "h3OutputArchived:v1:";
 const originalFetch = window.fetch.bind(window);
 let archiveChain = Promise.resolve();
+let cloudMirrorChain = Promise.resolve();
 let activeSettings = null;
 let activeFolderKey = "global";
 let archiveDestination = {
+  configured: false,
+  absolutePath: null,
+  folderLabel: null
+};
+let cloudMirrorState = {
+  enabled: false,
   configured: false,
   absolutePath: null,
   folderLabel: null
@@ -105,6 +113,204 @@ function setStatus(message, kind = "neutral") {
   if (!node) return;
   node.textContent = message;
   node.dataset.kind = kind;
+}
+
+function setCloudMirrorStatus(message, kind = "neutral") {
+  const node = $("cloudMirrorStatus");
+  if (!node) return;
+  node.textContent = message;
+  node.dataset.kind = kind;
+}
+
+async function refreshCloudMirrorConfig() {
+  const label = $("cloudMirrorFolderName");
+  const openBtn = $("cloudMirrorOpenFolder");
+  const auto = $("cloudMirrorAuto");
+  try {
+    const response = await originalFetch(`/api/cloud-mirror/config?folderKey=${encodeURIComponent(activeFolderKey)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Cloud mirror config failed");
+    cloudMirrorState = {
+      enabled: Boolean(data.enabled),
+      configured: Boolean(data.configured),
+      absolutePath: data.absolutePath || null,
+      folderLabel: data.folderLabel || null
+    };
+    if (auto) auto.checked = cloudMirrorState.enabled;
+    if (label) {
+      label.textContent = cloudMirrorState.configured
+        ? (cloudMirrorState.absolutePath || cloudMirrorState.folderLabel || "Cartella configurata")
+        : "Nessuna cartella scelta";
+    }
+    if (openBtn) openBtn.disabled = !cloudMirrorState.configured;
+    if (!cloudMirrorState.enabled) {
+      setCloudMirrorStatus("Disattivato. Nessuna copia automatica nella cartella cloud.", "neutral");
+    } else if (!cloudMirrorState.configured) {
+      setCloudMirrorStatus("Attivo ma senza cartella: scegli una cartella Google Drive / sync.", "warn");
+    } else {
+      setCloudMirrorStatus("Pronto. Copia secondaria nella cartella sync (non conferma upload remoto).", "ok");
+    }
+  } catch {
+    cloudMirrorState = { enabled: false, configured: false, absolutePath: null, folderLabel: null };
+    if (label) label.textContent = "Cartella non disponibile";
+    if (openBtn) openBtn.disabled = true;
+    setCloudMirrorStatus("Impossibile leggere la configurazione cloud mirror.", "warn");
+  }
+}
+
+async function chooseCloudMirrorFolder() {
+  setCloudMirrorStatus("Apertura selettore cartella…");
+  try {
+    const response = await originalFetch("/api/cloud-mirror/pick-folder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folderKey: activeFolderKey })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409 && (data.code === "archive-pick-cancelled" || data.code === "cloud-pick-cancelled")) {
+      setCloudMirrorStatus("Scelta cartella annullata.");
+      return;
+    }
+    if (!response.ok) {
+      setCloudMirrorStatus(data.error || "Errore scelta cartella", "error");
+      return;
+    }
+    await refreshCloudMirrorConfig();
+    setCloudMirrorStatus("Cartella cloud configurata sul Director.", "ok");
+  } catch (error) {
+    setCloudMirrorStatus(`Errore cartella: ${error?.message || error}`, "error");
+  }
+}
+
+async function openCloudMirrorFolder() {
+  try {
+    const response = await originalFetch("/api/cloud-mirror/open-folder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folderKey: activeFolderKey })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setCloudMirrorStatus(data.error || "Impossibile aprire la cartella cloud.", "error");
+    }
+  } catch (error) {
+    setCloudMirrorStatus(`Errore apertura cartella: ${error?.message || error}`, "error");
+  }
+}
+
+async function persistCloudMirrorEnabled() {
+  const enabled = Boolean($("cloudMirrorAuto")?.checked);
+  try {
+    const response = await originalFetch("/api/cloud-mirror/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folderKey: activeFolderKey, enabled })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setCloudMirrorStatus(data.error || "Salvataggio impostazioni fallito", "error");
+      return;
+    }
+    await refreshCloudMirrorConfig();
+  } catch (error) {
+    setCloudMirrorStatus(`Errore impostazioni: ${error?.message || error}`, "error");
+  }
+}
+
+function cloudStatusLabel(status) {
+  switch (status) {
+    case "copied": return "Cloud: copiato nella cartella";
+    case "already-copied": return "Cloud: già copiato";
+    case "failed": return "Cloud: errore";
+    case "disabled": return "Cloud: disattivato";
+    case "not-configured": return "Cloud: non configurato";
+    case "pending": return "Cloud: in attesa";
+    case "copying": return "Cloud: copia…";
+    default: return status ? `Cloud: ${status}` : "Cloud: —";
+  }
+}
+
+async function mirrorOneOutput(promptId, item, { auto = true } = {}) {
+  const plan = readPromptPlan(promptId) || {};
+  const response = await originalFetch("/api/cloud-mirror/copy-output", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      auto,
+      promptId,
+      filename: item.filename,
+      subfolder: item.subfolder || subfolderFromOutputUrl(item.url) || "",
+      type: "output",
+      folderKey: plan.folderKey || activeFolderKey,
+      archiveFolderKey: plan.folderKey || activeFolderKey,
+      projectId: plan.projectId || projectId(),
+      projectLabel: plan.projectLabel || projectLabel()
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok && !auto) {
+    return { ok: false, status: "failed", error: data.error || response.status, code: data.code };
+  }
+  return data;
+}
+
+async function mirrorOutputs(promptId, items = [], { auto = true } = {}) {
+  if (!Array.isArray(items) || !items.length) return;
+  for (const item of items) {
+    if (!item?.filename) continue;
+    const data = await mirrorOneOutput(promptId, item, { auto });
+    if (data?.skipped) continue;
+    if (data?.destinationFilename || data?.alreadyCopied || data?.status === "copied" || data?.status === "already-copied") {
+      attachCloudMirrorMetadata(sessionStorage, {
+        promptId,
+        filename: item.filename,
+        subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+        cloudMirror: {
+          status: data.alreadyCopied ? "already-copied" : (data.status || "copied"),
+          filename: data.destinationFilename || null,
+          folderLabel: data.folderLabel || cloudMirrorState.folderLabel || "Cartella cloud",
+          copiedAt: Date.now(),
+          bytes: data.bytes
+        }
+      });
+      notifySessionOutputsChanged();
+      if (!auto) {
+        setCloudMirrorStatus(
+          data.alreadyCopied
+            ? `Già copiato nella cartella cloud: ${data.destinationFilename}`
+            : `Copiato nella cartella cloud: ${data.destinationFilename}`,
+          "ok"
+        );
+      }
+    } else if (data?.status === "failed" || data?.ok === false) {
+      attachCloudMirrorMetadata(sessionStorage, {
+        promptId,
+        filename: item.filename,
+        subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+        cloudMirror: {
+          status: "failed",
+          error: data.error || data.code || "failed",
+          copiedAt: Date.now()
+        }
+      });
+      notifySessionOutputsChanged();
+      if (!auto) {
+        setCloudMirrorStatus(data.error || "Cloud non disponibile", "error");
+      }
+    }
+  }
+}
+
+function scheduleCloudMirror(promptId, items) {
+  cloudMirrorChain = cloudMirrorChain
+    .then(() => mirrorOutputs(promptId, items, { auto: true }))
+    .catch(error => {
+      console.error("H3 cloud mirror failed", error);
+      setCloudMirrorStatus(
+        `Copia cloud non riuscita: ${error?.message || error}. Render e archivio locale restano validi.`,
+        "warn"
+      );
+    });
 }
 
 async function refreshFolderLabel() {
@@ -260,6 +466,7 @@ async function loadScope() {
   activeFolderKey = folderKeyForScope(preference);
   applySettingsToUi(readStoredSettings(activeFolderKey));
   await refreshFolderLabel();
+  await refreshCloudMirrorConfig();
 }
 
 async function changeScope() {
@@ -268,6 +475,7 @@ async function changeScope() {
   activeFolderKey = folderKeyForScope(scope);
   applySettingsToUi(readStoredSettings(activeFolderKey));
   await refreshFolderLabel();
+  await refreshCloudMirrorConfig();
 }
 
 async function requestBodyJson(input, init) {
@@ -399,6 +607,29 @@ async function archiveOutputs(promptId, items = []) {
           : `Archiviato: ${data.archivedFilename}`,
         "ok"
       );
+      if (data.cloudMirror) {
+        const cm = data.cloudMirror;
+        if (cm.status === "copied" || cm.status === "already-copied" || cm.destinationFilename) {
+          attachCloudMirrorMetadata(sessionStorage, {
+            promptId,
+            filename: item.filename,
+            subfolder: item.subfolder || subfolderFromOutputUrl(item.url),
+            cloudMirror: {
+              status: cm.alreadyCopied ? "already-copied" : (cm.status || "copied"),
+              filename: cm.destinationFilename || null,
+              folderLabel: cm.folderLabel || cloudMirrorState.folderLabel || "Cartella cloud",
+              copiedAt: Date.now(),
+              bytes: cm.bytes
+            }
+          });
+          notifySessionOutputsChanged();
+        } else if (cm.status === "failed") {
+          setCloudMirrorStatus(
+            `Archivio ok; copia cloud non riuscita: ${cm.error || cm.code || "errore"}.`,
+            "warn"
+          );
+        }
+      }
     }
   }
   if (copied) renderPreview();
@@ -437,7 +668,10 @@ window.fetch = async (input, init = undefined) => {
     }
     if (method === "GET" && url?.pathname === "/api/outputs" && response.ok) {
       const promptId = url.searchParams.get("promptId") || "";
-      response.clone().json().then(items => scheduleArchive(promptId, items)).catch(() => {});
+      response.clone().json().then(items => {
+        scheduleArchive(promptId, items);
+        scheduleCloudMirror(promptId, items);
+      }).catch(() => {});
     }
   } catch { /* archival bookkeeping is non-blocking */ }
 
@@ -479,6 +713,13 @@ function renderSessionGallery() {
         }).catch(error => {
           setStatus(`Impossibile aprire la cartella ComfyUI: ${error?.message || error}`, "error");
         });
+      },
+      onCloudMirrorCopy: clip => {
+        void mirrorOutputs(clip.promptId, [{
+          filename: clip.filename,
+          subfolder: clip.subfolder,
+          url: clip.url
+        }], { auto: false });
       }
     }));
   }
@@ -505,6 +746,9 @@ function bindUi() {
 
   $("outputChooseFolder")?.addEventListener("click", () => { void chooseFolder(); });
   $("outputOpenFolder")?.addEventListener("click", () => { void openConfiguredFolder(); });
+  $("cloudMirrorChooseFolder")?.addEventListener("click", () => { void chooseCloudMirrorFolder(); });
+  $("cloudMirrorOpenFolder")?.addEventListener("click", () => { void openCloudMirrorFolder(); });
+  $("cloudMirrorAuto")?.addEventListener("change", () => { void persistCloudMirrorEnabled(); });
   $("outputScope")?.addEventListener("change", () => { void changeScope(); });
   for (const id of ["outputAuto", "outputScene", "outputVariant", "outputTemplate", "outputCounterScope"]) {
     $(id)?.addEventListener("input", saveSettings);

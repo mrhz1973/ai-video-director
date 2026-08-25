@@ -196,6 +196,23 @@
           </div>
           <p id="outputStatus" class="output-status">Scegli una cartella: ComfyUI continuerà comunque a conservare l'output originale.</p>
           <p class="output-help">Archivio locale Director: la copia avviene sul server Node. L'originale ComfyUI non viene cancellato né spostato. Nessun permesso di scrittura browser è richiesto.</p>
+
+          <div class="cloud-mirror-block" id="cloudMirrorSection">
+            <h3>CLOUD MIRROR</h3>
+            <p class="output-help">Copia secondaria opzionale in una cartella sincronizzata (Google Drive for desktop / OneDrive / simile). Solo copia filesystem locale — non usa OAuth né Google API. Lo stato indica «copiato nella cartella», non «caricato sul cloud remoto».</p>
+            <label class="output-check"><input id="cloudMirrorAuto" type="checkbox"> Copia automaticamente nella cartella cloud</label>
+            <div class="output-folder-row">
+              <div>
+                <span class="hint">Google Drive / cartella cloud sincronizzata</span>
+                <div id="cloudMirrorFolderName" class="output-folder-name">Nessuna cartella scelta</div>
+              </div>
+              <div class="output-folder-actions">
+                <button type="button" class="secondary" id="cloudMirrorChooseFolder">Scegli cartella</button>
+                <button type="button" class="secondary" id="cloudMirrorOpenFolder" disabled>Apri cartella cloud</button>
+              </div>
+            </div>
+            <p id="cloudMirrorStatus" class="output-status" data-kind="neutral">Disattivato (predefinito).</p>
+          </div>
         </section>
       </details>
 
