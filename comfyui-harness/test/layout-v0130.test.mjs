@@ -9,7 +9,7 @@ const batch = readFileSync(new URL("../public/batch-ui.mjs", import.meta.url), "
 const queueUi = readFileSync(new URL("../public/batch-queue-ui.mjs", import.meta.url), "utf8");
 
 test("package version is at least v0.13 lineage", () => {
-  assert.match(pkg.version, /^0\.1[3456]\./);
+  assert.match(pkg.version, /^0\.1[34567]\./);
 });
 
 test("CODA section wired in client", () => {

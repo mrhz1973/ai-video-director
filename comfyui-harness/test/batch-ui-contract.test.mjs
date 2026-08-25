@@ -24,9 +24,19 @@ test("batch submission always releases the transient lock in finally", () => {
   assert.match(body, /finally\s*\{[\s\S]*submitting = false;[\s\S]*updateQueueButton\(\);[\s\S]*\}/);
 });
 
-test("batch UI documents per-job input overrides and keeps workflow/model common", () => {
-  assert.match(source, /Workflow e modello restano comuni; prompt, input\/asset, seed, durata, steps, MP e aspect possono essere modificati per job/);
-  assert.doesNotMatch(source, /Workflow, modello e asset restano comuni/);
+test("batch UI documents per-job input overrides and keeps workflow/model/LoRA common", () => {
+  assert.match(source, /Workflow, modello e LoRA restano impostazioni comuni del Batch; prompt, input\/asset, seed, durata, steps, MP e aspect possono essere modificati per job/);
+  assert.doesNotMatch(source, /Workflow e modello restano comuni; prompt, input\/asset/);
+});
+
+test("batch UI owns global LoRA controls under Impostazioni globali batch", () => {
+  assert.match(source, /id="batchLoraId"/);
+  assert.match(source, /id="batchLoraStrength"/);
+  assert.match(source, /initBatchH3LoraControls/);
+  assert.match(source, /commitBatchLoraFromDom/);
+  assert.match(source, /freezeBatchLoraFields/);
+  assert.match(source, /queuePayloadLoraFields/);
+  assert.doesNotMatch(source, /item\.loraId|items\.map\([^\)]*loraId/);
 });
 
 test("batch UI contract exposes per-job input selectors", () => {
@@ -42,6 +52,7 @@ test("batch payload construction resolves files per job", () => {
   assert.match(source, /files:\s*resolveBatchItemFiles\(item,\s*snapshot\.files/);
   assert.match(source, /freezeSubmissionSnapshot/);
   assert.match(source, /cloneBatchItemSnapshot/);
+  assert.match(source, /\.\.\.queuePayloadLoraFields\(snapshot\)/);
 });
 
 test("deferred batch snapshots retain per-job overrides", () => {
