@@ -4,13 +4,18 @@
  * No Google API / OAuth — filesystem destination only.
  */
 
-import { mkdir, readFile, writeFile, access } from "node:fs/promises";
+import { mkdir, readFile, writeFile, access, stat, rename } from "node:fs/promises";
 import path from "node:path";
 import { constants as fsConstants } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { normalizeFolderKey } from "./archive-store.mjs";
+import { ComfyOutputPathError } from "./comfy-output-path.mjs";
 
 export const CLOUD_MIRROR_STORE_VERSION = 1;
 export const CLOUD_MIRROR_STORE_FILENAME = "cloud-mirror.json";
+
+/** Per-storePath Promise chain — serializes read-modify-write commits. */
+const storeLocks = new Map();
 
 export function defaultCloudMirrorAppDataDir(env = process.env) {
   const local = String(env.LOCALAPPDATA || "").trim();
@@ -80,14 +85,49 @@ export async function readCloudMirrorStore(storePath) {
   }
 }
 
+/**
+ * Atomic store write. Temp name uses pid + time + randomBytes so concurrent
+ * writers in the same millisecond cannot collide.
+ */
 export async function writeCloudMirrorStore(storePath, store) {
   const normalized = normalizeCloudMirrorStore(store);
   await mkdir(path.dirname(storePath), { recursive: true });
-  const tmp = `${storePath}.${process.pid}.${Date.now()}.tmp`;
+  const uniq = randomBytes(8).toString("hex");
+  const tmp = `${storePath}.${process.pid}.${Date.now()}.${uniq}.tmp`;
   await writeFile(tmp, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
-  const { rename } = await import("node:fs/promises");
   await rename(tmp, storePath);
   return normalized;
+}
+
+/**
+ * Serialize mutations for one storePath. Copy I/O should happen outside this lock.
+ */
+export async function withCloudMirrorStoreLock(storePath, fn) {
+  const key = path.resolve(String(storePath || ""));
+  const previous = storeLocks.get(key) || Promise.resolve();
+  let release;
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
+  const queued = previous.then(() => gate, () => gate);
+  storeLocks.set(key, queued);
+  await previous.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (storeLocks.get(key) === queued) storeLocks.delete(key);
+  }
+}
+
+/** Read-modify-write under the store lock. */
+export async function updateCloudMirrorStore(storePath, mutator) {
+  return withCloudMirrorStoreLock(storePath, async () => {
+    const current = await readCloudMirrorStore(storePath);
+    const next = await mutator(current);
+    if (next == null) return current;
+    return writeCloudMirrorStore(storePath, next);
+  });
 }
 
 export function getCloudMirrorDestination(store, folderKey = "global") {
@@ -133,15 +173,50 @@ export function publicCloudMirrorView(store, folderKey = "global") {
     configured,
     absolutePath: configured ? absolutePath : null,
     folderLabel: configured ? (path.basename(absolutePath) || absolutePath) : null,
-    // Wording contract: local sync-folder copy only — not confirmed remote upload.
     semantics: "local-sync-folder-copy"
   };
 }
 
-export async function assertCloudDirectoryWritable(absolutePath, { accessImpl = access } = {}) {
+/**
+ * Destination must exist, be absolute, writable, and a directory (not a file).
+ */
+export async function assertCloudDirectoryWritable(absolutePath, {
+  accessImpl = access,
+  statImpl = stat
+} = {}) {
   const resolved = path.resolve(String(absolutePath || ""));
-  await accessImpl(resolved, fsConstants.F_OK);
-  await accessImpl(resolved, fsConstants.W_OK);
+  if (!path.isAbsolute(resolved)) {
+    throw new ComfyOutputPathError("Cloud destination must be absolute.", {
+      code: "cloud-path-invalid",
+      status: 400
+    });
+  }
+  try {
+    await accessImpl(resolved, fsConstants.F_OK);
+    await accessImpl(resolved, fsConstants.W_OK);
+  } catch (error) {
+    throw new ComfyOutputPathError("Cartella cloud non disponibile o non scrivibile.", {
+      code: "cloud-destination-unavailable",
+      status: 409,
+      cause: error
+    });
+  }
+  let st;
+  try {
+    st = await statImpl(resolved);
+  } catch (error) {
+    throw new ComfyOutputPathError("Cartella cloud non accessibile.", {
+      code: "cloud-destination-unavailable",
+      status: 409,
+      cause: error
+    });
+  }
+  if (!st.isDirectory()) {
+    throw new ComfyOutputPathError("La destinazione cloud deve essere una cartella, non un file.", {
+      code: "cloud-path-invalid",
+      status: 400
+    });
+  }
   return resolved;
 }
 
@@ -157,4 +232,3 @@ export function projectMirrorSubdir({ projectId = "", projectLabel = "" } = {}) 
 }
 
 export { normalizeFolderKey };
-

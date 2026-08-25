@@ -468,6 +468,9 @@ const server = http.createServer(async (req, res) => {
         });
         return json(res, 200, { ok: true, ...view, mode: "sync-folder-copy" });
       } catch (error) {
+        if (error instanceof ComfyOutputPathError) {
+          return json(res, error.status || 400, { error: error.message, code: error.code });
+        }
         logger.error("cloud_mirror_settings", { reason: error.message });
         return json(res, 500, { error: "Cloud mirror settings failed", code: "cloud-settings-failed" });
       }

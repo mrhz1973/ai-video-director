@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync, chmodSync, readdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  readdirSync,
+  statSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,13 +24,16 @@ import {
   publicCloudMirrorView,
   resolveCloudMirrorStorePath,
   writeCloudMirrorStore,
-  readCloudMirrorStore
+  readCloudMirrorStore,
+  updateCloudMirrorStore
 } from "../lib/cloud-mirror-store.mjs";
 import {
   allocateCloudMirrorFilename,
   configureCloudMirrorDestination,
+  ensureCloudProjectDirectory,
   mirrorCompletedOutput,
-  tryAutoCloudMirror
+  tryAutoCloudMirror,
+  updateCloudMirrorSettings
 } from "../lib/cloud-mirror.mjs";
 import {
   configureArchiveDestination,
@@ -36,6 +48,47 @@ function tempDir(prefix) {
 
 function cleanup(dir) {
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+
+function historyFetch(promptId, filename) {
+  return async () => ({
+    ok: true,
+    json: async () => ({
+      [promptId]: {
+        outputs: {
+          "1": { videos: [{ filename, subfolder: "", type: "output" }] }
+        }
+      }
+    })
+  });
+}
+
+function listMp4(dir) {
+  const out = [];
+  function walk(d) {
+    if (!existsSync(d)) return;
+    for (const name of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, name.name);
+      if (name.isDirectory()) walk(full);
+      else if (name.name.endsWith(".mp4")) out.push(full);
+    }
+  }
+  walk(dir);
+  return out;
+}
+
+function listTmpArtifacts(dir) {
+  const out = [];
+  function walk(d) {
+    if (!existsSync(d)) return;
+    for (const name of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, name.name);
+      if (name.isDirectory()) walk(full);
+      else if (name.name.includes(".tmp") || name.name.endsWith(".tmp")) out.push(full);
+    }
+  }
+  walk(dir);
+  return out;
 }
 
 test("missing cloud store -> disabled defaults", async () => {
@@ -82,7 +135,7 @@ test("projectMirrorSubdir sanitizes unsafe characters", () => {
   assert.equal(projectMirrorSubdir({ projectLabel: 'a/b\\c:d*"' }), "a_b_c_d__");
 });
 
-test("configure rejects unwritable destination", async () => {
+test("configure rejects unwritable destination with stable code", async () => {
   const dir = tempDir("h3-cloud-unw-");
   try {
     const storePath = path.join(dir, "cloud-mirror.json");
@@ -93,10 +146,33 @@ test("configure rejects unwritable destination", async () => {
         storePath,
         folderKey: "global",
         absolutePath: locked,
-        accessImpl: async () => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); }
+        accessImpl: async () => {
+          throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+        }
       }),
-      error => error.code === "cloud-destination-unavailable" || error.code === "EACCES" || true
+      error => error?.code === "cloud-destination-unavailable"
     );
+    assert.equal(existsSync(storePath), false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("configure rejects regular file destination (must be directory)", async () => {
+  const dir = tempDir("h3-cloud-filedest-");
+  try {
+    const storePath = path.join(dir, "cloud-mirror.json");
+    const filePath = path.join(dir, "not-a-dir.txt");
+    writeFileSync(filePath, "nope");
+    await assert.rejects(
+      () => configureCloudMirrorDestination({
+        storePath,
+        folderKey: "global",
+        absolutePath: filePath
+      }),
+      error => error?.code === "cloud-path-invalid"
+    );
+    assert.equal(existsSync(storePath), false);
   } finally {
     cleanup(dir);
   }
@@ -122,7 +198,64 @@ test("folder picker result becomes destination via configure", async () => {
   }
 });
 
-test("successful copy preserves source and verifies size; temp rename", async () => {
+test("first project-subdir copy succeeds with REAL fs.realpath", async () => {
+  const root = tempDir("h3-cloud-firstproj-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    const sourcePath = path.join(comfy, "clip.mp4");
+    writeFileSync(sourcePath, Buffer.from("first-project-bytes"));
+    const storePath = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
+
+    const projectDir = path.join(sync, "FirstProj");
+    assert.equal(existsSync(projectDir), false);
+
+    // Intentionally use default realpathImpl (real filesystem).
+    const result = await mirrorCompletedOutput({
+      storePath,
+      archiveStorePath: path.join(root, "archive.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "p-first",
+      filename: "clip.mp4",
+      projectId: "first",
+      projectLabel: "FirstProj",
+      fetchFn: historyFetch("p-first", "clip.mp4")
+    });
+
+    assert.equal(result.status, "copied");
+    assert.equal(existsSync(projectDir), true);
+    assert.equal(statSync(projectDir).isDirectory(), true);
+    const destFile = path.join(projectDir, result.destinationFilename);
+    assert.equal(existsSync(destFile), true);
+    assert.equal(existsSync(sourcePath), true);
+    assert.equal(readFileSync(destFile).equals(readFileSync(sourcePath)), true);
+    assert.equal(listTmpArtifacts(sync).length, 0);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("ensureCloudProjectDirectory creates missing subdir under containment", async () => {
+  const root = tempDir("h3-cloud-ensure-");
+  try {
+    const sync = path.join(root, "sync");
+    mkdirSync(sync);
+    const created = await ensureCloudProjectDirectory({
+      destinationRoot: sync,
+      projectSubdir: "BrandNew"
+    });
+    assert.equal(existsSync(path.join(sync, "BrandNew")), true);
+    assert.ok(created.realDir.includes("BrandNew"));
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("successful copy preserves source and verifies size; no orphan temps", async () => {
   const root = tempDir("h3-cloud-copy-");
   try {
     const comfy = path.join(root, "comfy");
@@ -133,7 +266,7 @@ test("successful copy preserves source and verifies size; temp rename", async ()
     writeFileSync(sourcePath, Buffer.from("video-bytes-12345"));
     const storePath = path.join(root, "cloud-mirror.json");
     await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
-    await writeCloudMirrorStore(storePath, setCloudMirrorEnabled(await readCloudMirrorStore(storePath), true));
+    await updateCloudMirrorStore(storePath, s => setCloudMirrorEnabled(s, true));
 
     const result = await mirrorCompletedOutput({
       storePath,
@@ -144,27 +277,15 @@ test("successful copy preserves source and verifies size; temp rename", async ()
       filename: "clip.mp4",
       projectId: "demo",
       projectLabel: "Demo",
-      fetchFn: async () => ({
-        ok: true,
-        json: async () => ({
-          p1: {
-            outputs: {
-              "9": { videos: [{ filename: "clip.mp4", subfolder: "", type: "output" }] }
-            }
-          }
-        })
-      }),
-      realpathImpl: async p => path.resolve(p)
+      fetchFn: historyFetch("p1", "clip.mp4")
     });
 
     assert.equal(result.status, "copied");
     assert.equal(existsSync(sourcePath), true);
-    assert.equal(readFileSync(sourcePath).toString(), "video-bytes-12345");
     const destFile = path.join(sync, "Demo", result.destinationFilename);
     assert.equal(existsSync(destFile), true);
     assert.equal(readFileSync(destFile).equals(readFileSync(sourcePath)), true);
-    const leftovers = readdirSync(path.join(sync, "Demo")).filter(n => n.includes(".tmp-"));
-    assert.equal(leftovers.length, 0);
+    assert.equal(listTmpArtifacts(root).length, 0);
   } finally {
     cleanup(root);
   }
@@ -189,14 +310,14 @@ test("prefers local archive filename as cloud source", async () => {
       comfyUrl: "http://127.0.0.1:9",
       promptId: "p2",
       filename: "raw.mp4",
-      plan: { enabled: true, projectId: "p", projectLabel: "Proj", scene: "shot", template: "{project}_{scene}_{counter:04}.mp4" },
-      fetchFn: async () => ({
-        ok: true,
-        json: async () => ({
-          p2: { outputs: { "1": { videos: [{ filename: "raw.mp4", subfolder: "", type: "output" }] } } }
-        })
-      }),
-      realpathImpl: async p => path.resolve(p)
+      plan: {
+        enabled: true,
+        projectId: "p",
+        projectLabel: "Proj",
+        scene: "shot",
+        template: "{project}_{scene}_{counter:04}.mp4"
+      },
+      fetchFn: historyFetch("p2", "raw.mp4")
     });
     assert.ok(archived.archivedFilename);
     await configureCloudMirrorDestination({ storePath: cloudStore, folderKey: "global", absolutePath: sync });
@@ -207,8 +328,7 @@ test("prefers local archive filename as cloud source", async () => {
       comfyUrl: "http://127.0.0.1:9",
       promptId: "p2",
       filename: "raw.mp4",
-      projectLabel: "Proj",
-      realpathImpl: async p => path.resolve(p)
+      projectLabel: "Proj"
     });
     assert.equal(mirrored.sourceKind, "local-archive");
     assert.equal(mirrored.destinationFilename, archived.archivedFilename);
@@ -243,35 +363,141 @@ test("repeated same record -> alreadyCopied", async () => {
     writeFileSync(path.join(comfy, "a.mp4"), "12345678");
     const storePath = path.join(root, "cloud-mirror.json");
     await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
-    const fetchFn = async () => ({
-      ok: true,
-      json: async () => ({
-        px: { outputs: { "1": { videos: [{ filename: "a.mp4", subfolder: "", type: "output" }] } } }
-      })
-    });
-    const first = await mirrorCompletedOutput({
+    const opts = {
       storePath,
       archiveStorePath: path.join(root, "archive.json"),
       outputRoot: comfy,
       comfyUrl: "http://x",
       promptId: "px",
       filename: "a.mp4",
-      fetchFn,
-      realpathImpl: async p => path.resolve(p)
-    });
-    const second = await mirrorCompletedOutput({
-      storePath,
-      archiveStorePath: path.join(root, "archive.json"),
-      outputRoot: comfy,
-      comfyUrl: "http://x",
-      promptId: "px",
-      filename: "a.mp4",
-      fetchFn,
-      realpathImpl: async p => path.resolve(p)
-    });
+      fetchFn: historyFetch("px", "a.mp4")
+    };
+    const first = await mirrorCompletedOutput(opts);
+    const second = await mirrorCompletedOutput(opts);
     assert.equal(first.status, "copied");
     assert.equal(second.alreadyCopied, true);
-    assert.equal(readdirSync(sync).filter(n => n.endsWith(".mp4")).length, 1);
+    assert.equal(listMp4(sync).length, 1);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("two different records concurrent — both records survive", async () => {
+  const root = tempDir("h3-cloud-race2-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "clipA.mp4"), "AAAAAAAA");
+    writeFileSync(path.join(comfy, "clipB.mp4"), "BBBBBBBB");
+    const storePath = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
+
+    const [a, b] = await Promise.all([
+      mirrorCompletedOutput({
+        storePath,
+        archiveStorePath: path.join(root, "archive.json"),
+        outputRoot: comfy,
+        comfyUrl: "http://x",
+        promptId: "p1",
+        filename: "clipA.mp4",
+        projectLabel: "Race",
+        fetchFn: historyFetch("p1", "clipA.mp4")
+      }),
+      mirrorCompletedOutput({
+        storePath,
+        archiveStorePath: path.join(root, "archive.json"),
+        outputRoot: comfy,
+        comfyUrl: "http://x",
+        promptId: "p2",
+        filename: "clipB.mp4",
+        projectLabel: "Race",
+        fetchFn: historyFetch("p2", "clipB.mp4")
+      })
+    ]);
+
+    assert.equal(a.status, "copied");
+    assert.equal(b.status, "copied");
+    assert.equal(existsSync(path.join(comfy, "clipA.mp4")), true);
+    assert.equal(existsSync(path.join(comfy, "clipB.mp4")), true);
+
+    const store = await readCloudMirrorStore(storePath);
+    const keyA = cloudMirrorRecordKey("p1", "clipA.mp4", "", "global");
+    const keyB = cloudMirrorRecordKey("p2", "clipB.mp4", "", "global");
+    assert.ok(store.records[keyA], "record A must survive");
+    assert.ok(store.records[keyB], "record B must survive");
+    assert.equal(listMp4(sync).length, 2);
+    assert.equal(listTmpArtifacts(root).length, 0);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("concurrent copies with SAME preferred filename never overwrite", async () => {
+  const root = tempDir("h3-cloud-same-name-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    // Distinct Comfy source names that archive/mirror prefer as-is from source.preferredName.
+    // Force same preferredName by using identical source filenames in different folders? 
+    // Simpler: two prompts with same filename "clip.mp4" in same output root can't coexist;
+    // instead write one file and use preferred via archive, OR place files with same name
+    // using subfolders. Use subfolder identity.
+    mkdirSync(path.join(comfy, "a"));
+    mkdirSync(path.join(comfy, "b"));
+    writeFileSync(path.join(comfy, "a", "clip.mp4"), "AAAA1111");
+    writeFileSync(path.join(comfy, "b", "clip.mp4"), "BBBB2222");
+    const storePath = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
+
+    const fetchA = async () => ({
+      ok: true,
+      json: async () => ({
+        pa: { outputs: { "1": { videos: [{ filename: "clip.mp4", subfolder: "a", type: "output" }] } } }
+      })
+    });
+    const fetchB = async () => ({
+      ok: true,
+      json: async () => ({
+        pb: { outputs: { "1": { videos: [{ filename: "clip.mp4", subfolder: "b", type: "output" }] } } }
+      })
+    });
+
+    const [a, b] = await Promise.all([
+      mirrorCompletedOutput({
+        storePath,
+        archiveStorePath: path.join(root, "archive.json"),
+        outputRoot: comfy,
+        comfyUrl: "http://x",
+        promptId: "pa",
+        filename: "clip.mp4",
+        subfolder: "a",
+        fetchFn: fetchA
+      }),
+      mirrorCompletedOutput({
+        storePath,
+        archiveStorePath: path.join(root, "archive.json"),
+        outputRoot: comfy,
+        comfyUrl: "http://x",
+        promptId: "pb",
+        filename: "clip.mp4",
+        subfolder: "b",
+        fetchFn: fetchB
+      })
+    ]);
+
+    assert.equal(a.status, "copied");
+    assert.equal(b.status, "copied");
+    const names = [a.destinationFilename, b.destinationFilename].sort();
+    assert.deepEqual(names, ["clip.mp4", "clip_0002.mp4"]);
+    assert.equal(listMp4(sync).length, 2);
+    const bytes = listMp4(sync).map(p => readFileSync(p).toString()).sort();
+    assert.deepEqual(bytes, ["AAAA1111", "BBBB2222"]);
+    const store = await readCloudMirrorStore(storePath);
+    assert.equal(Object.keys(store.records).length, 2);
   } finally {
     cleanup(root);
   }
@@ -290,8 +516,7 @@ test("missing destination -> clean failure; auto does not throw", async () => {
       promptId: "p",
       filename: "x.mp4"
     });
-    assert.equal(auto.skipped || auto.status === "not-configured" || auto.ok === false || auto.status === "failed" || auto.reason === "cloud-unconfigured" || auto.status === "not-configured", true);
-    // disabled defaults
+    assert.ok(auto.skipped || auto.status === "not-configured" || auto.status === "failed");
     const off = await tryAutoCloudMirror({
       storePath: path.join(root, "missing-store.json"),
       archiveStorePath: path.join(root, "a.json"),
@@ -332,58 +557,6 @@ test("destination disappears mid-flight -> clean failure code", async () => {
   }
 });
 
-test("arbitrary browser sourcePath is rejected by server contract (module never accepts it)", () => {
-  assert.equal(typeof mirrorCompletedOutput, "function");
-  assert.equal(cloudMirrorRecordKey("p", "f.mp4", "", "global"), "p::f.mp4:global");
-});
-
-test("duplicate simultaneous copy resolves to one final copy", async () => {
-  const root = tempDir("h3-cloud-race-");
-  try {
-    const comfy = path.join(root, "comfy");
-    const sync = path.join(root, "sync");
-    mkdirSync(comfy);
-    mkdirSync(sync);
-    writeFileSync(path.join(comfy, "r.mp4"), "abcdefghij");
-    const storePath = path.join(root, "cloud-mirror.json");
-    await configureCloudMirrorDestination({ storePath, folderKey: "global", absolutePath: sync });
-    const opts = {
-      storePath,
-      archiveStorePath: path.join(root, "archive.json"),
-      outputRoot: comfy,
-      comfyUrl: "http://x",
-      promptId: "race",
-      filename: "r.mp4",
-      fetchFn: async () => ({
-        ok: true,
-        json: async () => ({
-          race: { outputs: { "1": { videos: [{ filename: "r.mp4", subfolder: "", type: "output" }] } } }
-        })
-      }),
-      realpathImpl: async p => path.resolve(p)
-    };
-    const [a, b] = await Promise.all([
-      mirrorCompletedOutput(opts),
-      mirrorCompletedOutput(opts)
-    ]);
-    const statuses = [a.status || (a.alreadyCopied && "already-copied"), b.status || (b.alreadyCopied && "already-copied")];
-    assert.ok(statuses.includes("copied") || statuses.includes("already-copied"));
-    assert.equal(readdirSync(sync).filter(n => n.endsWith(".mp4") || existsSync(path.join(sync, n))).length >= 1, true);
-    const mp4s = [];
-    function walk(d) {
-      for (const name of readdirSync(d, { withFileTypes: true })) {
-        const full = path.join(d, name.name);
-        if (name.isDirectory()) walk(full);
-        else if (name.name.endsWith(".mp4")) mp4s.push(full);
-      }
-    }
-    walk(sync);
-    assert.equal(mp4s.length, 1);
-  } finally {
-    cleanup(root);
-  }
-});
-
 test("cloud failure does not change archive success semantics", async () => {
   const root = tempDir("h3-cloud-isol-");
   try {
@@ -401,13 +574,7 @@ test("cloud failure does not change archive success semantics", async () => {
       promptId: "z1",
       filename: "z.mp4",
       plan: { enabled: true, projectLabel: "Z", scene: "s", template: "{project}_{counter:02}.mp4" },
-      fetchFn: async () => ({
-        ok: true,
-        json: async () => ({
-          z1: { outputs: { "1": { videos: [{ filename: "z.mp4", subfolder: "", type: "output" }] } } }
-        })
-      }),
-      realpathImpl: async p => path.resolve(p)
+      fetchFn: historyFetch("z1", "z.mp4")
     });
     assert.equal(archived.ok, true);
     assert.ok(archived.archivedFilename);
@@ -423,6 +590,24 @@ test("cloud failure does not change archive success semantics", async () => {
     assert.equal(existsSync(path.join(archive, archived.archivedFilename)), true);
   } finally {
     cleanup(root);
+  }
+});
+
+test("settings: non-boolean enabled rejected; boolean false accepted", async () => {
+  const dir = tempDir("h3-cloud-settings-");
+  try {
+    const storePath = path.join(dir, "cloud-mirror.json");
+    await writeCloudMirrorStore(storePath, emptyCloudMirrorStore());
+    await assert.rejects(
+      () => updateCloudMirrorSettings({ storePath, enabled: "false" }),
+      error => error?.code === "cloud-settings-invalid"
+    );
+    const view = await updateCloudMirrorSettings({ storePath, enabled: false });
+    assert.equal(view.enabled, false);
+    const store = await readCloudMirrorStore(storePath);
+    assert.equal(store.enabled, false);
+  } finally {
+    cleanup(dir);
   }
 });
 
@@ -446,6 +631,8 @@ test("server rejects client-supplied destination paths for cloud APIs", () => {
   assert.match(server, /cloud-destination-rejected/);
   assert.match(server, /cloud-path-rejected/);
   assert.match(server, /tryAutoCloudMirror/);
+  const settingsLib = readFileSync(path.join(ROOT, "../lib/cloud-mirror.mjs"), "utf8");
+  assert.match(settingsLib, /cloud-settings-invalid/);
   const copyStart = server.indexOf("/api/cloud-mirror/copy-output");
   const copyEnd = server.indexOf("/api/projects", copyStart);
   const copyHandler = server.slice(copyStart, copyEnd > copyStart ? copyEnd : copyStart + 2500);

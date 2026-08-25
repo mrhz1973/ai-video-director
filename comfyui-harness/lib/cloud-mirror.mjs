@@ -4,7 +4,16 @@
  * Never deletes/moves sources. Cloud failure never invalidates render/archive.
  */
 
-import { copyFile, mkdir, access, stat, rename, unlink, realpath as fsRealpath } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  access,
+  stat,
+  rename,
+  unlink,
+  open,
+  realpath as fsRealpath
+} from "node:fs/promises";
 import { constants as fsConst } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
@@ -26,11 +35,33 @@ import {
   readCloudMirrorStore,
   setCloudMirrorDestination,
   setCloudMirrorEnabled,
+  updateCloudMirrorStore,
+  withCloudMirrorStoreLock,
   writeCloudMirrorStore
 } from "./cloud-mirror-store.mjs";
 
 /** In-process serialization for duplicate simultaneous copies of the same record. */
 const inflightByRecord = new Map();
+/** Serialize filename allocation / exclusive claims per destination root. */
+const destinationAllocLocks = new Map();
+
+async function withDestinationAllocLock(destinationRoot, fn) {
+  const key = path.resolve(String(destinationRoot || ""));
+  const previous = destinationAllocLocks.get(key) || Promise.resolve();
+  let release;
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
+  const queued = previous.then(() => gate, () => gate);
+  destinationAllocLocks.set(key, queued);
+  await previous.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (destinationAllocLocks.get(key) === queued) destinationAllocLocks.delete(key);
+  }
+}
 
 async function fileExists(absolutePath, { accessImpl = access } = {}) {
   try {
@@ -41,37 +72,73 @@ async function fileExists(absolutePath, { accessImpl = access } = {}) {
   }
 }
 
-async function assertDestinationContained(destinationRoot, absoluteFile, {
-  realpathImpl = fsRealpath
+/**
+ * Create (if needed) and verify the project directory under an existing cloud root.
+ * Order: realpath root → lexical contain → mkdir → realpath dir → contain again.
+ */
+export async function ensureCloudProjectDirectory({
+  destinationRoot,
+  projectSubdir = "",
+  mkdirImpl = mkdir,
+  realpathImpl = fsRealpath,
+  statImpl = stat
 } = {}) {
+  const root = path.resolve(destinationRoot);
   let realRoot;
   try {
-    realRoot = await realpathImpl(destinationRoot);
+    realRoot = await realpathImpl(root);
   } catch {
     throw new ComfyOutputPathError("Cartella cloud non accessibile.", {
       code: "cloud-destination-unavailable",
       status: 409
     });
   }
-  const resolvedFile = path.resolve(absoluteFile);
-  const parent = path.dirname(resolvedFile);
-  let realParent;
-  try {
-    realParent = await realpathImpl(parent);
-  } catch {
-    throw new ComfyOutputPathError("Cartella cloud non accessibile.", {
-      code: "cloud-destination-unavailable",
-      status: 409
+  const rootStat = await statImpl(realRoot);
+  if (!rootStat.isDirectory()) {
+    throw new ComfyOutputPathError("La destinazione cloud deve essere una cartella, non un file.", {
+      code: "cloud-path-invalid",
+      status: 400
     });
   }
-  const relParent = path.relative(realRoot, realParent);
-  if (relParent.startsWith("..") || path.isAbsolute(relParent)) {
+
+  const sub = String(projectSubdir || "").trim();
+  if (sub.includes("..") || /[\\/]/.test(sub)) {
+    throw new ComfyOutputPathError("Invalid cloud project subfolder.", {
+      code: "cloud-path-invalid",
+      status: 400
+    });
+  }
+
+  const intendedDir = sub ? path.join(root, sub) : root;
+  const lexicalRel = path.relative(root, path.resolve(intendedDir));
+  if ((lexicalRel && lexicalRel.startsWith("..")) || path.isAbsolute(lexicalRel)) {
     throw new ComfyOutputPathError("Cloud path escapes destination root.", {
       code: "cloud-root-escape",
       status: 400
     });
   }
-  return { realRoot };
+
+  if (sub) {
+    await mkdirImpl(intendedDir, { recursive: true });
+  }
+
+  let realDir;
+  try {
+    realDir = await realpathImpl(intendedDir);
+  } catch {
+    throw new ComfyOutputPathError("Cartella cloud non accessibile.", {
+      code: "cloud-destination-unavailable",
+      status: 409
+    });
+  }
+  const realRel = path.relative(realRoot, realDir);
+  if ((realRel && realRel.startsWith("..")) || path.isAbsolute(realRel)) {
+    throw new ComfyOutputPathError("Cloud path escapes destination root.", {
+      code: "cloud-root-escape",
+      status: 400
+    });
+  }
+  return { realRoot, realDir, directory: intendedDir };
 }
 
 /**
@@ -171,6 +238,27 @@ async function resolveMirrorSource({
   };
 }
 
+function alreadyCopiedResult({
+  existing,
+  destinationRoot,
+  key,
+  existingRel,
+  bytes
+}) {
+  return {
+    ok: true,
+    alreadyCopied: true,
+    status: "already-copied",
+    destinationFilename: existing.destinationFilename || path.basename(existingRel),
+    relativePath: existingRel,
+    bytes,
+    folderKey: key,
+    folderLabel: path.basename(destinationRoot),
+    sourceKind: existing.sourceKind || "local-archive",
+    semantics: "local-sync-folder-copy"
+  };
+}
+
 /**
  * Copy one completed output into the configured cloud sync folder.
  * @param {{ requireEnabled?: boolean }} opts — when true (auto path), skip if disabled.
@@ -198,8 +286,8 @@ export async function mirrorCompletedOutput(opts = {}) {
     statImpl = stat,
     renameImpl = rename,
     unlinkImpl = unlink,
+    openImpl = open,
     readStore = readCloudMirrorStore,
-    writeStore = writeCloudMirrorStore,
     readArchive = readArchiveStore,
     randomBytesImpl = randomBytes
   } = opts;
@@ -212,12 +300,12 @@ export async function mirrorCompletedOutput(opts = {}) {
   }
 
   const run = (async () => {
-    let store = await readStore(storePath);
-    if (requireEnabled && !store.enabled) {
+    const storePeek = await readStore(storePath);
+    if (requireEnabled && !storePeek.enabled) {
       return { ok: true, skipped: true, status: "disabled", reason: "auto-cloud-off" };
     }
 
-    const destinationRoot = getCloudMirrorDestination(store, key);
+    const destinationRoot = getCloudMirrorDestination(storePeek, key);
     if (!destinationRoot) {
       if (requireEnabled) {
         return { ok: true, skipped: true, status: "not-configured", reason: "cloud-unconfigured" };
@@ -229,15 +317,16 @@ export async function mirrorCompletedOutput(opts = {}) {
     }
 
     try {
-      await assertCloudDirectoryWritable(destinationRoot, { accessImpl });
-    } catch {
+      await assertCloudDirectoryWritable(destinationRoot, { accessImpl, statImpl });
+    } catch (error) {
+      if (error instanceof ComfyOutputPathError) throw error;
       throw new ComfyOutputPathError("Cartella cloud non disponibile o non scrivibile.", {
         code: "cloud-destination-unavailable",
         status: 409
       });
     }
 
-    const existing = store.records?.[recordKey];
+    const existing = storePeek.records?.[recordKey];
     if (existing?.destinationFilename || existing?.relativePath) {
       const existingRel = existing.relativePath || existing.destinationFilename;
       const existingPath = path.resolve(destinationRoot, existingRel);
@@ -245,24 +334,19 @@ export async function mirrorCompletedOutput(opts = {}) {
         try {
           const st = await statImpl(existingPath);
           if (existing.bytes == null || st.size === existing.bytes) {
-            return {
-              ok: true,
-              alreadyCopied: true,
-              status: "already-copied",
-              destinationFilename: existing.destinationFilename || path.basename(existingRel),
-              relativePath: existingRel,
-              bytes: existing.bytes ?? st.size,
-              folderKey: key,
-              folderLabel: path.basename(destinationRoot),
-              sourceKind: existing.sourceKind || "local-archive",
-              // Local sync-folder only — not confirmed remote Google upload.
-              semantics: "local-sync-folder-copy"
-            };
+            return alreadyCopiedResult({
+              existing,
+              destinationRoot,
+              key,
+              existingRel,
+              bytes: existing.bytes ?? st.size
+            });
           }
-        } catch { /* fall through to re-copy with collision if needed */ }
+        } catch { /* fall through */ }
       }
     }
 
+    // Source resolution happens outside store lock (may hit Comfy history).
     const source = await resolveMirrorSource({
       archiveStorePath,
       outputRoot,
@@ -282,19 +366,59 @@ export async function mirrorCompletedOutput(opts = {}) {
       ? projectMirrorSubdir({ projectId, projectLabel })
       : "";
 
-    const allocation = await allocateCloudMirrorFilename({
-      destinationRoot,
-      preferredName: source.preferredName,
-      projectSubdir: projectSub,
-      accessImpl
+    // Allocate + mkdir + exclusive claim under destination lock (not during large copy).
+    const claim = await withDestinationAllocLock(destinationRoot, async () => {
+      // Re-check idempotence after waiting for the alloc lock.
+      const latest = await readStore(storePath);
+      const again = latest.records?.[recordKey];
+      if (again?.destinationFilename || again?.relativePath) {
+        const existingRel = again.relativePath || again.destinationFilename;
+        const existingPath = path.resolve(destinationRoot, existingRel);
+        if (await fileExists(existingPath, { accessImpl })) {
+          const st = await statImpl(existingPath);
+          if (again.bytes == null || st.size === again.bytes) {
+            return {
+              already: alreadyCopiedResult({
+                existing: again,
+                destinationRoot,
+                key,
+                existingRel,
+                bytes: again.bytes ?? st.size
+              })
+            };
+          }
+        }
+      }
+
+      await ensureCloudProjectDirectory({
+        destinationRoot,
+        projectSubdir: projectSub,
+        mkdirImpl,
+        realpathImpl,
+        statImpl
+      });
+
+      const allocation = await allocateCloudMirrorFilename({
+        destinationRoot,
+        preferredName: source.preferredName,
+        projectSubdir: projectSub,
+        accessImpl
+      });
+
+      // Exclusive claim of the final path so concurrent allocators see it as taken.
+      const claimHandle = await openImpl(allocation.absolutePath, "wx");
+      await claimHandle.close();
+
+      const tmpName = `${allocation.filename}.tmp-${randomBytesImpl(8).toString("hex")}`;
+      const tmpPath = path.join(allocation.directory, tmpName);
+      return { allocation, tmpPath, source };
     });
 
-    await assertDestinationContained(destinationRoot, allocation.absolutePath, { realpathImpl });
-    await mkdirImpl(allocation.directory, { recursive: true });
+    if (claim.already) return claim.already;
 
-    const tmpName = `${allocation.filename}.tmp-${randomBytesImpl(8).toString("hex")}`;
-    const tmpPath = path.join(allocation.directory, tmpName);
+    const { allocation, tmpPath } = claim;
     try {
+      // Large copy outside store/alloc locks.
       await copyFileImpl(source.absolutePath, tmpPath);
       const srcStat = await statImpl(source.absolutePath);
       const tmpStat = await statImpl(tmpPath);
@@ -305,43 +429,57 @@ export async function mirrorCompletedOutput(opts = {}) {
         });
       }
       await accessImpl(source.absolutePath, fsConst.F_OK);
-      await renameImpl(tmpPath, allocation.absolutePath);
+
+      await withDestinationAllocLock(destinationRoot, async () => {
+        await renameImpl(tmpPath, allocation.absolutePath);
+      });
+
+      const dstStat = await statImpl(allocation.absolutePath);
+      await updateCloudMirrorStore(storePath, store => {
+        const next = {
+          ...store,
+          records: { ...(store.records || {}) }
+        };
+        next.records[recordKey] = {
+          destinationFilename: allocation.filename,
+          relativePath: allocation.relativePath,
+          bytes: dstStat.size,
+          copiedAt: new Date().toISOString(),
+          folderKey: key,
+          sourceKind: source.sourceKind,
+          projectId: projectId || null
+        };
+        return next;
+      });
+
+      return {
+        ok: true,
+        status: "copied",
+        destinationFilename: allocation.filename,
+        relativePath: allocation.relativePath,
+        bytes: dstStat.size,
+        folderKey: key,
+        folderLabel: path.basename(destinationRoot),
+        sourceKind: source.sourceKind,
+        semantics: "local-sync-folder-copy"
+      };
     } catch (error) {
       try {
         if (await fileExists(tmpPath, { accessImpl })) await unlinkImpl(tmpPath);
       } catch { /* exact temp only */ }
+      try {
+        // Remove exclusive empty/partial claim if rename never completed.
+        if (await fileExists(allocation.absolutePath, { accessImpl })) {
+          const st = await statImpl(allocation.absolutePath);
+          if (st.size === 0) await unlinkImpl(allocation.absolutePath);
+        }
+      } catch { /* exact claim only */ }
       if (error instanceof ComfyOutputPathError) throw error;
       throw new ComfyOutputPathError(error?.message || "Cloud copy failed.", {
         code: "cloud-destination-unavailable",
         status: 409
       });
     }
-
-    const dstStat = await statImpl(allocation.absolutePath);
-    store = await readStore(storePath);
-    store.records = { ...(store.records || {}) };
-    store.records[recordKey] = {
-      destinationFilename: allocation.filename,
-      relativePath: allocation.relativePath,
-      bytes: dstStat.size,
-      copiedAt: new Date().toISOString(),
-      folderKey: key,
-      sourceKind: source.sourceKind,
-      projectId: projectId || null
-    };
-    await writeStore(storePath, store);
-
-    return {
-      ok: true,
-      status: "copied",
-      destinationFilename: allocation.filename,
-      relativePath: allocation.relativePath,
-      bytes: dstStat.size,
-      folderKey: key,
-      folderLabel: path.basename(destinationRoot),
-      sourceKind: source.sourceKind,
-      semantics: "local-sync-folder-copy"
-    };
   })();
 
   inflightByRecord.set(recordKey, run);
@@ -354,7 +492,6 @@ export async function mirrorCompletedOutput(opts = {}) {
 
 /**
  * Auto path: never throws to caller for disable/unavailable — returns status object.
- * Still throws only for programming errors; callers should still wrap.
  */
 export async function tryAutoCloudMirror(opts = {}) {
   try {
@@ -377,11 +514,10 @@ export async function configureCloudMirrorDestination({
   absolutePath,
   accessImpl = access,
   realpathImpl = fsRealpath,
-  readStore = readCloudMirrorStore,
-  writeStore = writeCloudMirrorStore
+  statImpl = stat
 } = {}) {
   const key = normalizeFolderKey(folderKey);
-  const resolved = await assertCloudDirectoryWritable(absolutePath, { accessImpl });
+  const resolved = await assertCloudDirectoryWritable(absolutePath, { accessImpl, statImpl });
   let real;
   try {
     real = await realpathImpl(resolved);
@@ -397,22 +533,27 @@ export async function configureCloudMirrorDestination({
       status: 400
     });
   }
-  let store = await readStore(storePath);
-  store = setCloudMirrorDestination(store, key, real);
-  await writeStore(storePath, store);
+  // Re-validate after realpath (symlink targets must also be directories).
+  await assertCloudDirectoryWritable(real, { accessImpl, statImpl });
+  const store = await updateCloudMirrorStore(storePath, current => setCloudMirrorDestination(current, key, real));
   return publicCloudMirrorView(store, key);
 }
 
 export async function updateCloudMirrorSettings({
   storePath,
   enabled,
-  folderKey = "global",
-  readStore = readCloudMirrorStore,
-  writeStore = writeCloudMirrorStore
+  folderKey = "global"
 } = {}) {
-  let store = await readStore(storePath);
-  if (enabled !== undefined) store = setCloudMirrorEnabled(store, enabled);
-  await writeStore(storePath, store);
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw new ComfyOutputPathError("Il campo enabled deve essere boolean.", {
+      code: "cloud-settings-invalid",
+      status: 400
+    });
+  }
+  const store = await updateCloudMirrorStore(storePath, current => {
+    if (enabled === undefined) return current;
+    return setCloudMirrorEnabled(current, enabled);
+  });
   return publicCloudMirrorView(store, folderKey);
 }
 
@@ -420,8 +561,9 @@ export {
   publicCloudMirrorView,
   readCloudMirrorStore,
   writeCloudMirrorStore,
+  withCloudMirrorStoreLock,
+  updateCloudMirrorStore,
   cloudMirrorRecordKey,
   getCloudMirrorDestination,
   normalizeFolderKey
 };
-
