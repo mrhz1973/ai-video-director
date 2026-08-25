@@ -67,7 +67,8 @@ export function normalizeCloudMirrorStore(raw = null) {
   }
   return {
     version: CLOUD_MIRROR_STORE_VERSION,
-    enabled: Boolean(source.enabled),
+    // Fail closed: only strict boolean true enables auto-copy.
+    enabled: source.enabled === true,
     destinations,
     records
   };
@@ -147,7 +148,9 @@ export function setCloudMirrorDestination(store, folderKey, absolutePath) {
 
 export function setCloudMirrorEnabled(store, enabled) {
   const next = normalizeCloudMirrorStore(store);
-  next.enabled = Boolean(enabled);
+  // Fail closed: non-booleans never enable. Callers that need rejection use
+  // updateCloudMirrorSettings() which validates typeof === "boolean".
+  next.enabled = enabled === true;
   return next;
 }
 
@@ -169,7 +172,7 @@ export function publicCloudMirrorView(store, folderKey = "global") {
   const configured = Boolean(absolutePath);
   return {
     folderKey: key,
-    enabled: Boolean(store?.enabled),
+    enabled: store?.enabled === true,
     configured,
     absolutePath: configured ? absolutePath : null,
     folderLabel: configured ? (path.basename(absolutePath) || absolutePath) : null,

@@ -113,16 +113,23 @@ test("global and project destinations with global fallback", () => {
   assert.equal(getCloudMirrorDestination(store, "project:missing"), "G:\\My Drive\\AI");
 });
 
-test("malformed store normalized safely", () => {
+test("malformed store enabled fail-closed", () => {
+  assert.equal(normalizeCloudMirrorStore({ enabled: "false" }).enabled, false);
+  assert.equal(normalizeCloudMirrorStore({ enabled: "yes" }).enabled, false);
+  assert.equal(normalizeCloudMirrorStore({ enabled: 1 }).enabled, false);
+  assert.equal(normalizeCloudMirrorStore({ enabled: true }).enabled, true);
+  assert.equal(normalizeCloudMirrorStore({ enabled: false }).enabled, false);
   const store = normalizeCloudMirrorStore({
     enabled: "yes",
     destinations: { "project:../x": "bad", global: "C:\\ok", junk: "" },
     records: { k: { destinationFilename: "a.mp4", bytes: "12" } }
   });
-  assert.equal(store.enabled, true);
+  assert.equal(store.enabled, false);
   assert.equal(store.destinations.global, "C:\\ok");
   assert.equal(store.destinations["project:../x"], undefined);
   assert.equal(store.records.k.bytes, 12);
+  assert.equal(setCloudMirrorEnabled(emptyCloudMirrorStore(), "yes").enabled, false);
+  assert.equal(setCloudMirrorEnabled(emptyCloudMirrorStore(), true).enabled, true);
 });
 
 test("resolveCloudMirrorStorePath uses H3_CLOUD_MIRROR_STORE_PATH", () => {
@@ -593,6 +600,215 @@ test("cloud failure does not change archive success semantics", async () => {
   }
 });
 
+/**
+ * Deterministic race proof:
+ * When archive+cloud are both enabled, the coordinated path is
+ * archiveCompletedOutput → tryAutoCloudMirror (as POST /api/archive-output).
+ * Independent cloud-first would lock comfy-output; coordinated path must win
+ * with local-archive + Director filename.
+ */
+test("archive+cloud coordinated path: sourceKind local-archive + Director filename", async () => {
+  const root = tempDir("h3-cloud-race-coord-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const archive = path.join(root, "archive");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(archive);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "MiniMax_H3_00123_.mp4"), Buffer.from("COMFYBYTES"));
+    const archiveStore = path.join(root, "archive.json");
+    const cloudStore = path.join(root, "cloud-mirror.json");
+    await configureArchiveDestination({ storePath: archiveStore, folderKey: "global", absolutePath: archive });
+    await configureCloudMirrorDestination({ storePath: cloudStore, folderKey: "global", absolutePath: sync });
+    await updateCloudMirrorSettings({ storePath: cloudStore, enabled: true });
+
+    const plan = {
+      enabled: true,
+      projectId: "martino",
+      projectLabel: "Martino",
+      scene: "S01",
+      template: "Martino_S01_I2V_Q8_{counter:04}"
+    };
+
+    // Cloud would otherwise be able to run first; coordinated path archives first.
+    const archived = await archiveCompletedOutput({
+      storePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "race1",
+      filename: "MiniMax_H3_00123_.mp4",
+      plan,
+      fetchFn: historyFetch("race1", "MiniMax_H3_00123_.mp4")
+    });
+    assert.equal(archived.ok, true);
+    assert.match(archived.archivedFilename, /^Martino_S01_I2V_Q8_\d{4}\.mp4$/);
+
+    const mirrored = await tryAutoCloudMirror({
+      storePath: cloudStore,
+      archiveStorePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "race1",
+      filename: "MiniMax_H3_00123_.mp4",
+      projectLabel: "Martino",
+      fetchFn: historyFetch("race1", "MiniMax_H3_00123_.mp4")
+    });
+
+    assert.equal(mirrored.ok, true);
+    assert.equal(mirrored.sourceKind, "local-archive");
+    assert.equal(mirrored.destinationFilename, archived.archivedFilename);
+    assert.notEqual(mirrored.destinationFilename, "MiniMax_H3_00123_.mp4");
+    const dest = path.join(sync, "Martino", mirrored.destinationFilename);
+    assert.equal(existsSync(dest), true);
+    assert.equal(readFileSync(dest).equals(Buffer.from("COMFYBYTES")), true);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("archive+cloud race hazard: cloud-first locks comfy-output (why UI must not race)", async () => {
+  const root = tempDir("h3-cloud-race-hazard-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const archive = path.join(root, "archive");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(archive);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "MiniMax_H3_00123_.mp4"), Buffer.from("COMFYBYTES"));
+    const archiveStore = path.join(root, "archive.json");
+    const cloudStore = path.join(root, "cloud-mirror.json");
+    await configureArchiveDestination({ storePath: archiveStore, folderKey: "global", absolutePath: archive });
+    await configureCloudMirrorDestination({ storePath: cloudStore, folderKey: "global", absolutePath: sync });
+    await updateCloudMirrorSettings({ storePath: cloudStore, enabled: true });
+
+    // Independent cloud wins first (the old buggy browser race).
+    const early = await mirrorCompletedOutput({
+      storePath: cloudStore,
+      archiveStorePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "race2",
+      filename: "MiniMax_H3_00123_.mp4",
+      projectLabel: "Martino",
+      fetchFn: historyFetch("race2", "MiniMax_H3_00123_.mp4")
+    });
+    assert.equal(early.sourceKind, "comfy-output");
+    assert.equal(early.destinationFilename, "MiniMax_H3_00123_.mp4");
+
+    const archived = await archiveCompletedOutput({
+      storePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "race2",
+      filename: "MiniMax_H3_00123_.mp4",
+      plan: {
+        enabled: true,
+        projectLabel: "Martino",
+        scene: "S01",
+        template: "Martino_S01_I2V_Q8_{counter:04}"
+      },
+      fetchFn: historyFetch("race2", "MiniMax_H3_00123_.mp4")
+    });
+    assert.ok(archived.archivedFilename);
+    assert.notEqual(archived.archivedFilename, "MiniMax_H3_00123_.mp4");
+
+    // Later cloud via archive endpoint cannot upgrade: idempotence sees existing record.
+    const late = await tryAutoCloudMirror({
+      storePath: cloudStore,
+      archiveStorePath: archiveStore,
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "race2",
+      filename: "MiniMax_H3_00123_.mp4",
+      projectLabel: "Martino",
+      fetchFn: historyFetch("race2", "MiniMax_H3_00123_.mp4")
+    });
+    assert.equal(late.alreadyCopied, true);
+    assert.equal(late.sourceKind, "comfy-output");
+    assert.equal(late.destinationFilename, "MiniMax_H3_00123_.mp4");
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("archive disabled: cloud copies from authoritative comfy-output", async () => {
+  const root = tempDir("h3-cloud-arch-off-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "MiniMax_H3_00999_.mp4"), Buffer.from("DIRECTCOM"));
+    const cloudStore = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath: cloudStore, folderKey: "global", absolutePath: sync });
+    await updateCloudMirrorSettings({ storePath: cloudStore, enabled: true });
+
+    const mirrored = await tryAutoCloudMirror({
+      storePath: cloudStore,
+      archiveStorePath: path.join(root, "archive-missing.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "off1",
+      filename: "MiniMax_H3_00999_.mp4",
+      projectLabel: "Demo",
+      fetchFn: historyFetch("off1", "MiniMax_H3_00999_.mp4")
+    });
+    assert.equal(mirrored.ok, true);
+    assert.equal(mirrored.sourceKind, "comfy-output");
+    assert.equal(mirrored.destinationFilename, "MiniMax_H3_00999_.mp4");
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("archive unavailable/failure: cloud fallback from comfy allowed; archive failure isolated", async () => {
+  const root = tempDir("h3-cloud-arch-fail-");
+  try {
+    const comfy = path.join(root, "comfy");
+    const sync = path.join(root, "sync");
+    mkdirSync(comfy);
+    mkdirSync(sync);
+    writeFileSync(path.join(comfy, "fallback.mp4"), Buffer.from("FALLBACK1"));
+    const cloudStore = path.join(root, "cloud-mirror.json");
+    await configureCloudMirrorDestination({ storePath: cloudStore, folderKey: "global", absolutePath: sync });
+    await updateCloudMirrorSettings({ storePath: cloudStore, enabled: true });
+
+    // Archive intentionally unconfigured — mirror must still succeed from Comfy.
+    const mirrored = await tryAutoCloudMirror({
+      storePath: cloudStore,
+      archiveStorePath: path.join(root, "no-archive.json"),
+      outputRoot: comfy,
+      comfyUrl: "http://127.0.0.1:9",
+      promptId: "fb1",
+      filename: "fallback.mp4",
+      projectLabel: "Demo",
+      fetchFn: historyFetch("fb1", "fallback.mp4")
+    });
+    assert.equal(mirrored.ok, true);
+    assert.equal(mirrored.sourceKind, "comfy-output");
+    assert.equal(existsSync(path.join(sync, "Demo", "fallback.mp4")), true);
+
+    // Archive failure must not throw into cloud path / wipe comfy source.
+    await assert.rejects(
+      () => archiveCompletedOutput({
+        storePath: path.join(root, "no-archive.json"),
+        outputRoot: comfy,
+        comfyUrl: "http://127.0.0.1:9",
+        promptId: "fb1",
+        filename: "fallback.mp4",
+        plan: { enabled: true, projectLabel: "Demo", scene: "s", template: "{project}_{counter:02}.mp4" },
+        fetchFn: historyFetch("fb1", "fallback.mp4")
+      }),
+      error => error?.code === "archive-unconfigured" || error?.status === 409
+    );
+    assert.equal(existsSync(path.join(comfy, "fallback.mp4")), true);
+  } finally {
+    cleanup(root);
+  }
+});
+
 test("settings: non-boolean enabled rejected; boolean false accepted", async () => {
   const dir = tempDir("h3-cloud-settings-");
   try {
@@ -622,6 +838,10 @@ test("UI wording never claims remote Google sync success", () => {
   assert.doesNotMatch(gallery, /Sincronizzato su Google Drive/);
   assert.match(gallery, /copiato nella cartella/);
   assert.match(ui, /\/api\/cloud-mirror\/copy-output/);
+  assert.match(ui, /schedulePostCompletionCopies/);
+  assert.match(ui, /resolvePostCompletionCopyPlan/);
+  assert.doesNotMatch(ui, /scheduleCloudMirror\s*\(/);
+  assert.doesNotMatch(ui, /scheduleArchive\s*\(/);
   assert.doesNotMatch(ui, /\/prompt/);
 });
 

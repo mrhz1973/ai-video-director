@@ -23,6 +23,10 @@ import {
   sessionGalleryClearSideEffects,
   subfolderFromOutputUrl
 } from "./session-outputs.mjs";
+import {
+  resolvePostCompletionCopyPlan,
+  shouldCloudFallbackAfterArchiveFailure
+} from "./output-copy-orchestration.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -31,7 +35,6 @@ const PLAN_PREFIX = "h3OutputPlan:v1:";
 const ARCHIVED_PREFIX = "h3OutputArchived:v1:";
 const originalFetch = window.fetch.bind(window);
 let archiveChain = Promise.resolve();
-let cloudMirrorChain = Promise.resolve();
 let activeSettings = null;
 let activeFolderKey = "global";
 let archiveDestination = {
@@ -301,14 +304,27 @@ async function mirrorOutputs(promptId, items = [], { auto = true } = {}) {
   }
 }
 
-function scheduleCloudMirror(promptId, items) {
-  cloudMirrorChain = cloudMirrorChain
-    .then(() => mirrorOutputs(promptId, items, { auto: true }))
+function schedulePostCompletionCopies(promptId, items) {
+  archiveChain = archiveChain
+    .then(async () => {
+      const plan = readPromptPlan(promptId);
+      const policy = resolvePostCompletionCopyPlan(plan);
+      if (policy.runArchive) {
+        const archiveResult = await archiveOutputs(promptId, items);
+        if (shouldCloudFallbackAfterArchiveFailure(archiveResult)) {
+          await mirrorOutputs(promptId, items, { auto: true });
+        }
+        return;
+      }
+      if (policy.runIndependentCloudAuto) {
+        await mirrorOutputs(promptId, items, { auto: true });
+      }
+    })
     .catch(error => {
-      console.error("H3 cloud mirror failed", error);
-      setCloudMirrorStatus(
-        `Copia cloud non riuscita: ${error?.message || error}. Render e archivio locale restano validi.`,
-        "warn"
+      console.error("H3 output archive/cloud orchestration failed", error);
+      setStatus(
+        `Archiviazione/copia non riuscita: ${error?.message || error}. L'output originale ComfyUI resta intatto.`,
+        "error"
       );
     });
 }
@@ -535,7 +551,9 @@ function archivedKey(promptId, item) {
 
 async function archiveOutputs(promptId, items = []) {
   const plan = readPromptPlan(promptId);
-  if (!plan?.enabled || !Array.isArray(items) || !items.length) return;
+  if (!plan?.enabled || !Array.isArray(items) || !items.length) {
+    return { archiveRan: false, archiveOk: false, reason: "archive-off" };
+  }
 
   let copied = 0;
   for (const item of items) {
@@ -557,18 +575,18 @@ async function archiveOutputs(promptId, items = []) {
     const data = await response.json().catch(() => ({}));
     if (response.status === 409 && data.code === "archive-unconfigured") {
       setStatus("Render completato ma nessuna cartella archivio è configurata sul Director.", "warn");
-      return;
+      return { archiveRan: true, archiveOk: false, reason: "archive-unconfigured", copied };
     }
     if (response.status === 409 && data.code === "archive-unavailable") {
       setStatus("Render completato; cartella archivio non disponibile. L'originale ComfyUI resta intatto.", "warn");
-      return;
+      return { archiveRan: true, archiveOk: false, reason: "archive-unavailable", copied };
     }
     if (!response.ok) {
       setStatus(
         `Archiviazione non riuscita: ${data.error || response.status}. L'output originale ComfyUI resta intatto.`,
         "error"
       );
-      return;
+      return { archiveRan: true, archiveOk: false, reason: "archive-failed", copied };
     }
     if (data.skipped) continue;
     if (data.archivedFilename) {
@@ -633,15 +651,7 @@ async function archiveOutputs(promptId, items = []) {
     }
   }
   if (copied) renderPreview();
-}
-
-function scheduleArchive(promptId, items) {
-  archiveChain = archiveChain
-    .then(() => archiveOutputs(promptId, items))
-    .catch(error => {
-      console.error("H3 output archive failed", error);
-      setStatus(`Archiviazione non riuscita: ${error?.message || error}. L'output originale ComfyUI resta intatto.`, "error");
-    });
+  return { archiveRan: true, archiveOk: true, copied };
 }
 
 window.fetch = async (input, init = undefined) => {
@@ -669,8 +679,7 @@ window.fetch = async (input, init = undefined) => {
     if (method === "GET" && url?.pathname === "/api/outputs" && response.ok) {
       const promptId = url.searchParams.get("promptId") || "";
       response.clone().json().then(items => {
-        scheduleArchive(promptId, items);
-        scheduleCloudMirror(promptId, items);
+        schedulePostCompletionCopies(promptId, items);
       }).catch(() => {});
     }
   } catch { /* archival bookkeeping is non-blocking */ }
