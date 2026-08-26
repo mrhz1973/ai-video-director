@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.2 Wave 2 — focused second orchestrator correction pass
+UI/UX v0.19.2 Wave 2 — controlled UI acceptance gate
 
 ## STATUS
 
-BLOCKED
+WAITING_OPERATOR_AUTHORIZATION
 
 ## GATE
 
-PR #93 must correct exact-head orchestrator re-review `5032896689`, rerun full tests + validator, reach green CI, and pass exact-head orchestrator re-review. Controlled UI acceptance is a later separate gate. Merge/deploy is a later separate explicit gate. No generation, upload, live queue mutation, GPU power change, Director restart or ComfyUI restart is authorized.
+Exact reviewed PR #93 head `e8f169177ecb8e1be55a4c56092296ab3057d99c` passed source review `5033127331`, npm test 898/898, validator PASS, and exact-head CI. Controlled UI acceptance requires explicit operator authorization. Merge/deploy is a later separate explicit gate. No generation, upload, live queue mutation, GPU power change or ComfyUI restart is authorized.
 
 ## NEXT
 
-Correct issue #92 on the same isolated PR #93 branch without Wave 3 scope: keep OUTPUT Inspector truthful/live (do not label the first filtered clip as current without real selection; refresh Inspector when archive/cloud config changes), and add deterministic integration-level regressions for non-firstImage Batch override UI refresh and restored CODA-filter recovery reconciliation. Preserve target `v0.19.2`, Wave 1 tooltip/accessibility contract, compact project strip, and all already-passing Wave 2 work.
+After explicit operator authorization, perform controlled UI acceptance of Wave 2 `v0.19.2`: verify version coherence; contextual Inspector across SCENA/BATCH/CODA/OUTPUT; CODA display-only filters with recovery always reachable; OUTPUT gallery/list/filter/group/order and truthful live Inspector/archive/cloud state; BATCH shared input versus per-job override behavior; compact project strip; and Wave 1 tooltip/accessibility contract. Restore canonical Director afterward if a temporary PR-head Director restart is required. Do not generate or mutate queue/GPU state.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #92 and blocked in orchestrator re-review on PR #93. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
+HARNESS_ENGINEERING is ACTIVE on #92 and waiting for controlled UI acceptance authorization. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX Wave 1 complete end-to-end and deployed. #92 PR #93 correction head `ac8582b62df075d0fd310d8dcc53b3de09d7f1c9` is realigned with main, reports 896/896 tests + validator PASS, and has green CI. Original Wave 2 blockers for numeric OUTPUT ordering, all-role BATCH refresh, and recovery visibility are corrected. Exact-head re-review `5032896689` still blocks controlled UI acceptance because OUTPUT Inspector can invent/stale current/config state and two required integration regressions are not yet exercised.
+#88 UI/UX Wave 1 complete end-to-end and deployed. #92 PR #93 exact head `e8f169177ecb8e1be55a4c56092296ab3057d99c` is realigned with the reviewed main base, reports 898/898 tests + validator PASS, has green exact-head CI, and passed orchestrator review `5033127331`. Source blockers are cleared; controlled UI acceptance is the first remaining real gate.
 
 ## GLOBAL RUNTIME INVARIANTS
 
