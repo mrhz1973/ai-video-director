@@ -10,6 +10,8 @@ Start ComfyUI separately on `http://127.0.0.1:8188`. Keep it local. Verify the H
 
 The current harness does **not** start, stop, restart or own the ComfyUI process. This is intentional. Any batch file, terminal or service used to launch ComfyUI is external to `server.mjs` unless a future optional service-manager feature is explicitly approved.
 
+Windows production startup/deployment uses a dedicated **stable runtime** checkout separate from development worktrees. The Desktop shortcut must target that stable runtime harness — never a feature/development checkout. Install, launcher authority, detached release SHA deployment, and fail-closed rules are documented in `comfyui-harness/scripts/windows/README.md` (Issue #97).
+
 The public H3 repository describes H3-Base as task-specific checkpoints; the exact node names and graph wiring depend on the user's installed ComfyUI extension. For that reason the harness binds an exported graph rather than guessing node classes.
 
 ## 2. Export API workflows

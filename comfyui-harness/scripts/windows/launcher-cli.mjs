@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { inspectPort } from "../../lib/windows-port-inspect.mjs";
+import { assertHarnessRootMatchesRuntimeAuthority, validateRuntimeFilesystem } from "../../lib/stable-runtime.mjs";
 import {
   ACTION,
   DEFAULT_CONFIG,
@@ -30,7 +31,7 @@ import {
 } from "../../lib/windows-launcher.mjs";
 
 function parseArgs(argv = []) {
-  const args = { command: "", harnessRoot: "", config: "", comfyRoot: "", openBrowser: true };
+  const args = { command: "", harnessRoot: "", config: "", comfyRoot: "", runtimeRoot: "", openBrowser: true };
   const rest = [...argv];
   args.command = rest.shift() || "";
   while (rest.length) {
@@ -38,6 +39,7 @@ function parseArgs(argv = []) {
     if (token === "--harness-root") args.harnessRoot = rest.shift() || "";
     else if (token === "--config") args.config = rest.shift() || "";
     else if (token === "--comfy-root") args.comfyRoot = rest.shift() || "";
+    else if (token === "--runtime-root") args.runtimeRoot = rest.shift() || "";
     else if (token === "--no-browser") args.openBrowser = false;
   }
   return args;
@@ -154,11 +156,14 @@ export async function runStatus({
 export async function runStart({
   harnessRoot,
   configPath,
+  configOverride = {},
   deps = {}
 } = {}) {
   const { fetchFn, spawnFn, openBrowserFn, inspectPortFn, sleepFn, log } = resolveDeps(deps);
 
-  const config = await loadConfig(configPath, { required: true });
+  const loaded = await loadConfig(configPath, { required: true });
+  const config = normalizeConfig({ ...loaded, ...configOverride });
+  assertHarnessRootMatchesRuntimeAuthority({ runtimeRoot: config.runtimeRoot, harnessRoot });
   const configErrors = validateConfig(config);
   if (configErrors.length) throw new Error(configErrors.join("; "));
 
@@ -340,6 +345,12 @@ export async function writeInstallerConfig(configPath, payload) {
   await writeFile(configPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
+export async function runValidateRuntime({ runtimeRoot, requireDetached = false } = {}) {
+  const fs = validateRuntimeFilesystem({ runtimeRoot });
+  if (!fs.ok) throw new Error(fs.errors.join("; "));
+  return fs;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -361,6 +372,7 @@ async function main() {
     }
     if (args.command === "write-config") {
       const payload = buildLauncherConfigPayload({
+        runtimeRoot: args.runtimeRoot,
         comfyRoot: args.comfyRoot,
         openBrowser: args.openBrowser
       });
@@ -368,7 +380,12 @@ async function main() {
       console.log(JSON.stringify({ ok: true, configPath, payload }, null, 2));
       return;
     }
-    console.error("Usage: launcher-cli.mjs <start|status|write-config> [--harness-root PATH] [--config PATH]");
+    if (args.command === "validate-runtime") {
+      const result = await runValidateRuntime({ runtimeRoot: args.runtimeRoot });
+      console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      return;
+    }
+    console.error("Usage: launcher-cli.mjs <start|status|write-config|validate-runtime> [--harness-root PATH] [--config PATH] [--runtime-root PATH]");
     process.exitCode = 2;
     return;
   } catch (error) {

@@ -87,14 +87,19 @@ function New-LauncherShortcut {
 
 function Invoke-LauncherCli {
     param(
-        [Parameter(Mandatory = $true)][ValidateSet('start', 'status')][string]$Command,
+        [Parameter(Mandatory = $true)][ValidateSet('start', 'status', 'validate-runtime')][string]$Command,
         [string]$HarnessRoot = (Get-HarnessRoot),
-        [string]$ConfigPath = (Get-LauncherConfigPath)
+        [string]$ConfigPath = (Get-LauncherConfigPath),
+        [string]$RuntimeRoot = ""
     )
 
     $node = Get-NodeExecutable
     $cli = Join-Path $PSScriptRoot 'launcher-cli.mjs'
-    & $node $cli $Command --harness-root $HarnessRoot --config $ConfigPath
+    $args = @($cli, $Command, '--harness-root', $HarnessRoot, '--config', $ConfigPath)
+    if ($RuntimeRoot) {
+        $args += @('--runtime-root', $RuntimeRoot)
+    }
+    & $node @args
     if ($LASTEXITCODE -ne 0) {
         throw "Launcher CLI exited with code $LASTEXITCODE"
     }

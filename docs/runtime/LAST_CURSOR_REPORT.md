@@ -1,33 +1,39 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #95  
-TASK: Fix blocked controlled acceptance — lib→public browser import boundary  
+TASK_REF: #97  
+TARGET_VERSION: 0.19.4  
 ROLE: HARNESS_ENGINEERING  
 STATUS: PASS  
 EVIDENCE_STATE: EVIDENCE_COMPLETE  
 SOURCE: Cursor  
-BASE_MAIN_SHA: ceb58d36f0e0abb2154ac660cb1f7dd0edb0ca5c  
-WORK_REF: feat/issue-95-uiux-wave3-v0193  
-COMMIT: afbfba5  
-PR_HEAD: afbfba598f2507c8b3e429c1da70ed223a6644f6  
-VALIDATION: npm test 948/948 PASS; validate_project.py PASS  
-CI: PASS (exact-head validate @ afbfba5)  
+BASE_MAIN_SHA: 06bbf4832dd3d93ff3d54f3b7cfa3c22dab84397  
+WORK_REF: fix/issue-97-stable-runtime-v0194  
+COMMIT: (pending push)  
+PR: (pending)  
+VALIDATION: npm test 972/972 PASS; validate_project.py PASS  
+CI: (pending exact-head)  
 RUNTIME_TOUCHED: NO  
 
 ## SUMMARY
 
-- **Main realignment** — merged `origin/main` @ `ceb58d3` (docs/state bookkeeping only; CURRENT_FRONTIER / Workboard / #97 preserved).
-- **Root cause** — `lib/h3-model-registry.mjs` imported `../public/output-naming.mjs`; browser served at `/lib/h3-model-registry.mjs` resolved dependency to **`GET /public/output-naming.mjs` → 404** (Harness serves public modules at site root `/output-naming.mjs`).
-- **Architectural fix** — extracted isomorphic helpers to **`lib/model-name.mjs`** (`sanitizeOutputSegment`, `shortModelName`); `h3-model-registry.mjs` now imports `./model-name.mjs`; `public/output-naming.mjs` re-exports from lib. **lib → public dependency eliminated** in browser graph.
-- **Old failing browser URL:** `/public/output-naming.mjs`
-- **Corrected browser dependency URL:** `/lib/model-name.mjs`
-- **Browser import-graph regression** — `browser-static-import-graph.test.mjs` (4 tests): walks index.html module entries, proves `h3-model-registry` + `model-name` reachable, forbids `/public/*` URLs and `../public/*` imports in served lib modules; includes stale-URL negative proof.
-- **Friendly-label regression** — existing `model-registry.test.mjs` + `output-naming.test.mjs` PASS unchanged behavior (`H3 Q4`, `H3 Q8CR`, `H3 Ref Q4`).
-- **Wave 3 preserved** — v0.19.3 (no bump), model discovery, zero-model fail-safe, batch gates, CSS consolidation, Wave 1/2, SYSTEM NOT_IMPLEMENTED_BY_DESIGN.
-- **npm test** — 948 tests, 0 failures.
-- **Validator** — PASS.
-- **Generation** — 0 | **Upload** — 0 | **Queue mutation** — NO | **GPU mutation** — NO | **Project mutation** — NO | **Director restart** — NO | **ComfyUI restart** — NO.
+- **Implementation branch:** `fix/issue-97-stable-runtime-v0194` from `origin/main` @ `06bbf48`
+- **Version:** `0.19.3` → **`0.19.4`** (package/UI/API coherent)
+- **Explicit runtime-root design:** `launcher.json.runtimeRoot` + mandatory installer `-RuntimeRoot`; production harness = `<runtimeRoot>\comfyui-harness`; no inference from installer source checkout
+- **Installer dev-checkout regression:** `Install-AIVideoDirectorLauncher.ps1` requires `-RuntimeRoot`; Desktop shortcut + WorkingDirectory bind to stable runtime Start script (never `Get-HarnessRoot` from dev checkout)
+- **Launcher mismatch guard:** `runStart()` fail-closed via `assertHarnessRootMatchesRuntimeAuthority()` when configured runtime root disagrees with executing harness root
+- **Runtime validation:** `lib/stable-runtime.mjs` — filesystem/git/detached/clean/desktop/queue checks (testable, no auto-clean/reset/stash)
+- **Deployment design:** `lib/windows-runtime-deploy.mjs` + `deploy-runtime-cli.mjs` + `Deploy-AIVideoDirectorRuntime.ps1`; authority = exact `-ReleaseSha` (fetch + detached checkout only); idempotent noop when already at SHA + healthy Director
+- **Exact-PID semantics:** deployment stops only verified Director PID via injected `stopProcessFn`; no broad node/python kill
+- **ComfyUI external/no-restart:** deployment preflight reads health/queue/PID; never stops/starts ComfyUI; requires same PID pre/post
+- **Idempotent behavior:** same SHA + expected version + healthy Director → `action: noop`, spawn 0
+- **npm test:** 972 tests, 0 failures (+24 new stable-runtime/deploy regressions)
+- **Validator:** PASS
+- **Production runtime untouched:** YES (`ai-video-director-runtime` @ `01a4d90` / v0.19.3)
+- **Desktop shortcut untouched:** YES
+- **Director restart:** NO
+- **ComfyUI restart:** NO
+- **Generation:** 0 | **Upload:** 0 | **Queue mutation:** NO | **GPU mutation:** NO | **Project mutation:** NO
 
 ## NEXT_RELEVANCE
 
-Operator may re-run controlled UI acceptance on new PR head. Merge/deploy remain separate gates.
+Orchestrator source review #97. Live deploy/install remains operator-gated.
