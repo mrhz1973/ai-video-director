@@ -22,33 +22,34 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-HARNESS_ENGINEERING idle after #88 Wave 1 completion
+UI/UX v0.19.2 Wave 2 — workflow usability and scalable operator views
 
 ## STATUS
 
-IDLE
+IN_PROGRESS
 
 ## GATE
 
-Explicit activation before starting Wave 2 or another Harness issue. Generation remains separately gated by the project generation authorization contract.
+Isolated implementation/tests + validator + CI + orchestrator review. Controlled UI acceptance is a later separate gate. Merge/deploy is a later separate explicit gate. No generation, upload, live queue mutation, GPU power change or ComfyUI restart is authorized.
 
 ## NEXT
 
-Await explicit operator/orchestrator activation of Wave 2 or another Harness issue. Wave 2/3 remain approved roadmap but inactive. #89 autonomous specialist intake remains a separate reusable-framework follow-up and is not auto-promoted by #88 completion.
+Implement issue #92 only: contextual Inspector by active workspace; CODA filters and compact terminal history; OUTPUT compact/gallery views with authoritative filtering/grouping/ordering; clearer BATCH summaries and shared-input vs per-job override state; compact project strip; preserve Wave 1 global tooltip/accessibility contract. Release target is `v0.19.2` with package/UI/API version coherence and regression protection.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is idle. Other specialist lanes are governed independently by the Workboard and scoped production authority.
+HARNESS_ENGINEERING is ACTIVE on #92. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX v0.19.0 Wave 1 complete end-to-end. PR #90 merged at `ca101ee025ab1302dc6cb42d6c4630a549acbd7d`; authorized Director-only deployment PASS. Final deployment evidence persisted via PR #91 and merged to main. Deployment evidence records queue preflight 0/0, Director restart YES (exact PID only), ComfyUI restart NO / same PID YES, `/api/health` PASS, `/api/config` PASS, Wave 1 smoke PASS, generation 0, upload 0, POST `/prompt` 0, POST `/api/queue` 0, queue mutation NO, GPU mutation NO.
+#88 UI/UX Wave 1 complete end-to-end and deployed: implementation/tests/review/controlled UI acceptance/merge/deploy PASS; deployment evidence persisted via PR #91. Harness release before Wave 2 remains `v0.19.0`; Wave 2 must release as `v0.19.2` and future functional/UI releases must advance the version again. Docs/evidence-only bookkeeping commits are exempt.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical Harness package: **v0.19.0**
+- Canonical Harness package before Wave 2: **v0.19.0**
+- Wave 2 target release: **v0.19.2**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - ComfyUI lifecycle is external to the Director
@@ -62,5 +63,6 @@ Pointer only: see `registry/*` and the scoped production authority referenced by
 
 ## RULES
 
+- Every functional/UI modification released to `main` advances the Harness version; docs/evidence-only bookkeeping commits are exempt.
 - Evidence never self-promotes to METHOD defaults (see Issue #69 caveat).
 - This file never contains chat recap, cinematic continuity dumps, or Harness release history.
