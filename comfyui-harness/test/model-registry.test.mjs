@@ -294,6 +294,8 @@ test("batch-ui imports model gate for prepare/queue blocking", () => {
   assert.match(batchUi, /describeModelSelectionBlocker/);
   assert.match(batchUi, /currentModelBlocker/);
   assert.match(batchUi, /syncBatchModelGate/);
+  assert.match(batchUi, /resolveBatchAddToQueueGate/);
+  assert.match(batchUi, /batchAddToQueue/);
 });
 
 test("app.js wires modelBlockedReason into generate gate", () => {

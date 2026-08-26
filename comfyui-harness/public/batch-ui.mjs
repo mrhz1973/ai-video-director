@@ -49,6 +49,7 @@ import {
 } from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
 import { describeModelSelectionBlocker } from "../lib/h3-model-registry.mjs";
+import { resolveBatchAddToQueueGate } from "../lib/batch-model-gate.mjs";
 import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
 import {
@@ -451,14 +452,32 @@ function currentModelBlocker() {
 function syncBatchModelGate() {
   const blocker = currentModelBlocker();
   const prepare = $("batchPrepare");
-  const queue = $("batchQueue");
   const addQueue = $("batchAddToQueue");
+  const addGate = resolveBatchAddToQueueGate({
+    registry: currentModelRegistry(),
+    selectedModel: $("model")?.value || "",
+    preparedCount: items.length,
+    minBatchJobs: MIN_BATCH_JOBS
+  });
+
   if (prepare) {
     prepare.disabled = blocker.blocked;
     if (blocker.blocked) {
-      setControlHelp(prepare, blocker.reason, { whenDisabled: blocker.reason });
+      setControlHelp(prepare, CONTROL_HELP.batchPrepare, { whenDisabled: blocker.reason });
+    } else {
+      setControlHelp(prepare, CONTROL_HELP.batchPrepare);
     }
   }
+
+  if (addQueue) {
+    addQueue.disabled = addGate.disabled;
+    if (addGate.disabledReason) {
+      setControlHelp(addQueue, CONTROL_HELP.batchAddToQueue, { whenDisabled: addGate.disabledReason });
+    } else {
+      setControlHelp(addQueue, CONTROL_HELP.batchAddToQueue);
+    }
+  }
+
   if (blocker.blocked && $("batchFeedback") && !items.length) {
     setFeedback(blocker.reason, "error");
   }
@@ -666,7 +685,7 @@ function appendBatchJobInputSection(body, item) {
 function markEdited() {
   submitted = false;
   persistDraft({ notify: true });
-  updateQueueButton();
+  syncBatchModelGate();
 }
 
 function setFeedback(message, kind = "neutral") {
@@ -834,7 +853,7 @@ function renderBatch() {
     empty.textContent = "Nessun batch preparato.";
     host.append(empty);
     updateInspectorBatchContext({ items: [], source });
-    updateQueueButton();
+    syncBatchModelGate();
     return;
   }
 
@@ -959,7 +978,7 @@ function renderBatch() {
     source,
     openIndexes: batchExpandState
   });
-  updateQueueButton();
+  syncBatchModelGate();
 }
 
 function lastKnownQueue() {
@@ -1087,7 +1106,7 @@ async function runSequentialBatch(snapshot) {
     throw new Error("Un altro invio è già in corso.");
   }
   submitting = true;
-  updateQueueButton();
+  syncBatchModelGate();
   try {
     setFeedback(`Preflight OK. Invio sequenziale di ${items.length} job…`, "ok");
     const batchId = crypto.randomUUID();
@@ -1154,7 +1173,7 @@ async function runSequentialBatch(snapshot) {
       await releaseExecutionLane(held);
       coord?.clearLaneReservation?.();
     }
-    updateQueueButton();
+    syncBatchModelGate();
   }
 }
 
@@ -1172,7 +1191,7 @@ async function queueBatch() {
   if (!loraCheck.ok) return setFeedback(loraCheck.error, "error");
 
   submitting = true;
-  updateQueueButton();
+  syncBatchModelGate();
   try {
     const coord = getSharedCoordinator();
     const activeResponse = await fetch("/api/active");
@@ -1247,7 +1266,7 @@ async function queueBatch() {
     setFeedback(error?.message || String(error), "error");
   } finally {
     submitting = false;
-    updateQueueButton();
+    syncBatchModelGate();
   }
 }
 
@@ -1548,10 +1567,10 @@ async function init() {
 
   loadDraftFromLocalStorage();
   loadRuntime();
-  window.addEventListener("h3-queue-sample", () => updateQueueButton());
-  window.addEventListener("h3-batch-queue-armed", () => updateQueueButton());
-  window.addEventListener("h3-batch-queue-changed", () => updateQueueButton());
-  window.addEventListener("h3-batch-queue-runtime", () => updateQueueButton());
+  window.addEventListener("h3-queue-sample", () => syncBatchModelGate());
+  window.addEventListener("h3-batch-queue-armed", () => syncBatchModelGate());
+  window.addEventListener("h3-batch-queue-changed", () => syncBatchModelGate());
+  window.addEventListener("h3-batch-queue-runtime", () => syncBatchModelGate());
   window.addEventListener("h3-comfy-progress", event => {
     const raw = event?.detail?.progress || null;
     if (raw?.nodeId && raw?.displayNode) {
@@ -1562,7 +1581,7 @@ async function init() {
   });
   window.addEventListener("h3-deferred-batch-cancel", () => {
     setFeedback("Attesa batch annullata. Nessun job inviato.", "warn");
-    updateQueueButton();
+    syncBatchModelGate();
   });
   window.addEventListener("h3-project-batch-restore", event => {
     const draft = event?.detail?.batchDraft || null;
