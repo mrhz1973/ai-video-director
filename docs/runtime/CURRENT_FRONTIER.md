@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — controlled UI acceptance
+UI/UX v0.19.3 Wave 3 — controlled UI acceptance authorized
 
 ## STATUS
 
-ACCEPTANCE_GATE
+ACCEPTANCE_AUTHORIZED
 
 ## GATE
 
-PR #96 final corrected candidate at exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf` has completed source review PASS. npm test 944/944 PASS, validator PASS and exact-head CI run #488 PASS with runtime untouched. Zero-compatible-model Single/Batch fail-safe, measured CSS/cascade consolidation, and primary `+ AGGIUNGI ALLA CODA` disabled/help behavior are source-verified. Controlled UI acceptance now requires explicit operator authorization. Merge and deploy remain unauthorized.
+PR #96 final corrected candidate at exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf` has source review PASS, npm test 944/944 PASS, validator PASS and exact-head CI #488 PASS. Operator explicitly authorized Controlled UI Acceptance v0.19.3; authorization is persisted on PR #96 comment `5430699803`. Acceptance may temporarily restart Director only if required to serve the exact candidate, must not restart ComfyUI, and must restore deployed v0.19.2 from the dedicated stable runtime afterward. Merge and deploy remain unauthorized.
 
 ## NEXT
 
-After explicit operator authorization, perform controlled UI acceptance of candidate v0.19.3 only. Verify UI/API/version coherence, friendly/technical model presentation and unavailable states, zero-compatible-model blocking, Add-to-CODA disabled/help behavior, and Wave 1/2 visual/layout regressions. Acceptance must not generate, upload, mutate live queue/GPU/project state, restart ComfyUI, merge, or deploy. Stop after acceptance evidence for the merge gate.
+Execute controlled UI acceptance of exact PR head only. Perform runtime-safe/read-only preflight; fail closed if PR head changes or queue/runtime state is not safely idle. Verify UI/API/version coherence at 0.19.3; friendly model labels + technical filename detail; truthful installed/missing/unavailable states; zero-compatible-model Single/Batch blocking without submission; `+ AGGIUNGI ALLA CODA` disabled/help and ordinary unprepared-Batch eligibility; Wave 1/2 visual/layout/Inspector/tooltips regressions. No generation, upload, POST prompt, POST queue, queue/GPU/project mutation, ComfyUI lifecycle operation, merge, or deploy. Restore deployed v0.19.2 and persist acceptance evidence, then stop for merge gate.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 at the Controlled UI Acceptance gate. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden PR #96. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 with Controlled UI Acceptance explicitly authorized. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden acceptance. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. For #95 / PR #96 exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf`: zero-compatible-model selection/submission fail-safe RESOLVED; CSS/cascade consolidation RESOLVED with measured deduplication evidence; SYSTEM panel decision `NOT_IMPLEMENTED_BY_DESIGN`; legacy reconciliation persisted; Add-to-CODA authoritative model/readiness state RESOLVED; npm test 944/944 PASS; validator PASS; exact-head CI #488 PASS; orchestrator source review PASS marker `5034728957`; generation/upload/queue/GPU/runtime mutations zero/NO.
+#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. For #95 / PR #96 exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf`: zero-compatible-model selection/submission fail-safe RESOLVED; CSS/cascade consolidation RESOLVED with measured deduplication evidence; SYSTEM panel decision `NOT_IMPLEMENTED_BY_DESIGN`; legacy reconciliation persisted; Add-to-CODA authoritative model/readiness state RESOLVED; npm test 944/944 PASS; validator PASS; exact-head CI #488 PASS; orchestrator source review PASS marker `5034728957`; operator acceptance authorization PR comment `5430699803`; generation/upload/queue/GPU/runtime mutations zero/NO before acceptance execution.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -53,6 +53,7 @@ HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 at the Controlled UI Acceptan
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
+- Controlled acceptance must restore the deployed stable-runtime Director after temporary candidate serving
 - Eventual deploy advances that stable runtime checkout to the exact authorized merged release SHA before Director restart
 - ComfyUI lifecycle is external to the Director
 - Harness detail: `docs/HARNESS_STATE.md`
