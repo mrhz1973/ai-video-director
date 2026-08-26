@@ -7,6 +7,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   ACTION,
+  DIRECTOR_HEALTH_IDENTITY,
   PROCESS_CLASS,
   SERVICE,
   assertLauncherSourceSafe,
@@ -77,8 +78,8 @@ function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
 }
 
-function directorConfig(version = expectedDirectorVersion) {
-  return new Response(JSON.stringify({ version, presets: [{ id: "minimax-h3-i2v" }] }), { status: 200 });
+function directorHealth(version = expectedDirectorVersion, service = DIRECTOR_HEALTH_IDENTITY) {
+  return new Response(JSON.stringify({ service, version }), { status: 200 });
 }
 
 async function makeTempConfig(comfyRoot, overrides = {}) {
@@ -110,7 +111,7 @@ test("Comfy healthy -> reuse, spawn count 0", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async port => (port === 8188 || port === 8787 ? listeningPort(1000 + port) : absentPort()),
@@ -138,7 +139,7 @@ test("Comfy absent -> exactly one intended start", async () => {
           comfyChecks += 1;
           return comfyChecks >= 2 ? comfyStats() : new Response("down", { status: 503 });
         }
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async port => (port === 8787 ? listeningPort(9877) : absentPort()),
@@ -198,7 +199,7 @@ test("Director healthy -> reuse, spawn count 0", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -224,9 +225,9 @@ test("Director absent -> exactly one intended start", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) {
+        if (String(url).includes("/api/health")) {
           directorChecks += 1;
-          return directorChecks >= 2 ? directorConfig(version) : new Response("down", { status: 503 });
+          return directorChecks >= 2 ? directorHealth(version) : new Response("down", { status: 503 });
         }
         return new Response("{}", { status: 404 });
       },
@@ -255,6 +256,46 @@ test("Director occupied by unexpected service -> fail closed", async () => {
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(7777, { executable: "node.exe", commandLine: "node other.js" }),
+      spawnFn: () => { throw new Error("should not spawn"); }
+    }
+  }), /unexpected process/i);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("Director wrong service identity -> fail closed", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) return comfyStats();
+        if (String(url).includes("/api/health")) return directorHealth(expectedDirectorVersion, "other-service");
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async () => listeningPort(7777, { executable: "node.exe", commandLine: "node other.js" }),
+      spawnFn: () => { throw new Error("should not spawn"); }
+    }
+  }), /unexpected process/i);
+  await rm(path.dirname(configPath), { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("Director wrong version -> fail closed", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath } = await makeTempConfig(comfyRoot);
+  await assert.rejects(() => runStart({
+    harnessRoot,
+    configPath,
+    deps: {
+      fetchFn: async url => {
+        if (String(url).includes("/system_stats")) return comfyStats();
+        if (String(url).includes("/api/health")) return directorHealth("999.0.0");
+        return new Response("{}", { status: 404 });
+      },
+      inspectPortFn: async () => listeningPort(7777, { executable: "node.exe", commandLine: "node server.mjs" }),
       spawnFn: () => { throw new Error("should not spawn"); }
     }
   }), /unexpected process/i);
@@ -293,7 +334,7 @@ test("both already healthy -> idempotent success", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -323,10 +364,10 @@ test("browser opens only after both health gates", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) {
+        if (String(url).includes("/api/health")) {
           directorChecks += 1;
           events.push(`director-probe-${directorChecks}`);
-          return directorChecks >= 2 ? directorConfig(version) : new Response("down", { status: 503 });
+          return directorChecks >= 2 ? directorHealth(version) : new Response("down", { status: 503 });
         }
         return new Response("{}", { status: 404 });
       },
@@ -357,7 +398,7 @@ test("openBrowser=false -> browser count 0", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -381,7 +422,7 @@ test("status command performs no writes/spawns", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1)
@@ -467,9 +508,25 @@ test("probe helpers recognize healthy ComfyUI and Director responses", async () 
   });
   assert.equal(comfy.healthy, true);
   const director = await probeDirectorHealth("http://127.0.0.1:8787", "0.11.0", {
-    fetchFn: async () => directorConfig("0.11.0")
+    fetchFn: async url => {
+      assert.match(String(url), /\/api\/health$/);
+      return directorHealth("0.11.0");
+    }
   });
   assert.equal(director.healthy, true);
+});
+
+test("Director health probe never depends on /api/config", async () => {
+  const requests = [];
+  const director = await probeDirectorHealth("http://127.0.0.1:8787", expectedDirectorVersion, {
+    fetchFn: async url => {
+      requests.push(String(url));
+      if (String(url).includes("/api/config")) throw new Error("heavy config path must not be called");
+      return directorHealth(expectedDirectorVersion);
+    }
+  });
+  assert.equal(director.healthy, true);
+  assert.deepEqual(requests, ["http://127.0.0.1:8787/api/health"]);
 });
 
 test("waitForHealth times out cleanly", async () => {
@@ -619,9 +676,9 @@ test("post-start Director reinspection failure rejects and does not open browser
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) {
+        if (String(url).includes("/api/health")) {
           directorHealthChecks += 1;
-          return directorHealthChecks >= 2 ? directorConfig(version) : new Response("down", { status: 503 });
+          return directorHealthChecks >= 2 ? directorHealth(version) : new Response("down", { status: 503 });
         }
         return new Response("{}", { status: 404 });
       },
@@ -700,7 +757,7 @@ test("status reports PID metadata when available", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async port => listeningPort(1000 + port, {
@@ -724,7 +781,7 @@ test("status with missing config is useful and read-only", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig(await readDirectorPackageVersion(harnessRoot));
+        if (String(url).includes("/api/health")) return directorHealth(await readDirectorPackageVersion(harnessRoot));
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async port => (port === 8787 ? listeningPort(9024) : absentPort())
