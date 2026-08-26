@@ -1,4 +1,4 @@
-# LAST_CURSOR_REPORT
+﻿# LAST_CURSOR_REPORT
 
 TASK_REF: #73
 TASK: Single Render cannot be started again after completion without reload
@@ -8,9 +8,9 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 744c17788970cbcc11387179cc18eaae1a57e3a4
 WORK_REF: fix/issue-73-single-render-readiness
-COMMIT: 43fb58101e059942763c33b95f58c345cd0c499b
+COMMIT: pending
 PR: https://github.com/mrhz1973/ai-video-director/pull/82
-VALIDATION: npm test 841 pass / 0 fail; python scripts/validate_project.py PASS
-RUNTIME_TOUCHED: NO
-SUMMARY: Verified root cause: rememberJob() clear stopped queue polling and left a stale queueRunning=1 sample, so resolveGenerateAction stayed on queue-next (Metti in coda) after terminal. Fix: keep queue polling after terminal clear; await reconcileQueueAfterTerminal() (authoritative /api/active refresh) after completed/failed/interrupted paths; helper post-terminal-queue.mjs. Does not blindly force 0/0. Canonical Director/ComfyUI untouched; no generation; no live acceptance/merge/deploy.
-NEXT_RELEVANCE: Orchestrator review of #73 PR. Canonical runtime untouched. Controlled live acceptance / merge / deploy remain separate gates.
+VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; post-terminal Genera singolo without reload; second independent single render with updated seed/steps/prompt; canonical main restored; validate CI on report push
+RUNTIME_TOUCHED: YES
+SUMMARY: Queue was idle (0/0) before restart. Only Director restarted (PR #82 temporary). ComfyUI restart NO. First single T2V render reached terminal handling; post-terminal readiness without reload PASS (action=generate, label Genera singolo, enabled). Second render without reload PASS using updated editor values (seed 73001, steps 9, updated prompt); exactly one second /api/queue POST. Canonical main Director restored YES (744c177). No Batch/queued-next regression. No merge/deploy.
+NEXT_RELEVANCE: Controlled live acceptance PASS. Explicit operator approval required for merge/deploy of PR #82.
