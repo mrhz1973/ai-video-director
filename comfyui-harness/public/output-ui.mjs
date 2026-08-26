@@ -27,6 +27,7 @@ import {
   resolvePostCompletionCopyPlan,
   shouldCloudFallbackAfterArchiveFailure
 } from "./output-copy-orchestration.mjs";
+import { CONTROL_HELP, syncOperatorHelpState } from "./control-help.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -34,6 +35,22 @@ const SCOPE_PREF_PREFIX = "h3OutputScopePreference:v1:";
 const PLAN_PREFIX = "h3OutputPlan:v1:";
 const ARCHIVED_PREFIX = "h3OutputArchived:v1:";
 const originalFetch = window.fetch.bind(window);
+
+/** Keep tooltip disabled-help wrapping in sync when Output toggles folder buttons. */
+function syncFolderOpenHelp(btn, kind) {
+  if (!btn) return;
+  if (kind === "cloud") {
+    syncOperatorHelpState(btn, {
+      enabledHelp: CONTROL_HELP.cloudMirrorOpenFolder,
+      disabledReason: CONTROL_HELP.cloudMirrorOpenFolderDisabled
+    });
+  } else {
+    syncOperatorHelpState(btn, {
+      enabledHelp: CONTROL_HELP.outputOpenFolder,
+      disabledReason: CONTROL_HELP.outputOpenFolderDisabled
+    });
+  }
+}
 let archiveChain = Promise.resolve();
 let activeSettings = null;
 let activeFolderKey = "global";
@@ -147,7 +164,10 @@ async function refreshCloudMirrorConfig() {
         ? (cloudMirrorState.absolutePath || cloudMirrorState.folderLabel || "Cartella configurata")
         : "Nessuna cartella scelta";
     }
-    if (openBtn) openBtn.disabled = !cloudMirrorState.configured;
+    if (openBtn) {
+      openBtn.disabled = !cloudMirrorState.configured;
+      syncFolderOpenHelp(openBtn, "cloud");
+    }
     if (!cloudMirrorState.enabled) {
       setCloudMirrorStatus("Disattivato. Nessuna copia automatica nella cartella cloud.", "neutral");
     } else if (!cloudMirrorState.configured) {
@@ -171,7 +191,10 @@ async function refreshCloudMirrorConfig() {
       folderLabel: null
     };
     if (label) label.textContent = "Cartella non disponibile";
-    if (openBtn) openBtn.disabled = true;
+    if (openBtn) {
+      openBtn.disabled = true;
+      syncFolderOpenHelp(openBtn, "cloud");
+    }
     setCloudMirrorStatus("Impossibile leggere la configurazione cloud mirror.", "warn");
   }
 }
@@ -361,7 +384,10 @@ async function refreshFolderLabel() {
         ? (archiveDestination.absolutePath || archiveDestination.folderLabel || "Cartella configurata")
         : "Nessuna cartella scelta";
     }
-    if (openBtn) openBtn.disabled = !archiveDestination.configured;
+    if (openBtn) {
+      openBtn.disabled = !archiveDestination.configured;
+      syncFolderOpenHelp(openBtn, "archive");
+    }
     if (archiveDestination.configured) {
       setStatus("Archivio locale Director pronto. I render completati verranno copiati qui.", "ok");
     } else {
@@ -370,7 +396,10 @@ async function refreshFolderLabel() {
   } catch {
     archiveDestination = { configured: false, absolutePath: null, folderLabel: null };
     if (label) label.textContent = "Cartella non disponibile";
-    if (openBtn) openBtn.disabled = true;
+    if (openBtn) {
+      openBtn.disabled = true;
+      syncFolderOpenHelp(openBtn, "archive");
+    }
     setStatus("Impossibile leggere la configurazione archivio Director.", "warn");
   }
 }
@@ -402,7 +431,10 @@ async function chooseFolder() {
         || archiveDestination.folderLabel
         || "Cartella configurata";
     }
-    if ($("outputOpenFolder")) $("outputOpenFolder").disabled = !archiveDestination.configured;
+    if ($("outputOpenFolder")) {
+      $("outputOpenFolder").disabled = !archiveDestination.configured;
+      syncFolderOpenHelp($("outputOpenFolder"), "archive");
+    }
     setStatus("Cartella archivio configurata sul Director. Nessun permesso browser richiesto.", "ok");
   } catch (error) {
     setStatus(`Errore cartella: ${error?.message || error}`, "error");

@@ -19,6 +19,21 @@
   line-height: 1.35;
 }
 
+.gpu-power-toggle {
+  margin: 6px 0 8px;
+  width: auto;
+  padding: 0.35rem 0.7rem;
+  font-size: 11px;
+}
+
+.gpu-power-section:not(.is-expanded) .gpu-power-controls {
+  display: none !important;
+}
+
+.gpu-power-section:not(.is-expanded) .gpu-power-secondary {
+  margin-bottom: 0;
+}
+
 .gpu-power-secondary {
   margin: 4px 0 10px;
   font-size: 11px;

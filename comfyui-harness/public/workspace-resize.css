@@ -3,9 +3,24 @@
     grid-template-columns: minmax(0, 1fr) 8px var(--sidebar-width, 460px);
   }
 
+  main.inspector-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  main.inspector-collapsed .sidebar-resize-handle,
+  main.inspector-collapsed > aside {
+    display: none !important;
+  }
+
   .workspace {
     /* Height/overflow owned by workspace-v081.css — no native whole-workspace resize. */
     resize: none;
+  }
+
+  .inspector-toggle {
+    margin: 0.35rem 0 0.55rem;
+    width: auto;
+    justify-self: start;
   }
 
   .sidebar-resize-handle {
@@ -59,7 +74,8 @@
     resize: none;
   }
 
-  .sidebar-resize-handle {
+  .sidebar-resize-handle,
+  .inspector-toggle {
     display: none;
   }
 }

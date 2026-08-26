@@ -65,6 +65,24 @@ function renderHelper(helper) {
   if (help) help.hidden = state === "ready" || state === "unsupported";
 }
 
+function isGpuExpanded() {
+  const panel = $("gpuPowerSection");
+  return Boolean(panel && panel.classList.contains("is-expanded"));
+}
+
+function syncGpuExpandUi() {
+  const panel = $("gpuPowerSection");
+  const toggle = $("gpuPowerToggle");
+  const controls = $("gpuPowerControls");
+  if (!panel || !controls) return;
+  const expanded = isGpuExpanded();
+  controls.hidden = !expanded || Boolean($("gpuPowerUnavailable") && !$("gpuPowerUnavailable").hidden);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.textContent = expanded ? "Comprimi" : "Espandi";
+  }
+}
+
 function renderStatus(status) {
   lastStatus = status;
   const panel = $("gpuPowerSection");
@@ -94,16 +112,18 @@ function renderStatus(status) {
     controls.hidden = true;
     primary.textContent = "Controllo GPU non disponibile";
     secondary.textContent = "nvidia-smi non raggiungibile su questa workstation.";
+    syncGpuExpandUi();
     return;
   }
 
   unavailable.hidden = true;
-  controls.hidden = false;
   const modeLabel = status.mode === "custom"
     ? "CUSTOM"
     : (modes.find(m => m.id === status.mode)?.label || String(status.mode || "").toUpperCase());
-  primary.textContent = `${shortGpuName(status.name)} · ${formatWatts(status.drawW, 1)} attuali · limite ${formatWatts(status.currentLimitW)} · ${modeLabel}`;
-  secondary.textContent = `Range ${formatWatts(status.minLimitW)}–${formatWatts(status.maxLimitW)} · default ${formatWatts(status.defaultLimitW)}`;
+  // Compact default summary: name · MODE · limit
+  primary.textContent = `${shortGpuName(status.name)} · ${modeLabel} · ${formatWatts(status.currentLimitW)}`;
+  secondary.textContent = `${formatWatts(status.drawW, 1)} attuali · range ${formatWatts(status.minLimitW)}–${formatWatts(status.maxLimitW)}`;
+  syncGpuExpandUi();
 }
 
 async function fetchStatus() {
@@ -164,6 +184,25 @@ async function applyMode(mode) {
 function initGpuPowerUi() {
   const section = $("gpuPowerSection");
   if (!section) return;
+  // Wave 1: compact by default — expanding must not POST /api/gpu-power.
+  section.classList.remove("is-expanded");
+  let toggle = $("gpuPowerToggle");
+  if (!toggle) {
+    toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.id = "gpuPowerToggle";
+    toggle.className = "secondary gpu-power-toggle";
+    toggle.setAttribute("aria-controls", "gpuPowerControls");
+    const primary = $("gpuPowerPrimary");
+    if (primary?.parentNode) primary.parentNode.insertBefore(toggle, primary.nextSibling);
+    else section.append(toggle);
+  }
+  toggle.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    section.classList.toggle("is-expanded");
+    syncGpuExpandUi();
+  });
   section.addEventListener("click", event => {
     const helpBtn = event.target.closest("#gpuPowerHelperHelp");
     if (helpBtn) {
@@ -177,6 +216,7 @@ function initGpuPowerUi() {
     if (!mode) return;
     applyMode(mode);
   });
+  syncGpuExpandUi();
   refreshStatus();
   pollTimer = window.setInterval(() => {
     if (!posting) refreshStatus({ quiet: true });
@@ -195,6 +235,8 @@ export {
   applyMode,
   formatWatts,
   initGpuPowerUi,
+  isGpuExpanded,
   renderStatus,
-  shortGpuName
+  shortGpuName,
+  syncGpuExpandUi
 };

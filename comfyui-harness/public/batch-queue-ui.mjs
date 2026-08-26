@@ -40,9 +40,12 @@ import {
   collectActivePromptIds,
   enrichProgressWithNodeContext,
   entryStatusLabel,
+  formatCodaTerminalSummary,
   formatRenderProgressLabel,
   progressForActivePrompt
 } from "./batch-queue-progress.mjs";
+import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./control-help.mjs";
+import { setControlHelp } from "./tooltip.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -333,12 +336,30 @@ function displayEntries() {
 
 function renderSummary(entries) {
   const node = $("batchQueueSummary");
+  const heading = document.querySelector(".batch-queue-heading");
   if (!node) return;
   const view = buildCodaProgressView({
     entries,
     runtimeView,
     renderProgress: liveRenderProgress
   });
+  const overall = runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE;
+  const terminal = formatCodaTerminalSummary({
+    entries,
+    overallState: overall,
+    jobs: view.jobs,
+    runtimeView
+  });
+
+  if (terminal.terminal) {
+    if (heading) heading.textContent = terminal.heading;
+    node.textContent = terminal.text;
+    node.dataset.state = terminal.state;
+    renderCodaProgressPanel(view);
+    return;
+  }
+
+  if (heading) heading.textContent = terminal.heading || "CODA";
   const batchCount = entries.length;
   const jobCount = view.jobs.total;
   const parts = [`${batchCount} Batch · ${jobCount} Job`];
@@ -350,6 +371,7 @@ function renderSummary(entries) {
     parts.push(`${view.jobs.pending} job in attesa`);
   }
   node.textContent = parts.join(" · ");
+  node.dataset.state = terminal.state || overall || "active";
   renderCodaProgressPanel(view);
 }
 
@@ -462,6 +484,7 @@ function renderQueueControls(entries) {
   const armBtn = $("batchQueueArm");
   const resumeBtn = $("batchQueueResume");
   const policySelect = $("batchQueueFailurePolicy");
+  const controls = document.querySelector(".batch-queue-controls");
   if (!armBtn || !resumeBtn) return;
 
   const overall = runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE;
@@ -471,6 +494,7 @@ function renderQueueControls(entries) {
   const armed = Boolean(runtimeView?.armed && runtimeView?.authorityPresent);
   const paused = overall === QUEUE_OVERALL_STATE.PAUSED
     || overall === QUEUE_OVERALL_STATE.PAUSED_FAILURE;
+  const terminalSummary = formatCodaTerminalSummary({ entries, overallState: overall, runtimeView });
 
   const queuedBatches = entries.filter(e => e.state === QUEUE_ENTRY_STATE.QUEUED).length;
   const queuedJobs = entries
@@ -480,14 +504,22 @@ function renderQueueControls(entries) {
     ? `AVVIA CODA · ${queuedBatches} BATCH / ${queuedJobs} JOB`
     : "AVVIA CODA";
 
-  armBtn.hidden = armed || recovery || paused;
+  // Hide start/policy when nothing actionable; never hide recovery/resume.
+  const hideArm = armed || recovery || paused || terminalSummary.terminal || !hasQueued;
+  armBtn.hidden = hideArm;
   armBtn.disabled = !hasQueued;
   resumeBtn.hidden = !recovery && !paused;
   resumeBtn.disabled = recovery && entries.some(e => e.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED);
 
-  if (policySelect && plan) {
-    policySelect.value = plan.failurePolicy || BATCH_QUEUE_FAILURE_POLICY.STOP;
-    policySelect.disabled = armed;
+  if (policySelect) {
+    policySelect.hidden = hideArm && !recovery && !paused;
+    if (plan) {
+      policySelect.value = plan.failurePolicy || BATCH_QUEUE_FAILURE_POLICY.STOP;
+      policySelect.disabled = armed;
+    }
+  }
+  if (controls) {
+    controls.classList.toggle("is-terminal-idle", hideArm && !recovery && !paused);
   }
 
   const banner = $("batchQueueRecoveryBanner");
@@ -512,6 +544,7 @@ function appendJobEditor(container, entry, jobIndex) {
   });
   const summary = document.createElement("summary");
   summary.textContent = `Job ${jobIndex + 1}`;
+  setControlHelp(summary, CONTROL_HELP.queueJobDisclosure);
   details.append(summary);
   const body = document.createElement("div");
   body.className = "batch-queue-job-body";
@@ -554,6 +587,7 @@ function appendJobEditor(container, entry, jobIndex) {
   });
   const techSummary = document.createElement("summary");
   techSummary.textContent = "Dettagli tecnici";
+  setControlHelp(techSummary, CONTROL_HELP.queueTechDisclosure);
   const techBody = document.createElement("pre");
   techBody.className = "batch-queue-tech-pre";
   techBody.textContent = [
@@ -567,6 +601,7 @@ function appendJobEditor(container, entry, jobIndex) {
   saveBtn.type = "button";
   saveBtn.className = "secondary";
   saveBtn.textContent = "Salva job";
+  applyOperatorHelp(saveBtn, CONTROL_HELP.queueSaveJob);
   saveBtn.addEventListener("click", () => {
     const items = entry.snapshot.items.map((jobItem, idx) => (
       idx === jobIndex ? buildSavedQueueJobItem(jobItem, draftItem) : jobItem
@@ -657,6 +692,7 @@ function renderEntryCard(entry, index, entries) {
   });
   const techSummary = document.createElement("summary");
   techSummary.textContent = "Dettagli tecnici";
+  setControlHelp(techSummary, CONTROL_HELP.queueTechDisclosure);
   const techBody = document.createElement("pre");
   techBody.className = "batch-queue-tech-pre";
   techBody.textContent = [
@@ -674,11 +710,13 @@ function renderEntryCard(entry, index, entries) {
     completeBtn.type = "button";
     completeBtn.className = "secondary";
     completeBtn.textContent = "Marca come completato";
+    applyOperatorHelp(completeBtn, CONTROL_HELP.queueMarkCompleted);
     completeBtn.addEventListener("click", () => { void resolveRecovery(entry.queueEntryId, "completed"); });
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "secondary";
     cancelBtn.textContent = "Marca come annullato";
+    applyOperatorHelp(cancelBtn, CONTROL_HELP.queueMarkCancelled);
     cancelBtn.addEventListener("click", () => { void resolveRecovery(entry.queueEntryId, "cancelled"); });
     recoveryTools.append(completeBtn, cancelBtn);
     card.append(recoveryTools);
@@ -692,17 +730,24 @@ function renderEntryCard(entry, index, entries) {
     up.className = "secondary";
     up.textContent = "↑";
     up.disabled = index === 0 || entries[index - 1]?.state !== QUEUE_ENTRY_STATE.QUEUED;
+    applyOperatorHelp(up, CONTROL_HELP.moveUp, {
+      disabledReason: CONTROL_HELP.queueMoveUpDisabled
+    });
     up.addEventListener("click", () => { void reorderEntry(index, index - 1); });
     const down = document.createElement("button");
     down.type = "button";
     down.className = "secondary";
     down.textContent = "↓";
     down.disabled = index >= entries.length - 1 || entries[index + 1]?.state !== QUEUE_ENTRY_STATE.QUEUED;
+    applyOperatorHelp(down, CONTROL_HELP.moveDown, {
+      disabledReason: CONTROL_HELP.queueMoveDownDisabled
+    });
     down.addEventListener("click", () => { void reorderEntry(index, index + 1); });
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "secondary";
     rename.textContent = "Rinomina";
+    applyOperatorHelp(rename, CONTROL_HELP.queueRename);
     rename.addEventListener("click", () => {
       const next = prompt("Nome batch:", entry.name);
       if (next?.trim()) void updateEntry(entry.queueEntryId, { name: next.trim() });
@@ -711,6 +756,7 @@ function renderEntryCard(entry, index, entries) {
     remove.type = "button";
     remove.className = "secondary";
     remove.textContent = "Rimuovi";
+    applyOperatorHelp(remove, CONTROL_HELP.queueRemove);
     remove.addEventListener("click", () => { void cancelEntry(entry.queueEntryId); });
     tools.append(up, down, rename, remove);
     card.append(tools);
@@ -917,6 +963,7 @@ function createUi() {
   $("batchQueueResume")?.addEventListener("click", () => { void resumeQueue(); });
   $("batchQueueInterruptCurrent")?.addEventListener("click", () => { void interruptCurrentQueueBatchJob(); });
   $("batchQueueInterruptAll")?.addEventListener("click", () => { void stopCurrentQueueBatch(); });
+  applyStaticControlHelp(document);
 }
 
 export function initBatchQueueUi({ getProjectId, onPlanDirty } = {}) {
