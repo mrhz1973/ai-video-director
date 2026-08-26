@@ -22,34 +22,34 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-HARNESS_ENGINEERING idle after UI/UX v0.19.2 Wave 2
+UI/UX v0.19.3 Wave 3 — structural polish, design system and model registry
 
 ## STATUS
 
-IDLE
+ACTIVE
 
 ## GATE
 
-Explicit activation is required before starting another Harness lane. Generation remains separately gated by the project generation authorization phrase. ComfyUI lifecycle remains external to the Director. Wave 3 remains inactive until explicitly activated.
+Issue #95 is explicitly activated for isolated implementation/test/CI/review only. Runtime activation, controlled live/UI acceptance, merge and deploy remain later separate gates. Generation, upload, live queue mutation, GPU power change, Director/ComfyUI restart, creative work and #89 are not authorized by this activation.
 
 ## NEXT
 
-Await explicit operator/orchestrator activation of another Harness issue/lane. Do not auto-promote Wave 3, #89, older Harness backlog, or creative production work.
+Implement #95 from current canonical `main` in an isolated branch/worktree: consolidate legacy CSS into a coherent design system; standardize buttons/badges/spacing/type/state surfaces; implement authoritative friendly validated model registry/discovery while reconciling #6; make an evidence-based decision on the optional unified SYSTEM panel; reconcile legacy #46/#15/#7/#6/#4 after the final Wave 3 state. Target release `v0.19.3`; preserve all Wave 1/2 contracts; run full tests + validator + CI and persist `LAST_CURSOR_REPORT`; stop for orchestrator review. Do not touch runtime.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is IDLE. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up. Creative lanes remain governed by their own explicit activation gates.
+HARNESS_ENGINEERING is ACTIVE on #95 / Wave 3 target `v0.19.3`. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX Wave 1 complete end-to-end and deployed. #92 UI/UX Wave 2 `v0.19.2` complete end-to-end: PR #93 merged at `79c73c0e6f8c2a491a2903b850ff5f6142a7aa16`; authorized Director-only deployment PASS; final deployment evidence persisted via PR #94 and merged to main at `8a1c9a57a5b0bbf916dbf1730325769f1d4d6d94`. Final evidence reports npm test 898/898 PASS, validator PASS, CI PASS, Wave 2 smoke PASS, UI `/api/health` `/api/config` all `0.19.2`, Director restart exact-PID only, ComfyUI restart NO / same PID YES, queue preflight and final 0/0, generation/upload/queue/GPU/project persistent mutation all zero/NO. Issue #92 is closed completed.
+#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`: PR #93 merged; authorized Director-only deployment PASS; deployment evidence persisted via PR #94 and merged to main. UI/API version coherence PASS; tests 898/898; validator PASS; CI PASS; Wave 2 smoke PASS; ComfyUI unchanged; queue preflight/final 0/0; generation/upload/queue/GPU/project persistent mutation zero/NO. Issue #95 now activates the operator-approved Wave 3 roadmap from audit #86.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness package: **v0.19.2**
-- Next functional/UI release must advance beyond **v0.19.2**
+- Canonical deployed Harness baseline before Wave 3: **v0.19.2**
+- Wave 3 target release: **v0.19.3**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - ComfyUI lifecycle is external to the Director
