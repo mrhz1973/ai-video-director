@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 37c932cdb3d3a817ec8061fbc642e675e2c1ff56
 WORK_REF: fix/issue-74-asset-lightbox
-COMMIT: a04773cecbbaec7c610c167f58692419ff4b59c1
+COMMIT: 10e1be3 (impl); branch tip after evidence docs
 PR: https://github.com/mrhz1973/ai-video-director/pull/84
 VALIDATION: node --test test/asset-lightbox.test.mjs (9 pass); npm test (850 pass / 0 fail); python scripts/validate_project.py (PASS); CI validate PASS on PR #84
 RUNTIME_TOUCHED: NO
