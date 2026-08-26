@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="gpu-power.css">
   <link rel="stylesheet" href="batch.css">
   <link rel="stylesheet" href="tooltip.css">
+  <link rel="stylesheet" href="wave2.css">
 </head>
 <body>
 <main>
@@ -37,7 +38,10 @@
       <div class="project-actions">
         <button type="button" class="secondary" id="projectNew">Nuovo</button>
         <button type="button" class="secondary" id="projectSave">Salva</button>
-        <button type="button" class="secondary" id="projectSaveAs">Salva come…</button>
+        <details id="projectMore" class="project-more">
+          <summary>Altro</summary>
+          <button type="button" class="secondary" id="projectSaveAs">Salva come…</button>
+        </details>
         <button type="button" class="danger" id="projectDelete">Elimina</button>
       </div>
       <div class="project-strip-status">
@@ -152,6 +156,13 @@
     </div>
 
     <div class="workflow-view" id="view-coda" data-workflow-view="coda" role="tabpanel" hidden>
+      <div id="codaFilterBar" class="coda-filter-bar" role="toolbar" aria-label="Filtri coda">
+        <button type="button" class="coda-filter-btn active" data-coda-filter="tutti" id="codaFilterTutti" aria-pressed="true">Tutti</button>
+        <button type="button" class="coda-filter-btn" data-coda-filter="in-coda" id="codaFilterInCoda" aria-pressed="false">In coda</button>
+        <button type="button" class="coda-filter-btn" data-coda-filter="in-corso" id="codaFilterInCorso" aria-pressed="false">In corso</button>
+        <button type="button" class="coda-filter-btn" data-coda-filter="completati" id="codaFilterCompletati" aria-pressed="false">Completati</button>
+        <button type="button" class="coda-filter-btn" data-coda-filter="problemi" id="codaFilterProblemi" aria-pressed="false">Problemi</button>
+      </div>
       <div id="codaMount" class="coda-mount"></div>
     </div>
 
@@ -216,7 +227,41 @@
           <h3 id="sessionGalleryTitle">CLIP SESSIONE · 0</h3>
           <button type="button" class="secondary" id="sessionGalleryClear" title="Rimuove solo l'elenco in memoria sessione; non cancella i file">Svuota elenco</button>
         </div>
-        <div id="sessionGalleryList" class="session-gallery-list"></div>
+        <div class="session-gallery-toolbar" id="sessionGalleryToolbar" aria-label="Vista clip">
+          <div class="session-gallery-mode" role="group" aria-label="Modalità vista">
+            <button type="button" class="secondary session-view-mode-btn active" id="outputViewModeGallery" data-output-view-mode="gallery" aria-pressed="true">Galleria</button>
+            <button type="button" class="secondary session-view-mode-btn" id="outputViewModeList" data-output-view-mode="list" aria-pressed="false">Lista</button>
+          </div>
+          <label class="session-gallery-filter">Raggruppa
+            <select id="outputGroupBy">
+              <option value="none">Nessuno</option>
+              <option value="workflow">Workflow</option>
+              <option value="source">Origine</option>
+              <option value="session">Sessione / coda</option>
+            </select>
+          </label>
+          <label class="session-gallery-filter">Ordina
+            <select id="outputOrderBy">
+              <option value="newest">Più recenti</option>
+              <option value="oldest">Più vecchi</option>
+              <option value="workflow">Workflow</option>
+              <option value="label">Etichetta</option>
+            </select>
+          </label>
+          <label class="session-gallery-filter">Workflow
+            <select id="outputWorkflowFilter">
+              <option value="">Tutti</option>
+            </select>
+          </label>
+          <label class="session-gallery-filter">Origine
+            <select id="outputSourceFilter">
+              <option value="">Tutte</option>
+              <option value="single">Singolo</option>
+              <option value="batch">Batch</option>
+            </select>
+          </label>
+        </div>
+        <div id="sessionGalleryList" class="session-gallery-list" data-view-mode="gallery"></div>
         <p id="sessionGalleryEmpty" class="session-gallery-empty">Nessuna clip generata in questa sessione.</p>
       </section>
     </div>
@@ -256,6 +301,26 @@
         </div>
         <p id="gpuPowerMessage" class="gpu-power-message" hidden></p>
       </section>
+    </div>
+
+    <div class="inspector-context-panel" id="panel-inspector-batch" data-inspector-context="batch" hidden>
+      <h3 class="inspector-context-title">Contesto Batch</h3>
+      <p class="inspector-context-help">I job ereditano Input e impostazioni comuni della Scena. Un override vale solo per quel job.</p>
+      <div id="inspectorBatchContext" class="inspector-context-body">Seleziona o espandi un job nel Batch per vedere override e input condivisi.</div>
+    </div>
+
+    <div class="inspector-context-panel" id="panel-inspector-coda" data-inspector-context="coda" hidden>
+      <h3 class="inspector-context-title">Contesto Coda</h3>
+      <p class="inspector-context-help">La Coda esegue i Batch in sequenza. I filtri cambiano solo la lista visualizzata, non lo stato della coda.</p>
+      <div id="inspectorCodaContext" class="inspector-context-body">Apri la Coda per vedere stato, filtro visuale e recupero.</div>
+      <button type="button" class="secondary inspector-open-assets" id="inspectorOpenAssetsCoda">Apri Asset/Input</button>
+    </div>
+
+    <div class="inspector-context-panel" id="panel-inspector-output" data-inspector-context="output" hidden>
+      <h3 class="inspector-context-title">Contesto Output</h3>
+      <p class="inspector-context-help">Clip di sessione, archivio locale e mirror cloud. Le azioni principali restano Apri, Scarica e Mostra nella cartella.</p>
+      <div id="inspectorOutputContext" class="inspector-context-body">Apri Output per vedere vista, filtri e destinazioni.</div>
+      <button type="button" class="secondary inspector-open-assets" id="inspectorOpenAssetsOutput">Apri Asset/Input</button>
     </div>
 
     <div class="inspector-tabs" id="inspectorTabs" role="tablist" aria-label="Sezioni inspector">

@@ -293,6 +293,86 @@ export function formatBatchJobSummary(item = {}) {
   return parts.join(" · ");
 }
 
+/** Structured chips for collapsed Batch job summaries (Issue #92). */
+export function buildBatchJobSummaryChips(item = {}, source = {}) {
+  const files = item?.files && typeof item.files === "object" ? item.files : {};
+  const sharedFiles = source?.files && typeof source.files === "object" ? source.files : {};
+  const overrideKeys = Object.keys(files).filter(k => String(files[k] || "").trim());
+  const chips = [
+    { key: "duration", label: "Durata", value: formatDurationCompact(item.duration) },
+    { key: "megapixels", label: "MP", value: item.megapixels != null && item.megapixels !== "" ? `${item.megapixels}MP` : "—" },
+    { key: "aspect", label: "Aspect", value: item.aspect ? String(item.aspect) : "—" },
+    { key: "steps", label: "Steps", value: item.steps != null && item.steps !== "" ? String(item.steps) : "—" },
+    { key: "seed", label: "Seed", value: item.seed != null && item.seed !== "" ? String(item.seed) : "—" }
+  ];
+  const workflow = source?.workflowLabel || source?.workflowId;
+  if (workflow) chips.push({ key: "workflow", label: "Workflow", value: String(workflow) });
+  if (source?.model) chips.push({ key: "model", label: "Modello", value: String(source.model) });
+
+  const inputNames = [];
+  for (const key of new Set([...Object.keys(sharedFiles), ...Object.keys(files)])) {
+    const name = String(files[key] || sharedFiles[key] || "").trim();
+    if (name) inputNames.push(name);
+  }
+  if (inputNames.length) {
+    chips.push({
+      key: "inputs",
+      label: overrideKeys.length ? "Override input" : "Input comune",
+      value: inputNames.join(", "),
+      overridden: overrideKeys.length > 0
+    });
+  }
+  return chips;
+}
+
+export function jobHasInputOverrides(item = {}) {
+  const files = item?.files && typeof item.files === "object" ? item.files : {};
+  return Object.keys(files).some(k => String(files[k] || "").trim());
+}
+
+/**
+ * Pure apply of a per-job file override (same semantics as batch-ui setItemFileOverride).
+ * Returns a new item; does not mutate the input.
+ */
+export function applyBatchItemFileOverride(item = {}, roleKey, value) {
+  const next = { ...(item && typeof item === "object" ? item : {}) };
+  const files = { ...(normalizeItemFiles(next.files) || {}) };
+  const role = String(roleKey || "").trim();
+  const trimmed = String(value || "").trim();
+  if (!role) return next;
+  if (!trimmed) delete files[role];
+  else files[role] = trimmed;
+  const normalized = normalizeItemFiles(files);
+  if (normalized) next.files = normalized;
+  else delete next.files;
+  return next;
+}
+
+/**
+ * Display model shared by collapsed chips / Override badge / Inspector Batch lines.
+ */
+export function buildBatchJobDisplayModel(item = {}, source = {}) {
+  const overrides = normalizeItemFiles(item?.files) || {};
+  const overrideKeys = Object.keys(overrides);
+  const hasOverride = overrideKeys.length > 0;
+  const chips = buildBatchJobSummaryChips(item, source);
+  const inputChip = chips.find(chip => chip.key === "inputs") || null;
+  const sharedFiles = source?.files && typeof source.files === "object" ? source.files : {};
+  const resolvedFiles = resolveBatchItemFiles(item, sharedFiles);
+  return {
+    hasOverride,
+    overrideBadge: hasOverride,
+    overrideKeys,
+    overrides: { ...overrides },
+    resolvedFiles: { ...resolvedFiles },
+    inputChipLabel: inputChip?.label || null,
+    inputChipOverridden: Boolean(inputChip?.overridden),
+    inspectorOverrideLine: hasOverride
+      ? `Override di questo job: ${overrideKeys.map(k => `${k}: ${overrides[k]}`).join(" · ")}`
+      : "Override di questo job: nessuno"
+  };
+}
+
 export const BATCH_ASPECT_OPTIONS = Object.freeze(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
 
 export function detectBatchWideFieldState(items = [], field) {

@@ -1940,6 +1940,7 @@ async function loadProjectById(id) {
     if (persistence.needsPersistence && batchResult.count) {
       add(`Batch locale ripristinato · ${batchResult.count} job — salvataggio sul progetto in corso…`, "system");
     }
+    syncProjectStripLoaded();
   } catch (error) {
     if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
     const resolved = resolveLoadStatusFromError(error);
@@ -1975,6 +1976,7 @@ function resetDraft({ keepForm = false, clearRecovery = true } = {}) {
   if (clearRecovery) clearRecoveryDraft();
   autosaveController?.reset(SAVE_STATUS.LOCAL_DRAFT);
   setSaveStatus(SAVE_STATUS.LOCAL_DRAFT);
+  syncProjectStripLoaded();
 }
 
 function applyRecoverySnapshot(snapshot) {
@@ -2014,6 +2016,14 @@ function refreshProjectSelect(selectedId = "") {
     ...(config.projects || []).map(item => new Option(item.label, item.id))
   );
   $("project").value = selectedId || "";
+  syncProjectStripLoaded();
+}
+
+function syncProjectStripLoaded() {
+  const strip = $("projectStrip");
+  if (!strip) return;
+  const loaded = Boolean(String($("project")?.value || draft.id || "").trim());
+  strip.classList.toggle("project-strip-loaded", loaded);
 }
 
 function payloadFromEditor() {
@@ -2171,9 +2181,11 @@ $("workflow").onchange = () => {
 $("project").onchange = async () => {
   if (updateDirtyFlag() && !confirm("Ci sono modifiche non salvate. Continuare?")) {
     $("project").value = draft.id || "";
+    syncProjectStripLoaded();
     return;
   }
   await loadProjectById($("project").value);
+  syncProjectStripLoaded();
 };
 $("megapixels").oninput = () => { updateResolutionHint(); updateDirtyFlag(); };
 $("aspect").onchange = () => {

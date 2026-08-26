@@ -8,8 +8,11 @@ import {
   createBatchItems,
   detectBatchWideFieldState,
   duplicateBatchItem,
+  applyBatchItemFileOverride,
+  buildBatchJobSummaryChips,
   formatBatchJobSummary,
   isTerminalBatchState,
+  jobHasInputOverrides,
   moveBatchItem,
   removeBatchItem,
   resolveBatchItemFiles,
@@ -21,6 +24,7 @@ import {
 } from "./batch-core.mjs";
 import { normalizeBatchDraft, normalizeItemFiles, serializeBatchDraft } from "../lib/batch-draft.mjs";
 import { normalizeDurationSeconds } from "../lib/duration.mjs";
+import { updateInspectorBatchContext } from "./inspector-ui.mjs";
 import { memberSelectOption, membersCompatibleWithRole, roleAcceptKind } from "../lib/projects.mjs";
 import { archivePrompt } from "./prompt-history.mjs";
 import { batchJobOutputRows } from "./completion.mjs";
@@ -555,12 +559,8 @@ function freezeSubmissionSnapshot(preparedSource = source, live = null) {
 }
 
 function setItemFileOverride(item, roleKey, value) {
-  const next = { ...(normalizeItemFiles(item.files) || {}) };
-  const trimmed = String(value || "").trim();
-  if (!trimmed) delete next[roleKey];
-  else next[roleKey] = trimmed;
-  const normalized = normalizeItemFiles(next);
-  if (normalized) item.files = normalized;
+  const next = applyBatchItemFileOverride(item, roleKey, value);
+  if (next.files) item.files = next.files;
   else delete item.files;
 }
 
@@ -579,7 +579,12 @@ function appendBatchJobInputSection(body, item) {
   section.className = "batch-job-inputs";
   const heading = document.createElement("div");
   heading.className = "batch-job-inputs-label";
-  heading.textContent = "Input";
+  const syncHeading = () => {
+    heading.textContent = jobHasInputOverrides(item)
+      ? "Override di questo job"
+      : "Input comune del Batch";
+  };
+  syncHeading();
   section.append(heading);
 
   for (const role of roles) {
@@ -591,6 +596,7 @@ function appendBatchJobInputSection(body, item) {
     const label = document.createElement("label");
     label.className = "batch-job-input-role";
     label.dataset.roleKey = role.key;
+    label.dataset.inputMode = hasOverride ? "override" : "inherit";
     const title = document.createElement("span");
     title.textContent = role.label || role.key;
     const select = document.createElement("select");
@@ -616,8 +622,11 @@ function appendBatchJobInputSection(body, item) {
     }
     select.addEventListener("change", () => {
       setItemFileOverride(item, role.key, select.value);
+      label.dataset.inputMode = select.value ? "override" : "inherit";
+      syncHeading();
       markEdited();
-      if (role.key === "firstImage") renderBatch();
+      // Refresh chips, Override badge, and Inspector for every role (not only firstImage).
+      renderBatch();
     });
     label.append(title, select);
     section.append(label);
@@ -790,11 +799,12 @@ function renderBatch() {
   if (mpField) mpField.disabled = !globalEnabled;
   if (aspectField) aspectField.disabled = !globalEnabled;
   if (stepsField) stepsField.disabled = !globalEnabled;
-  if (!items.length) {
+    if (!items.length) {
     const empty = document.createElement("p");
     empty.className = "batch-empty";
     empty.textContent = "Nessun batch preparato.";
     host.append(empty);
+    updateInspectorBatchContext({ items: [], source });
     updateQueueButton();
     return;
   }
@@ -806,15 +816,43 @@ function renderBatch() {
     card.open = batchExpandState.has(index) ? batchExpandState.get(index) : index === 0;
     card.addEventListener("toggle", () => {
       batchExpandState.set(index, card.open);
+      if (card.open) {
+        updateInspectorBatchContext({
+          items,
+          source,
+          focusedIndex: index,
+          openIndexes: batchExpandState
+        });
+      }
     });
     const summary = document.createElement("summary");
     setControlHelp(summary, CONTROL_HELP.batchJobDisclosure);
     const jobTitle = document.createElement("strong");
     jobTitle.textContent = `Job ${index + 1}`;
+    if (jobHasInputOverrides(item)) {
+      const badge = document.createElement("span");
+      badge.className = "batch-job-override-badge";
+      badge.textContent = "Override";
+      jobTitle.append(document.createTextNode(" "), badge);
+    }
     const summaryText = document.createElement("span");
     summaryText.className = "batch-job-summary-text";
     summaryText.textContent = formatBatchJobSummary(item);
     summary.append(jobTitle, summaryText);
+
+    const chipRow = document.createElement("div");
+    chipRow.className = "batch-job-summary-chips";
+    for (const chip of buildBatchJobSummaryChips(item, source || {})) {
+      const span = document.createElement("span");
+      span.className = chip.overridden
+        ? "batch-job-chip batch-job-chip-override"
+        : "batch-job-chip";
+      span.dataset.chipKey = chip.key;
+      span.textContent = `${chip.label}: ${chip.value}`;
+      chipRow.append(span);
+    }
+    summary.append(chipRow);
+
     appendBatchFirstFrameSummary(
       document,
       summary,
@@ -886,6 +924,11 @@ function renderBatch() {
     appendBatchJobInputSection(body, item);
     card.append(summary, body);
     host.append(card);
+  });
+  updateInspectorBatchContext({
+    items,
+    source,
+    openIndexes: batchExpandState
   });
   updateQueueButton();
 }

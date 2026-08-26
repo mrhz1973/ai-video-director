@@ -53,15 +53,21 @@ function buildDownloadUrl(item) {
 /**
  * Build one gallery card using only createElement / textContent / append.
  * Trusted output URLs may be assigned to href/src; labels are never parsed as HTML.
+ * @param {"gallery"|"list"} [options.viewMode]
  */
 export function createSessionClipCard(doc, item, {
   onPreviewError = null,
   onShowInFolder = null,
-  onCloudMirrorCopy = null
+  onCloudMirrorCopy = null,
+  viewMode = "gallery"
 } = {}) {
+  const mode = viewMode === "list" ? "list" : "gallery";
   const card = doc.createElement("article");
-  card.className = `session-clip${item.available === false ? " unavailable" : ""}`;
-  if (card.dataset) card.dataset.outputId = item.id;
+  card.className = `session-clip${item.available === false ? " unavailable" : ""}${mode === "list" ? " session-clip-list" : ""}`;
+  if (card.dataset) {
+    card.dataset.outputId = item.id;
+    card.dataset.viewMode = mode;
+  }
 
   const meta = doc.createElement("div");
   meta.className = "session-clip-meta";
@@ -206,7 +212,12 @@ export function createSessionClipCard(doc, item, {
   if ((secondary.children || secondary.childNodes || []).length) actions.append(secondary);
 
   const nodes = [meta];
-  if (item.url && item.available !== false && /\.(mp4|webm|mov)(\?|$)/i.test(item.filename || item.url)) {
+  if (
+    mode !== "list"
+    && item.url
+    && item.available !== false
+    && /\.(mp4|webm|mov)(\?|$)/i.test(item.filename || item.url)
+  ) {
     const video = doc.createElement("video");
     video.className = "session-clip-preview";
     video.src = item.url;

@@ -256,13 +256,31 @@ test("real surface inventory: static index + dynamic asset/coda/output controls 
     "groupCreate", "gpuPowerToggle",
     "outputChooseFolder", "outputOpenFolder",
     "cloudMirrorChooseFolder", "cloudMirrorOpenFolder", "cloudMirrorAuto",
-    "sessionGalleryClear", "batchQueueArm", "batchQueueResume"
+    "sessionGalleryClear", "batchQueueArm", "batchQueueResume",
+    "codaFilterTutti", "codaFilterInCoda", "codaFilterInCorso", "codaFilterCompletati", "codaFilterProblemi",
+    "outputViewModeGallery", "outputViewModeList",
+    "inspectorOpenAssetsCoda", "inspectorOpenAssetsOutput"
   ]) {
-    const btn = createElement(id === "cloudMirrorAuto" ? "input" : "button");
-    btn.type = id === "cloudMirrorAuto" ? "checkbox" : "button";
+    const isSelect = id === "cloudMirrorAuto";
+    const btn = createElement(isSelect ? "input" : "button");
+    btn.type = isSelect ? "checkbox" : "button";
     btn.id = id;
     if (id === "outputOpenFolder" || id === "cloudMirrorOpenFolder") btn.disabled = true;
+    if (id.startsWith("codaFilter")) btn.setAttribute("data-coda-filter", "tutti");
+    if (id.startsWith("outputViewMode")) btn.setAttribute("data-output-view-mode", "gallery");
+    if (id.startsWith("inspectorOpen")) btn.className = "inspector-open-assets";
     body.append(btn);
+  }
+  const projectMore = createElement("details");
+  projectMore.id = "projectMore";
+  const projectMoreSummary = createElement("summary");
+  projectMoreSummary.textContent = "Altro";
+  projectMore.append(projectMoreSummary);
+  body.append(projectMore);
+  for (const id of ["outputGroupBy", "outputOrderBy", "outputWorkflowFilter", "outputSourceFilter"]) {
+    const sel = createElement("select");
+    sel.id = id;
+    body.append(sel);
   }
   for (const [cat, label] of [
     ["elements", "Elements"],

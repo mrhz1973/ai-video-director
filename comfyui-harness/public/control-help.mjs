@@ -89,6 +89,22 @@ export const CONTROL_HELP = Object.freeze({
   workflowBatch: "Vista Batch: prepara più job dalla Scena senza avviarli automaticamente.",
   workflowCoda: "Vista Coda: esecuzione sequenziale dei Batch attualmente in coda.",
   workflowOutput: "Vista Output: clip di sessione, archivio e mirror cloud.",
+  codaFilterTutti: "Mostra tutti i batch in coda. Non modifica lo stato di esecuzione.",
+  codaFilterInCoda: "Mostra solo i batch in attesa (in coda). Filtro solo visuale.",
+  codaFilterInCorso: "Mostra solo i batch in invio o in esecuzione. Filtro solo visuale.",
+  codaFilterCompletati: "Mostra solo i batch completati, in forma compatta. Filtro solo visuale.",
+  codaFilterProblemi: "Mostra batch falliti, annullati o in recovery. Filtro solo visuale.",
+  outputViewModeGallery: "Vista galleria con anteprima video delle clip di sessione.",
+  outputViewModeList: "Vista elenco compatta senza anteprima video ripetuta.",
+  outputGroupBy: "Raggruppa le clip per workflow, origine o sessione/coda. Non modifica i file.",
+  outputOrderBy: "Ordina le clip per data, workflow o etichetta. Preferenza solo locale al browser.",
+  outputWorkflowFilter: "Filtra le clip per workflow. Non cancella né sposta file.",
+  outputSourceFilter: "Filtra le clip per origine (singolo o batch).",
+  projectMore: "Mostra azioni progetto meno frequenti, come Salva come…",
+  inspectorOpenAssets: "Mostra temporaneamente le schede Asset/Input senza lasciare la vista corrente.",
+  inspectorContextBatch: "Contesto Batch: eredità Input comuni e override per job.",
+  inspectorContextCoda: "Contesto Coda: stato esecuzione e filtri visuali della coda.",
+  inspectorContextOutput: "Contesto Output: clip, archivio e azioni file.",
   moveUp: "Sposta l'elemento verso l'alto nell'ordine.",
   moveDown: "Sposta l'elemento verso il basso nell'ordine.",
   duplicate: "Duplica questo elemento.",
@@ -168,7 +184,20 @@ export function applyStaticControlHelp(documentRef = typeof document !== "undefi
     cloudMirrorChooseFolder: CONTROL_HELP.cloudMirrorChooseFolder,
     cloudMirrorOpenFolder: CONTROL_HELP.cloudMirrorOpenFolder,
     cloudMirrorAuto: CONTROL_HELP.cloudMirrorEnabled,
-    sessionGalleryClear: CONTROL_HELP.sessionGalleryClear
+    sessionGalleryClear: CONTROL_HELP.sessionGalleryClear,
+    codaFilterTutti: CONTROL_HELP.codaFilterTutti,
+    codaFilterInCoda: CONTROL_HELP.codaFilterInCoda,
+    codaFilterInCorso: CONTROL_HELP.codaFilterInCorso,
+    codaFilterCompletati: CONTROL_HELP.codaFilterCompletati,
+    codaFilterProblemi: CONTROL_HELP.codaFilterProblemi,
+    outputViewModeGallery: CONTROL_HELP.outputViewModeGallery,
+    outputViewModeList: CONTROL_HELP.outputViewModeList,
+    outputGroupBy: CONTROL_HELP.outputGroupBy,
+    outputOrderBy: CONTROL_HELP.outputOrderBy,
+    outputWorkflowFilter: CONTROL_HELP.outputWorkflowFilter,
+    outputSourceFilter: CONTROL_HELP.outputSourceFilter,
+    inspectorOpenAssetsCoda: CONTROL_HELP.inspectorOpenAssets,
+    inspectorOpenAssetsOutput: CONTROL_HELP.inspectorOpenAssets
   };
   for (const [id, text] of Object.entries(map)) {
     const el = documentRef.getElementById(id);
@@ -217,6 +246,14 @@ export function applyStaticControlHelp(documentRef = typeof document !== "undefi
   if (runtimeSummary) setControlHelp(runtimeSummary, CONTROL_HELP.batchRuntimeDisclosure);
   const batchMainSummary = documentRef.querySelector?.("#batchDetails > summary");
   if (batchMainSummary) setControlHelp(batchMainSummary, CONTROL_HELP.batchCurrentDisclosure);
+
+  const projectMoreSummary = documentRef.querySelector?.("#projectMore > summary");
+  if (projectMoreSummary) setControlHelp(projectMoreSummary, CONTROL_HELP.projectMore);
+
+  for (const btn of documentRef.querySelectorAll?.(".inspector-open-assets") || []) {
+    setControlHelp(btn, CONTROL_HELP.inspectorOpenAssets);
+  }
+
   const drawers = documentRef.querySelectorAll?.(".activity-drawer > summary") || [];
   for (const summary of drawers) {
     const label = String(summary.textContent || "");

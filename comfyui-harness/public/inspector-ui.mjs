@@ -1,7 +1,10 @@
-/** Right inspector tab switching (v0.14.0). Project/Output moved to primary workflow views. */
+/** Right inspector tab switching + contextual panels (v0.14.0 / Issue #92 Wave 2). */
+
+import { resolveInspectorContext, normalizeInspectorContext } from "./inspector-context.mjs";
 
 export const INSPECTOR_TAB_KEY = "h3InspectorTab:v1";
 export const INSPECTOR_TABS = Object.freeze(["asset", "input"]);
+export const INSPECTOR_FORCE_ASSETS_ATTR = "data-inspector-force-assets";
 
 export function normalizeInspectorTab(value, fallback = "asset") {
   const key = String(value || "").trim().toLowerCase();
@@ -45,6 +48,193 @@ export function applyInspectorTab(root, tab) {
   return next;
 }
 
+function setHidden(el, hidden) {
+  if (!el) return;
+  el.hidden = Boolean(hidden);
+}
+
+/**
+ * Apply contextual Inspector chrome for the active workflow view.
+ * Collapse/width stay in workspace-resize; this only toggles content priority.
+ */
+export function applyInspectorContextUi(view, {
+  documentRef = typeof document !== "undefined" ? document : null,
+  aside = null
+} = {}) {
+  if (!documentRef) return resolveInspectorContext(view);
+  const inspector = aside
+    || documentRef.getElementById?.("inspector")
+    || documentRef.querySelector?.("aside.inspector");
+  const resolved = resolveInspectorContext(view);
+  const forceAssets = inspector?.getAttribute?.(INSPECTOR_FORCE_ASSETS_ATTR) === "1";
+  const showAssetInput = resolved.showAssetInput || forceAssets;
+
+  documentRef.documentElement?.setAttribute?.("data-inspector-context", resolved.context);
+
+  setHidden(documentRef.getElementById?.("panel-inspector-batch"), !resolved.showBatchContext);
+  setHidden(documentRef.getElementById?.("panel-inspector-coda"), !resolved.showCodaContext);
+  setHidden(documentRef.getElementById?.("panel-inspector-output"), !resolved.showOutputContext);
+
+  const tabs = documentRef.getElementById?.("inspectorTabs");
+  setHidden(tabs, !showAssetInput);
+
+  const panelsHost = inspector?.querySelector?.(".inspector-panels");
+  if (panelsHost) setHidden(panelsHost, !showAssetInput);
+
+  if (showAssetInput && inspector) {
+    applyInspectorTab(inspector, readStoredInspectorTab());
+  } else if (inspector) {
+    for (const panel of inspector.querySelectorAll?.("[data-inspector-panel]") || []) {
+      panel.hidden = true;
+      panel.classList.remove("active");
+    }
+  }
+
+  const gpu = documentRef.getElementById?.("gpuPowerSection");
+  if (gpu?.classList) {
+    gpu.classList.toggle("gpu-power-context-compact", Boolean(resolved.gpuCompactOnly));
+  }
+
+  return { ...resolved, showAssetInput, forceAssets };
+}
+
+/**
+ * Refresh BATCH inspector context from the prepared draft (display-only).
+ * @param {{ items?: object[], source?: object, focusedIndex?: number }} detail
+ */
+function writeInspectorContextLines(host, lines, documentRef) {
+  if (!host) return;
+  const list = (Array.isArray(lines) ? lines : []).map(line => String(line || "").trim()).filter(Boolean);
+  host.replaceChildren();
+  const doc = documentRef;
+  for (const line of list) {
+    if (typeof doc?.createElement === "function") {
+      const p = doc.createElement("p");
+      p.className = "inspector-context-line";
+      p.textContent = line;
+      host.append(p);
+    }
+  }
+  if (!host.childNodes?.length) host.textContent = list.join(" · ") || "";
+}
+
+export function updateInspectorBatchContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorBatchContext");
+  if (!host) return;
+  const items = Array.isArray(detail.items) ? detail.items : [];
+  const source = detail.source && typeof detail.source === "object" ? detail.source : {};
+  if (!items.length) {
+    host.textContent = "Nessun batch preparato. Crea job dalla Scena per vedere input comune e override.";
+    return;
+  }
+  let index = Number(detail.focusedIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+    index = items.findIndex((_, i) => detail.openIndexes?.has?.(i));
+    if (index < 0) index = 0;
+  }
+  const item = items[index] || {};
+  const shared = Object.entries(source.files || {})
+    .filter(([, v]) => String(v || "").trim())
+    .map(([k, v]) => `${k}: ${v}`);
+  const overrides = Object.entries(item.files || {})
+    .filter(([, v]) => String(v || "").trim())
+    .map(([k, v]) => `${k}: ${v}`);
+  writeInspectorContextLines(host, [
+    `Job ${index + 1} / ${items.length}`,
+    shared.length ? `Input comune: ${shared.join(" · ")}` : "Input comune: nessuno assegnato",
+    overrides.length ? `Override di questo job: ${overrides.join(" · ")}` : "Override di questo job: nessuno"
+  ], documentRef);
+}
+
+const CODA_FILTER_LABELS = Object.freeze({
+  tutti: "Tutti",
+  "in-coda": "In coda",
+  "in-corso": "In corso",
+  completati: "Completati",
+  problemi: "Problemi"
+});
+
+/**
+ * Live CODA inspector context from authoritative queue display state (display-only).
+ * @param {{ entries?: object[], filter?: string, overallState?: string, currentEntryId?: string, currentEntryName?: string, visibleCount?: number, recoveryCount?: number, armed?: boolean }} detail
+ */
+export function updateInspectorCodaContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorCodaContext");
+  if (!host) return;
+  const entries = Array.isArray(detail.entries) ? detail.entries : [];
+  const filterKey = String(detail.filter || "tutti").trim().toLowerCase() || "tutti";
+  const filterLabel = CODA_FILTER_LABELS[filterKey] || filterKey;
+  const overall = String(detail.overallState || "idle").trim() || "idle";
+  const recoveryCount = Number.isFinite(detail.recoveryCount)
+    ? Number(detail.recoveryCount)
+    : entries.filter(e => String(e?.state || "").toLowerCase() === "recovery-required").length;
+  const visibleCount = Number.isFinite(detail.visibleCount)
+    ? Number(detail.visibleCount)
+    : entries.length;
+  const currentName = String(detail.currentEntryName || "").trim();
+  const lines = [
+    `Stato coda: ${overall}`,
+    `Filtro visuale: ${filterLabel} · ${visibleCount} / ${entries.length} batch`,
+    recoveryCount > 0
+      ? `Recupero richiesto: ${recoveryCount} batch — i controlli restano raggiungibili`
+      : "Nessun recupero in sospeso"
+  ];
+  if (detail.armed && currentName) {
+    lines.push(`Batch corrente: ${currentName}`);
+  } else if (detail.armed) {
+    lines.push("Coda armata");
+  }
+  writeInspectorContextLines(host, lines, documentRef);
+}
+
+/**
+ * Live OUTPUT inspector context from session gallery prefs + destination state.
+ * @param {{ prefs?: object, totalCount?: number, visibleCount?: number, selectedLabel?: string, archiveConfigured?: boolean, cloudConfigured?: boolean, cloudEnabled?: boolean }} detail
+ */
+export function updateInspectorOutputContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorOutputContext");
+  if (!host) return;
+  const prefs = detail.prefs && typeof detail.prefs === "object" ? detail.prefs : {};
+  const mode = String(prefs.mode || "gallery");
+  const groupBy = String(prefs.groupBy || "none");
+  const orderBy = String(prefs.orderBy || "newest");
+  const total = Number(detail.totalCount) || 0;
+  const visible = Number.isFinite(detail.visibleCount) ? Number(detail.visibleCount) : total;
+  const filterBits = [];
+  if (prefs.workflowFilter) filterBits.push(`workflow ${prefs.workflowFilter}`);
+  if (prefs.sourceFilter) filterBits.push(`fonte ${prefs.sourceFilter}`);
+  const lines = [
+    `Vista: ${mode} · gruppo ${groupBy} · ordine ${orderBy}`,
+    filterBits.length
+      ? `Filtri: ${filterBits.join(" · ")} · ${visible} / ${total} clip`
+      : `Clip sessione: ${visible} / ${total}`,
+    detail.archiveConfigured ? "Archivio locale: configurato" : "Archivio locale: non configurato",
+    detail.cloudEnabled
+      ? (detail.cloudConfigured ? "Cloud mirror: attivo" : "Cloud mirror: attivo ma cartella assente")
+      : "Cloud mirror: disattivato"
+  ];
+  const selected = String(detail.selectedLabel || "").trim();
+  if (selected) lines.push(`Clip corrente: ${selected}`);
+  writeInspectorContextLines(host, lines, documentRef);
+}
+
+export function setInspectorForceAssets(enabled, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const inspector = documentRef?.getElementById?.("inspector");
+  if (!inspector) return;
+  if (enabled) inspector.setAttribute(INSPECTOR_FORCE_ASSETS_ATTR, "1");
+  else inspector.removeAttribute(INSPECTOR_FORCE_ASSETS_ATTR);
+  const view = documentRef.documentElement?.getAttribute?.("data-workflow-view") || "scena";
+  applyInspectorContextUi(view, { documentRef, aside: inspector });
+}
+
 export function initInspectorUi(root = document) {
   const aside = root.getElementById?.("inspector") || root.querySelector?.("aside.inspector") || root;
   if (!aside) return;
@@ -76,6 +266,30 @@ export function initInspectorUi(root = document) {
     select(next.getAttribute("data-inspector-tab"));
     next.focus();
   });
+
+  const onWorkflowView = event => {
+    const view = normalizeInspectorContext(event?.detail?.view
+      || root.documentElement?.getAttribute?.("data-workflow-view")
+      || "scena");
+    // Leaving CODA/OUTPUT clears temporary Asset/Input reveal.
+    if (view === "scena" || view === "batch") {
+      aside.removeAttribute(INSPECTOR_FORCE_ASSETS_ATTR);
+    }
+    applyInspectorContextUi(view, { documentRef: root, aside });
+  };
+
+  root.addEventListener?.("h3-workflow-view", onWorkflowView);
+
+  for (const btn of root.querySelectorAll?.(".inspector-open-assets") || []) {
+    btn.addEventListener("click", () => {
+      setInspectorForceAssets(true, { documentRef: root });
+    });
+  }
+
+  const initial = normalizeInspectorContext(
+    root.documentElement?.getAttribute?.("data-workflow-view") || "scena"
+  );
+  applyInspectorContextUi(initial, { documentRef: root, aside });
 }
 
 if (typeof window !== "undefined") {
