@@ -51,6 +51,8 @@ import { resolveBatchItemFiles } from "./lib/batch-draft.mjs";
 import { extractPromptIdFromQueueEntry } from "./lib/comfy-queue.mjs";
 import { publicH3LoraCatalog } from "./lib/h3-lora-catalog.mjs";
 import { fetchComfyLoraNames, buildH3LoraAvailability } from "./lib/h3-lora-availability.mjs";
+import { buildAllPresetModelRegistries } from "./lib/h3-model-registry.mjs";
+import { readComfyUnetAvailability } from "./lib/h3-model-availability.mjs";
 import {
   resolveArchiveStorePath,
   readArchiveStore,
@@ -125,6 +127,14 @@ async function readComfyLoraAvailability() {
     logger.error("lora_availability_failed", { reason: error.message });
     return { names: [], availability: buildH3LoraAvailability([]) };
   }
+}
+
+async function readH3ModelRegistry(presetList) {
+  const unet = await readComfyUnetAvailability(comfy, { logger });
+  return buildAllPresetModelRegistries(presetList, {
+    names: unet.names,
+    discoveryOk: unet.discoveryOk
+  });
 }
 
 const batchQueueRuntime = createBatchQueueRuntimeService({
@@ -294,11 +304,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/config") {
       const loraAvailability = await readComfyLoraAvailability();
+      const presetList = await presets();
+      const h3Models = await readH3ModelRegistry(presetList);
       return json(res, 200, {
         version: packageInfo.version,
         comfyUrl: comfy,
         wsUrl: comfy.replace(/^http/, "ws") + "/ws",
-        presets: await presets(),
+        presets: presetList,
         projects: await projects(),
         comfyOutputConfigured: Boolean(comfyOutputDirectory),
         archiveConfigured: Boolean(
@@ -310,7 +322,8 @@ const server = http.createServer(async (req, res) => {
         h3Lora: {
           profiles: publicH3LoraCatalog(),
           availability: loraAvailability.availability
-        }
+        },
+        h3Models
       });
     }
     if (req.method === "GET" && url.pathname === "/api/archive/config") {

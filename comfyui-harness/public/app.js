@@ -23,7 +23,9 @@ import {
 import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
 import { applyOperatorHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
+import { populateModelSelect, refreshModelHint } from "./model-select-ui.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
+import { resolveModelSelection } from "/lib/h3-model-registry.mjs";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -1796,6 +1798,11 @@ function renderRoleFields() {
   syncScenaFirstFrame();
 }
 
+function registryForPreset(preset) {
+  const presetId = preset?.id || $("workflow")?.value || "";
+  return config?.h3Models?.byPreset?.[presetId] || null;
+}
+
 function selectPreset({
   preserveLibrary = true,
   clearProjectSelection = false,
@@ -1806,16 +1813,12 @@ function selectPreset({
   applyMegapixelsContract();
   monitorState = { ...monitorState, title: workflowTitle() };
   renderMonitor();
-  const models = preset?.options?.models || [""];
+  const registry = registryForPreset(preset);
   const currentModel = preferredModel !== undefined ? preferredModel : $("model").value;
-  $("model").replaceChildren(...models.map(name => new Option(name, name)));
-  const restored = restoreModelSelection({
-    availableModels: models,
-    savedModel: currentModel,
-    presetDefault: models[0]
-  });
-  $("model").value = restored.model;
-  if (restored.warning) add(restored.warning);
+  const modelResult = populateModelSelect($("model"), registry, { selected: currentModel });
+  refreshModelHint($("modelHint"), registry, $("model").value);
+  if (modelResult.warning) add(modelResult.warning);
+  setControlHelp($("model"), CONTROL_HELP.modelSelect);
   // Never destroy stored bindings when merely viewing another workflow.
   if (!preserveLibrary) draft.library = emptyLibrary();
   if (clearProjectSelection) {
@@ -1882,12 +1885,21 @@ async function loadProjectById(id) {
     if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
 
     const preset = currentPreset();
-    const modelResult = restoreModelSelection({
-      availableModels: preset?.options?.models || [],
-      savedModel: normalized.settings?.model,
-      presetDefault: preset?.options?.models?.[0]
-    });
-    if (modelResult.warning) add(modelResult.warning, "system");
+    const registry = registryForPreset(preset);
+    if (registry && normalized.settings?.model) {
+      const modelResult = resolveModelSelection(registry, {
+        savedModel: normalized.settings.model,
+        presetDefault: registry.selectableFilenames?.[0] || preset?.options?.models?.[0]
+      });
+      if (modelResult.warning) add(modelResult.warning, "system");
+    } else {
+      const modelResult = restoreModelSelection({
+        availableModels: preset?.options?.models || [],
+        savedModel: normalized.settings?.model,
+        presetDefault: preset?.options?.models?.[0]
+      });
+      if (modelResult.warning) add(modelResult.warning, "system");
+    }
 
     const batchResult = await restoreProjectBatch(normalized);
     importBatchQueueFromProject(normalized.batchQueue || null);
@@ -2196,7 +2208,12 @@ $("aspect").onchange = () => {
 };
 for (const id of ["prompt", "projectLabel", "model", "steps", "duration", "seed"]) {
   $(id).addEventListener("input", updateDirtyFlag);
-  $(id).addEventListener("change", updateDirtyFlag);
+  $(id).addEventListener("change", () => {
+    updateDirtyFlag();
+    if (id === "model") {
+      refreshModelHint($("modelHint"), registryForPreset(currentPreset()), $("model").value);
+    }
+  });
 }
 
 for (const tab of document.querySelectorAll(".cat-tab")) {

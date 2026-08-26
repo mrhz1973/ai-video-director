@@ -1,0 +1,171 @@
+/**
+ * Issue #95 — shared design tokens and action/state language.
+ * Loaded after style.css; preserves dark theme + orange accent without visual redesign.
+ */
+:root {
+  --h3-bg-root: #0b0d10;
+  --h3-bg-panel: #12161a;
+  --h3-bg-elevated: #15191e;
+  --h3-bg-inset: #191e24;
+  --h3-bg-aside: #111419;
+  --h3-text-primary: #edf1f4;
+  --h3-text-secondary: #c7d0d8;
+  --h3-text-muted: #9eabb8;
+  --h3-text-dim: #7f8b97;
+  --h3-accent: #e7a55b;
+  --h3-accent-hover: #f1c58e;
+  --h3-accent-active: #e0893c;
+  --h3-accent-on: #17100a;
+  --h3-border: #343b45;
+  --h3-border-subtle: #252a31;
+  --h3-border-strong: #2c343d;
+  --h3-success: #8ed3b2;
+  --h3-success-bg: #14211c;
+  --h3-success-border: #3f725d;
+  --h3-warning: #f1c58e;
+  --h3-warning-bg: #241c12;
+  --h3-warning-border: #c9893d;
+  --h3-error: #e2a0a0;
+  --h3-error-bg: #241414;
+  --h3-error-border: #8a3d3d;
+  --h3-unavailable: #9eabb8;
+  --h3-radius-sm: 6px;
+  --h3-radius-md: 8px;
+  --h3-radius-lg: 12px;
+  --h3-radius-pill: 999px;
+  --h3-control-height: 36px;
+  --h3-control-height-compact: 28px;
+  --h3-control-pad-x: 12px;
+  --h3-control-pad-y: 8px;
+  --h3-focus-ring: 0 0 0 2px rgba(231, 165, 91, 0.35);
+  --h3-font-xs: 10px;
+  --h3-font-sm: 11px;
+  --h3-font-md: 12px;
+  --h3-font-lg: 13px;
+}
+
+button.secondary,
+button.h3-action-secondary {
+  background: var(--h3-bg-inset);
+  color: var(--h3-text-primary);
+  border: 1px solid var(--h3-border);
+}
+
+button.secondary:hover,
+button.h3-action-secondary:hover {
+  border-color: var(--h3-accent);
+  color: var(--h3-accent-hover);
+}
+
+button.danger,
+button.h3-action-destructive {
+  border-color: #5a3030;
+  color: var(--h3-error);
+  background: var(--h3-bg-inset);
+}
+
+button.danger:hover,
+button.h3-action-destructive:hover {
+  background: #2a1717;
+}
+
+button.h3-action-interrupt,
+#interruptSingleRender {
+  border-color: var(--h3-error-border) !important;
+  color: var(--h3-error) !important;
+  background: var(--h3-error-bg) !important;
+  font-weight: 700;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+[role="tab"]:focus-visible {
+  outline: none;
+  box-shadow: var(--h3-focus-ring);
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.h3-state-success,
+.save-status[data-state="saved"],
+.status-ok {
+  color: var(--h3-success);
+}
+
+.h3-state-warning,
+.save-status[data-state="dirty"],
+.save-status[data-state="saving"],
+.status-wait {
+  color: var(--h3-warning);
+}
+
+.h3-state-error,
+.save-status[data-state="error"],
+.status-bad,
+.dirty-flag {
+  color: var(--h3-error);
+}
+
+.h3-state-unavailable,
+.h3-state-empty {
+  color: var(--h3-unavailable);
+}
+
+.h3-badge,
+.batch-badge,
+.batch-job-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--h3-radius-pill);
+  font-size: var(--h3-font-xs);
+  border: 1px solid var(--h3-border-subtle);
+  background: var(--h3-bg-inset);
+  color: var(--h3-text-secondary);
+}
+
+.h3-badge-override,
+.batch-job-chip-override,
+.batch-job-override-badge {
+  border-color: var(--h3-accent-active);
+  color: var(--h3-accent-hover);
+}
+
+.h3-hint,
+.h3-model-hint,
+.composer-hint,
+.output-help {
+  font-size: var(--h3-font-sm);
+  color: var(--h3-text-dim);
+}
+
+.h3-model-hint {
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.gpu-power-section.gpu-power-context-compact .gpu-power-controls,
+.gpu-power-section.gpu-power-context-compact #gpuPowerHelperInstructions,
+.gpu-power-section.gpu-power-context-compact #gpuPowerHelperHelp {
+  display: none;
+}
+
+.gpu-power-section.gpu-power-context-compact .gpu-power-primary {
+  margin-bottom: 0;
+}
+
+.coda-filter-btn.active,
+.coda-filter-btn[aria-pressed="true"],
+.workflow-nav-btn.active,
+.session-view-mode-btn.active {
+  border-color: var(--h3-accent-active);
+  color: var(--h3-text-primary);
+}

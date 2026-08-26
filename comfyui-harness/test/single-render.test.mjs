@@ -262,7 +262,7 @@ test("Batch submit remains behind queueBatch only", () => {
 
 test("UI: Genera singolo, Batch heading, advanced Avvia batch, helper copy", () => {
   assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
-  assert.match(html, /Non modifica il Batch/);
+  assert.match(html, /non modifica il Batch/i);
   assert.equal(BATCH_OPTIONAL_HEADING, "BATCH ATTUALE");
   assert.match(batchUi, /\$\{BATCH_OPTIONAL_HEADING\}/);
   assert.match(batchUi, /Genera singolo.*crea sempre una sola clip/);
