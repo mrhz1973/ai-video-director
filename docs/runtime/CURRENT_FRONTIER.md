@@ -22,41 +22,40 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — deployment authorized after merged PR #96
+Harness idle after UI/UX v0.19.3 Wave 3 completion
 
 ## STATUS
 
-DEPLOY_AUTHORIZED
+IDLE
 
 ## GATE
 
-PR #96 merged successfully after explicit operator authorization. Accepted candidate head was `43bd61d793404a56ea30d68ce284d42b5f454722`; merge commit is `01a4d907655a076c2357dd9690731a2d1ce8c484`. Source re-review PASS (`5035113265`), npm 948/948 PASS, validator PASS, exact-head CI #495 PASS and Controlled UI Acceptance RETEST PASS (`5431275624`) remain the release evidence. The operator explicitly authorized deployment of v0.19.3; authorization is persisted on PR #96 comment `5431448050`. Production remains v0.19.2 until deployment verification passes.
+#95 is complete and closed. PR #96 merged as release commit `01a4d907655a076c2357dd9690731a2d1ce8c484`; deployment evidence PASS is PR #96 comment `5431509478`. Production authority is v0.19.3 from the dedicated stable runtime pinned cleanly to that exact release SHA. Director v0.19.3 is healthy; UI `/api/health` `/api/config` are coherent; ComfyUI PID/lifecycle remained unchanged; final queue is 0/0; generation/upload/queue/GPU/project side effects were zero.
 
 ## NEXT
 
-Execute the authorized v0.19.3 deployment from exact merge commit `01a4d907655a076c2357dd9690731a2d1ce8c484` while honoring issue #97. Perform fail-closed read-only preflight; require queue idle and unambiguous Director/ComfyUI identities; require dedicated stable runtime checkout clean. Advance ONLY that dedicated runtime checkout to the exact authorized merge SHA, verify package version 0.19.3 and exact SHA, keep the Desktop shortcut bound to that stable runtime root, restart ONLY the exact Director PID, do not restart ComfyUI, then verify UI `/api/health` `/api/config` all report 0.19.3, ComfyUI PID is unchanged, final queue is 0/0 and generation/upload/queue/GPU/project side effects are zero. Persist deployment evidence and then reconcile #95 completion.
+Await explicit activation of a new Harness lane or explicit creative/production activation. Open follow-ups #97 (permanent stable-runtime deployment/installer automation) and #89 (autonomous specialist intake contract) remain separate and are not auto-promoted. Generation remains separately gated by the project generation authorization contract.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING remains ACTIVE on #95 with v0.19.3 DEPLOY_AUTHORIZED. PR #96 is merged. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and is mandatory for this deploy. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING is idle. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR are also idle unless separately activated in their own project context. #97 and #89 remain open follow-ups, not active lanes.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 remains complete end-to-end and deployed as `v0.19.2`. For #95, corrected Wave 3 candidate passed source review, npm 948/948, validator, exact-head CI #495 and Controlled UI Acceptance RETEST; PR #96 then merged as `01a4d907655a076c2357dd9690731a2d1ce8c484`. Deployment authorization for v0.19.3 is now explicit and persisted; production remains v0.19.2 until the authorized deployment completes and is verified.
+#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Accepted PR head `43bd61d793404a56ea30d68ce284d42b5f454722` passed source review, npm 948/948, validator, exact-head CI #495 and Controlled UI Acceptance RETEST. PR #96 merged as `01a4d907655a076c2357dd9690731a2d1ce8c484`. Deployment evidence `5431509478` confirms the dedicated stable runtime advanced cleanly to that exact release SHA, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness baseline before Wave 3: **v0.19.2**
-- Wave 3 merged release target: **v0.19.3**
-- Authorized release merge SHA: `01a4d907655a076c2357dd9690731a2d1ce8c484`
+- Canonical deployed Harness baseline: **v0.19.3**
+- Production release SHA: `01a4d907655a076c2357dd9690731a2d1ce8c484`
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
-- Deployment advances that stable runtime checkout to the exact authorized merged release SHA before Director restart
+- Release/deploy advances that dedicated runtime checkout to the exact authorized merged release SHA before Director restart
 - Director restart is exact-PID only; no broad `node.exe` kill
-- ComfyUI lifecycle is external to the Director and must remain untouched for this deploy
+- ComfyUI lifecycle is external to the Director
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
