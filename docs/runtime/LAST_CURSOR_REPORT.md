@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 79c73c0e6f8c2a491a2903b850ff5f6142a7aa16
 WORK_REF: docs/issue-92-deploy-evidence
-COMMIT: e5420031a1e74b3f05432c6c50cfc44b591d3536
+COMMIT: 8814d3302a89da9352f28154087c6fafe1f63790
 PR: https://github.com/mrhz1973/ai-video-director/pull/93
 VALIDATION: merge+deploy PASS + npm test 898/898 PASS + validator PASS + CI PASS + Wave 2 smoke PASS
 RUNTIME_TOUCHED: YES
