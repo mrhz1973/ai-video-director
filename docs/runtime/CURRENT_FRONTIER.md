@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — fresh Controlled UI Acceptance after browser ESM correction
+UI/UX v0.19.3 Wave 3 — corrected Controlled UI Acceptance authorized
 
 ## STATUS
 
-ACCEPTANCE_GATE
+ACCEPTANCE_AUTHORIZED
 
 ## GATE
 
-PR #96 corrected candidate at exact head `43bd61d793404a56ea30d68ce284d42b5f454722` has source re-review PASS (`5035113265`). The prior acceptance blocker is corrected: shared `lib/h3-model-registry.mjs` no longer depends on `public`; browser dependency resolves to `/lib/model-name.mjs`, friendly-label semantics are preserved, browser-static import-graph regression is present, npm test 948/948 PASS, validator PASS and exact-head CI #495 PASS. Runtime was untouched during correction. Fresh operator authorization is required because the previous Controlled UI Acceptance authorization was tied to the failed head `4c98d27...`. Merge and deploy remain unauthorized.
+PR #96 corrected candidate at exact head `43bd61d793404a56ea30d68ce284d42b5f454722` has source re-review PASS (`5035113265`), npm test 948/948 PASS, validator PASS and exact-head CI #495 PASS. The operator explicitly authorized fresh Controlled UI Acceptance for this exact head; authorization is persisted on PR #96 comment `5431215884`. Acceptance may temporarily restart Director only if required to serve the exact candidate, must not restart ComfyUI, and must restore deployed v0.19.2 from the dedicated stable runtime afterward. Merge and deploy remain unauthorized.
 
 ## NEXT
 
-After fresh explicit operator authorization tied to exact head `43bd61d793404a56ea30d68ce284d42b5f454722`, re-run Controlled UI Acceptance. Verify actual browser app boot/version coherence, model selector friendly/technical presentation and availability truthfulness, Add-to-CODA disabled/help behavior, and Wave 1/2 visual/layout/Inspector/tooltips regressions. No generation, upload, POST prompt, POST queue, queue/GPU/project mutation, or ComfyUI lifecycle operation. Temporary Director candidate serving is allowed only within the acceptance packet and must restore deployed stable v0.19.2 afterward. Stop after acceptance evidence for merge gate if PASS.
+Execute Controlled UI Acceptance of exact PR head only. Perform runtime-safe/read-only preflight; fail closed if PR head changes or queue/runtime state is not safely idle. Verify actual browser `app.js` boot and UI/API version coherence at 0.19.3; friendly model labels + technical filename detail; truthful installed/missing/unavailable states; zero-compatible-model blocking if naturally present; `+ AGGIUNGI ALLA CODA` disabled/help and ordinary unprepared-Batch eligibility; Wave 1/2 visual/layout/Inspector/tooltips regressions. No generation, upload, POST prompt, POST queue, queue/GPU/project mutation, ComfyUI lifecycle operation, merge, or deploy. Restore deployed v0.19.2 and persist acceptance evidence, then stop for merge gate if PASS.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 at the fresh Controlled UI Acceptance gate. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 with fresh Controlled UI Acceptance explicitly authorized for exact head `43bd61d793404a56ea30d68ce284d42b5f454722`. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 remains complete end-to-end and deployed as `v0.19.2`. For #95, first Controlled UI Acceptance on `4c98d27...` was safely BLOCKED by a browser ESM path defect and restored v0.19.2 with ComfyUI unchanged and queue 0/0. Corrected PR head `43bd61d793404a56ea30d68ce284d42b5f454722` has the browser-boundary fix, npm 948/948 PASS, validator PASS, exact-head CI #495 PASS and source re-review PASS. No merge/deploy is authorized.
+#92 UI/UX Wave 2 remains complete end-to-end and deployed as `v0.19.2`. For #95, first Controlled UI Acceptance on `4c98d27...` was safely BLOCKED by a browser ESM path defect and restored v0.19.2 with ComfyUI unchanged and queue 0/0. Corrected PR head `43bd61d793404a56ea30d68ce284d42b5f454722` removes the `lib -> public` boundary violation, has browser-static import-graph regression, npm 948/948 PASS, validator PASS, exact-head CI #495 PASS, source re-review PASS and fresh exact-head operator acceptance authorization `5431215884`. No merge/deploy is authorized.
 
 ## GLOBAL RUNTIME INVARIANTS
 
