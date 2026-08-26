@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 60771675190574565f76392313fe22159798d94e
 WORK_REF: feat/issue-92-uiux-wave2-v0192
-COMMIT: pending
+COMMIT: 64781def4d85b8eff4b94a24d3e306f5241d36d6
 PR: https://github.com/mrhz1973/ai-video-director/pull/93
 VALIDATION: npm test PASS (896/896); python scripts/validate_project.py PASS
 RUNTIME_TOUCHED: NO
