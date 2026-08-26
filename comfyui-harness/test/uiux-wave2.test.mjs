@@ -8,15 +8,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CODA_FILTERS,
+  CODA_FILTER_STORAGE_KEY,
   codaFilterEmptyMessage,
+  codaFilterHidesUrgentRecovery,
+  ensureCodaFilterShowsRecovery,
   entryMatchesCodaFilter,
   filterCodaEntries,
+  filterCodaEntriesForDisplay,
   isCompactCodaEntry,
   normalizeCodaFilter,
   persistCodaFilter,
   readStoredCodaFilter
 } from "../public/coda-filters.mjs";
 import {
+  clipTime,
   collectWorkflowFilterOptions,
   defaultOutputViewPrefs,
   filterSessionClips,
@@ -32,8 +37,11 @@ import {
 } from "../public/inspector-context.mjs";
 import {
   applyInspectorContextUi,
-  setInspectorForceAssets
+  setInspectorForceAssets,
+  updateInspectorCodaContext,
+  updateInspectorOutputContext
 } from "../public/inspector-ui.mjs";
+import { normalizeSessionOutput } from "../public/session-outputs.mjs";
 import { applyWorkflowView } from "../public/workflow-nav.mjs";
 import {
   buildBatchJobSummaryChips,
@@ -109,6 +117,15 @@ function makeDom() {
           kids(el).push(n);
         }
       },
+      replaceChildren(...nodes) {
+        const current = kids(el);
+        current.length = 0;
+        for (const n of nodes) {
+          n.parentNode = el;
+          current.push(n);
+        }
+      },
+      get childNodes() { return kids(el); },
       querySelector(sel) { return queryAll(el, sel)[0] || null; },
       querySelectorAll(sel) { return queryAll(el, sel); },
       closest() { return null; },
@@ -419,4 +436,118 @@ test("Wave 2 controls have CONTROL_HELP and inventory coverage", () => {
     assert.ok(CONTROL_HELP[key], `missing CONTROL_HELP.${key}`);
     assert.match(CONTROL_HELP[key], /\S/);
   }
+});
+
+test("OUTPUT newest/oldest ordering uses numeric completedAt epochs", () => {
+  const older = normalizeSessionOutput({
+    filename: "a.mp4",
+    url: "/media/a.mp4",
+    completedAt: 1_700_000_000_000,
+    workflowId: "wf",
+    source: "single"
+  });
+  const newer = normalizeSessionOutput({
+    filename: "b.mp4",
+    url: "/media/b.mp4",
+    completedAt: 1_700_000_100_000,
+    workflowId: "wf",
+    source: "batch"
+  });
+  assert.ok(older && newer);
+  assert.equal(typeof older.completedAt, "number");
+  assert.equal(typeof newer.completedAt, "number");
+  assert.ok(clipTime(newer) > clipTime(older));
+  assert.equal(sortSessionClips([older, newer], "newest")[0].filename, "b.mp4");
+  assert.equal(sortSessionClips([older, newer], "oldest")[0].filename, "a.mp4");
+  // Date.parse on a number collapses; clipTime must keep real epochs.
+  assert.notEqual(clipTime(older), 0);
+  assert.notEqual(clipTime(newer), 0);
+});
+
+test("restored Completati filter never hides recovery-required resolve cards", () => {
+  const entries = [
+    { queueEntryId: "ok", state: "completed" },
+    { queueEntryId: "need", state: "recovery-required" }
+  ];
+  const storage = memoryStorage({ [CODA_FILTER_STORAGE_KEY]: "completati" });
+  const restored = readStoredCodaFilter(storage);
+  assert.equal(restored, "completati");
+  assert.equal(codaFilterHidesUrgentRecovery(entries, restored), true);
+  assert.equal(ensureCodaFilterShowsRecovery(entries, restored), "problemi");
+  const display = filterCodaEntriesForDisplay(entries, "completati");
+  assert.equal(display.some(e => e.queueEntryId === "need"), true);
+  assert.equal(filterCodaEntries(entries, "completati").some(e => e.state === "recovery-required"), false);
+});
+
+test("live CODA and OUTPUT inspector context refresh from display state", () => {
+  const { documentRef, createElement, body } = makeDom();
+  const codaHost = createElement("div");
+  codaHost.id = "inspectorCodaContext";
+  body.append(codaHost);
+  const outputHost = createElement("div");
+  outputHost.id = "inspectorOutputContext";
+  body.append(outputHost);
+
+  updateInspectorCodaContext({
+    entries: [{ queueEntryId: "a", state: "queued" }],
+    filter: "in-coda",
+    overallState: "idle",
+    visibleCount: 1
+  }, { documentRef });
+  const codaText1 = [...(codaHost.childNodes || [])].map(n => n.textContent).join(" | ") || codaHost.textContent;
+  assert.match(codaText1, /In coda/i);
+
+  updateInspectorCodaContext({
+    entries: [
+      { queueEntryId: "a", state: "completed" },
+      { queueEntryId: "b", state: "recovery-required" }
+    ],
+    filter: "problemi",
+    overallState: "recovery-required",
+    visibleCount: 1,
+    recoveryCount: 1,
+    armed: true,
+    currentEntryName: "Batch X"
+  }, { documentRef });
+  const codaText2 = [...(codaHost.childNodes || [])].map(n => n.textContent).join(" | ") || codaHost.textContent;
+  assert.match(codaText2, /Recupero|recovery-required/i);
+  assert.match(codaText2, /Batch X/);
+  assert.notEqual(codaText1, codaText2);
+
+  updateInspectorOutputContext({
+    prefs: { mode: "gallery", groupBy: "none", orderBy: "newest" },
+    totalCount: 2,
+    visibleCount: 2,
+    archiveConfigured: false,
+    cloudEnabled: false
+  }, { documentRef });
+  const out1 = [...(outputHost.childNodes || [])].map(n => n.textContent).join(" | ") || outputHost.textContent;
+  assert.match(out1, /gallery/i);
+
+  updateInspectorOutputContext({
+    prefs: { mode: "list", groupBy: "workflow", orderBy: "oldest", sourceFilter: "batch" },
+    totalCount: 5,
+    visibleCount: 1,
+    selectedLabel: "clip-final.mp4",
+    archiveConfigured: true,
+    cloudConfigured: true,
+    cloudEnabled: true
+  }, { documentRef });
+  const out2 = [...(outputHost.childNodes || [])].map(n => n.textContent).join(" | ") || outputHost.textContent;
+  assert.match(out2, /list/i);
+  assert.match(out2, /clip-final\.mp4/);
+  assert.match(out2, /Archivio locale: configurato/);
+  assert.notEqual(out1, out2);
+});
+
+test("BATCH input override change refreshes UI for every role key", () => {
+  const src = readFileSync(path.join(PUBLIC, "batch-ui.mjs"), "utf8");
+  assert.doesNotMatch(
+    src,
+    /if\s*\(\s*role\.key\s*===\s*["']firstImage["']\s*\)\s*renderBatch\s*\(\s*\)/
+  );
+  assert.match(
+    src,
+    /setItemFileOverride\([\s\S]*?renderBatch\s*\(\s*\)/
+  );
 });

@@ -48,12 +48,14 @@ import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./contr
 import { setControlHelp } from "./tooltip.mjs";
 import {
   codaFilterEmptyMessage,
-  filterCodaEntries,
+  ensureCodaFilterShowsRecovery,
+  filterCodaEntriesForDisplay,
   isCompactCodaEntry,
   normalizeCodaFilter,
   persistCodaFilter,
   readStoredCodaFilter
 } from "./coda-filters.mjs";
+import { updateInspectorCodaContext } from "./inspector-ui.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -804,7 +806,13 @@ function renderQueueUi() {
   const section = $("batchQueueSection");
   if (!list || !section) return;
   const entries = displayEntries();
-  const filtered = filterCodaEntries(entries, codaFilter);
+  // Never strand recovery behind a restored Completati/In coda filter.
+  const safeFilter = ensureCodaFilterShowsRecovery(entries, codaFilter);
+  if (safeFilter !== codaFilter) {
+    codaFilter = persistCodaFilter(safeFilter);
+    syncCodaFilterBar();
+  }
+  const filtered = filterCodaEntriesForDisplay(entries, codaFilter);
   list.replaceChildren();
   if (!entries.length) {
     section.hidden = false;
@@ -815,6 +823,14 @@ function renderQueueUi() {
     renderSummary([]);
     renderQueueControls([]);
     renderQueueInterruptControls();
+    updateInspectorCodaContext({
+      entries: [],
+      filter: codaFilter,
+      overallState: runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE,
+      visibleCount: 0,
+      recoveryCount: 0,
+      armed: Boolean(runtimeView?.armed)
+    });
     return;
   }
   section.hidden = false;
@@ -833,6 +849,17 @@ function renderQueueUi() {
   renderSummary(entries);
   renderQueueControls(entries);
   renderQueueInterruptControls();
+  const currentId = runtimeView?.currentEntryId || "";
+  const current = entries.find(e => e.queueEntryId === currentId);
+  updateInspectorCodaContext({
+    entries,
+    filter: codaFilter,
+    overallState: runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE,
+    currentEntryId: currentId,
+    currentEntryName: current?.name || current?.snapshot?.name || "",
+    visibleCount: filtered.length,
+    armed: Boolean(runtimeView?.armed)
+  });
 }
 
 async function reorderEntry(fromIndex, toIndex) {

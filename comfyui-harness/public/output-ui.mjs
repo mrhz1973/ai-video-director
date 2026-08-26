@@ -34,6 +34,7 @@ import {
   prepareSessionClipsView,
   readOutputViewPrefs
 } from "./output-view.mjs";
+import { updateInspectorOutputContext } from "./inspector-ui.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -809,6 +810,15 @@ function renderSessionGallery() {
       list.append(createSessionClipCard(document, item, cardOpts));
     }
   }
+  updateInspectorOutputContext({
+    prefs: view.prefs,
+    totalCount: items.length,
+    visibleCount: view.filtered.length,
+    selectedLabel: view.filtered[0]?.jobLabel || view.filtered[0]?.filename || "",
+    archiveConfigured: Boolean(archiveDestination.configured),
+    cloudConfigured: Boolean(cloudMirrorState.configured),
+    cloudEnabled: Boolean(cloudMirrorState.enabled)
+  });
 }
 
 function syncOutputViewControls(prefs, items = []) {

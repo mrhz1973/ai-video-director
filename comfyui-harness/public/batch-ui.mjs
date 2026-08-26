@@ -628,7 +628,8 @@ function appendBatchJobInputSection(body, item) {
       label.dataset.inputMode = select.value ? "override" : "inherit";
       syncHeading();
       markEdited();
-      if (role.key === "firstImage") renderBatch();
+      // Refresh chips, Override badge, and Inspector for every role (not only firstImage).
+      renderBatch();
     });
     label.append(title, select);
     section.append(label);

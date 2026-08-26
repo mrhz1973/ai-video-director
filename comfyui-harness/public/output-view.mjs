@@ -60,9 +60,22 @@ export function persistOutputViewPrefs(prefs, storage = globalThis.localStorage)
   return next;
 }
 
-function clipTime(clip) {
-  const t = Date.parse(clip?.completedAt || "");
-  return Number.isFinite(t) ? t : 0;
+/** Epoch ms from numeric completedAt (session-outputs) or ISO string. */
+export function clipTime(clip) {
+  const raw = clip?.completedAt;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return 0;
+    // Numeric epoch stored as string (defensive)
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      const asNum = Number(trimmed);
+      if (Number.isFinite(asNum)) return asNum;
+    }
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
 }
 
 function clipLabel(clip) {

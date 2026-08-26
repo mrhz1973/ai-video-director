@@ -102,6 +102,22 @@ export function applyInspectorContextUi(view, {
  * Refresh BATCH inspector context from the prepared draft (display-only).
  * @param {{ items?: object[], source?: object, focusedIndex?: number }} detail
  */
+function writeInspectorContextLines(host, lines, documentRef) {
+  if (!host) return;
+  const list = (Array.isArray(lines) ? lines : []).map(line => String(line || "").trim()).filter(Boolean);
+  host.replaceChildren();
+  const doc = documentRef;
+  for (const line of list) {
+    if (typeof doc?.createElement === "function") {
+      const p = doc.createElement("p");
+      p.className = "inspector-context-line";
+      p.textContent = line;
+      host.append(p);
+    }
+  }
+  if (!host.childNodes?.length) host.textContent = list.join(" · ") || "";
+}
+
 export function updateInspectorBatchContext(detail = {}, {
   documentRef = typeof document !== "undefined" ? document : null
 } = {}) {
@@ -125,22 +141,87 @@ export function updateInspectorBatchContext(detail = {}, {
   const overrides = Object.entries(item.files || {})
     .filter(([, v]) => String(v || "").trim())
     .map(([k, v]) => `${k}: ${v}`);
-  const lines = [
+  writeInspectorContextLines(host, [
     `Job ${index + 1} / ${items.length}`,
     shared.length ? `Input comune: ${shared.join(" · ")}` : "Input comune: nessuno assegnato",
     overrides.length ? `Override di questo job: ${overrides.join(" · ")}` : "Override di questo job: nessuno"
+  ], documentRef);
+}
+
+const CODA_FILTER_LABELS = Object.freeze({
+  tutti: "Tutti",
+  "in-coda": "In coda",
+  "in-corso": "In corso",
+  completati: "Completati",
+  problemi: "Problemi"
+});
+
+/**
+ * Live CODA inspector context from authoritative queue display state (display-only).
+ * @param {{ entries?: object[], filter?: string, overallState?: string, currentEntryId?: string, currentEntryName?: string, visibleCount?: number, recoveryCount?: number, armed?: boolean }} detail
+ */
+export function updateInspectorCodaContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorCodaContext");
+  if (!host) return;
+  const entries = Array.isArray(detail.entries) ? detail.entries : [];
+  const filterKey = String(detail.filter || "tutti").trim().toLowerCase() || "tutti";
+  const filterLabel = CODA_FILTER_LABELS[filterKey] || filterKey;
+  const overall = String(detail.overallState || "idle").trim() || "idle";
+  const recoveryCount = Number.isFinite(detail.recoveryCount)
+    ? Number(detail.recoveryCount)
+    : entries.filter(e => String(e?.state || "").toLowerCase() === "recovery-required").length;
+  const visibleCount = Number.isFinite(detail.visibleCount)
+    ? Number(detail.visibleCount)
+    : entries.length;
+  const currentName = String(detail.currentEntryName || "").trim();
+  const lines = [
+    `Stato coda: ${overall}`,
+    `Filtro visuale: ${filterLabel} · ${visibleCount} / ${entries.length} batch`,
+    recoveryCount > 0
+      ? `Recupero richiesto: ${recoveryCount} batch — i controlli restano raggiungibili`
+      : "Nessun recupero in sospeso"
   ];
-  host.replaceChildren();
-  const doc = documentRef;
-  for (const line of lines) {
-    if (typeof doc.createElement === "function") {
-      const p = doc.createElement("p");
-      p.className = "inspector-context-line";
-      p.textContent = line;
-      host.append(p);
-    }
+  if (detail.armed && currentName) {
+    lines.push(`Batch corrente: ${currentName}`);
+  } else if (detail.armed) {
+    lines.push("Coda armata");
   }
-  if (!host.childNodes?.length) host.textContent = lines.join(" · ");
+  writeInspectorContextLines(host, lines, documentRef);
+}
+
+/**
+ * Live OUTPUT inspector context from session gallery prefs + destination state.
+ * @param {{ prefs?: object, totalCount?: number, visibleCount?: number, selectedLabel?: string, archiveConfigured?: boolean, cloudConfigured?: boolean, cloudEnabled?: boolean }} detail
+ */
+export function updateInspectorOutputContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorOutputContext");
+  if (!host) return;
+  const prefs = detail.prefs && typeof detail.prefs === "object" ? detail.prefs : {};
+  const mode = String(prefs.mode || "gallery");
+  const groupBy = String(prefs.groupBy || "none");
+  const orderBy = String(prefs.orderBy || "newest");
+  const total = Number(detail.totalCount) || 0;
+  const visible = Number.isFinite(detail.visibleCount) ? Number(detail.visibleCount) : total;
+  const filterBits = [];
+  if (prefs.workflowFilter) filterBits.push(`workflow ${prefs.workflowFilter}`);
+  if (prefs.sourceFilter) filterBits.push(`fonte ${prefs.sourceFilter}`);
+  const lines = [
+    `Vista: ${mode} · gruppo ${groupBy} · ordine ${orderBy}`,
+    filterBits.length
+      ? `Filtri: ${filterBits.join(" · ")} · ${visible} / ${total} clip`
+      : `Clip sessione: ${visible} / ${total}`,
+    detail.archiveConfigured ? "Archivio locale: configurato" : "Archivio locale: non configurato",
+    detail.cloudEnabled
+      ? (detail.cloudConfigured ? "Cloud mirror: attivo" : "Cloud mirror: attivo ma cartella assente")
+      : "Cloud mirror: disattivato"
+  ];
+  const selected = String(detail.selectedLabel || "").trim();
+  if (selected) lines.push(`Clip corrente: ${selected}`);
+  writeInspectorContextLines(host, lines, documentRef);
 }
 
 export function setInspectorForceAssets(enabled, {
