@@ -1,0 +1,63 @@
+# Wiki-LLM Lean METHOD
+
+Canonical METHOD for Wiki-LLM Lean bootstrap, `agg`, and Cursor evidence persistence.
+
+Authority chain: README AI-BOOT → this METHOD → `docs/contracts/CURSOR_EXECUTION_PACKET_V1.md` (Cursor task closure) → `docs/contracts/CROSS_CHAT_SYNC_V1.md` (cross-chat SYNC). LIVE STATE remains `docs/runtime/CURRENT_FRONTIER.md` only.
+
+## Loop
+
+```
+Cursor executes
+→ validates
+→ PASS | BLOCKED
+→ persists docs/runtime/LAST_CURSOR_REPORT.md
+→ closes task
+→ operator invokes agg
+→ GPT Web observes persisted report
+→ AUTO-VIA to next real gate
+```
+
+A result left only in Cursor chat is not evidence-complete for `agg`.
+
+## Evidence states
+
+### EVIDENCE_COMPLETE
+
+A Cursor result needed for NEXT is evidence-complete only after the required final report is persisted to GitHub as `docs/runtime/LAST_CURSOR_REPORT.md` (and reachable from remote HEAD / the PR that lands it).
+
+### EVIDENCE_NOT_PERSISTED
+
+The technical task may have executed, but the orchestrator-visible evidence has not yet been persisted (absent, stale, or non-matching `LAST_CURSOR_REPORT`).
+
+### TASK_NOT_EXECUTED
+
+Must never be inferred merely from an absent or stale report. Absence of GitHub evidence does not prove Cursor did not execute the task.
+
+## Operator-relayed evidence
+
+If the operator supplies the complete missing Cursor final report to GPT Web, GPT Web may persist it as:
+
+`SOURCE: operator-relayed Cursor evidence`
+
+AUTO-VIA may continue without rerunning the technical task.
+
+## Persistence scope
+
+Persisting `LAST_CURSOR_REPORT` is bookkeeping / docs-only. It:
+
+- does not reopen a runtime gate;
+- does not authorize new operations;
+- does not change technical PASS / BLOCKED;
+- exists only to synchronize GitHub-visible evidence for `agg`.
+
+## `agg` (conditional)
+
+When a Cursor pass result is required to determine NEXT:
+
+`remote HEAD → CURRENT_FRONTIER → Workboard / own ACTIVE lane → addressed SYNC after LAST_SYNC → LAST_CURSOR_REPORT once → explicitly pointed evidence only if necessary → AUTO-VIA`
+
+Do not turn `agg` into a full reboot. Read `LAST_CURSOR_REPORT` only when needed for NEXT.
+
+## Report file
+
+`docs/runtime/LAST_CURSOR_REPORT.md` is the latest Cursor pass record (overwrite). Historical detail stays in issue / PR / commit. Public-repo policy applies: no secrets, no local absolute paths, no personal media/data, no transcript dump.
