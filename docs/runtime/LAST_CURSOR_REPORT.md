@@ -1,16 +1,16 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #78
-TASK: Wiki-LLM Lean — persist Cursor evidence before agg-dependent task closure
-ROLE: HARNESS_ENGINEERING (docs/method/contract)
+TASK_REF: #72
+TASK: Launcher false-conflict when canonical Director is already running
+ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
-BASE_MAIN_SHA: c6d823c8f081524796d5191b1a8ab6bf0fa10bc8
-WORK_REF: docs/wiki-llm-cursor-evidence-persistence
-COMMIT: 5264e72 (branch tip after report fill; see PR for full range)
-PR: https://github.com/mrhz1973/ai-video-director/pull/79
-VALIDATION: scripts/validate_project.py PASS; deterministic checks 1–8 PASS (agg LAST_CURSOR_REPORT step; EVIDENCE_NOT_PERSISTED ≠ TASK_NOT_EXECUTED; Cursor contract requires persistence before closure; report present; no private/local markers; no comfyui-harness source changes; no Director/ComfyUI process ops; no generation/queue mutation)
-RUNTIME_TOUCHED: NO
-SUMMARY: Adopted permanent Wiki-LLM Lean rule — updated README AI-BOOT agg chain; added docs/method/WIKI_LLM_LEAN.md; added docs/contracts/CURSOR_EXECUTION_PACKET_V1.md; linked from AGENTS.md; created this LAST_CURSOR_REPORT. CURRENT_FRONTIER and Workboard #75 intentionally unchanged (no second live-state owner needed). Did not touch #72 hotfix branch or runtime. Files: README.md, AGENTS.md, docs/method/WIKI_LLM_LEAN.md, docs/contracts/CURSOR_EXECUTION_PACKET_V1.md, docs/runtime/LAST_CURSOR_REPORT.md.
-NEXT_RELEVANCE: After merge of PR #79, agg can read this report once when determining NEXT; next real production gate remains HARNESS #72 (launcher health reuse) — not started in this pass.
+BASE_MAIN_SHA: 3b8de2b3f614c21b3ef766e33f861790f698f0c6
+WORK_REF: fix/issue-72-launcher-health-reuse
+COMMIT: 710a6644a13803822068272c33207a41e62c3a46
+PR: https://github.com/mrhz1973/ai-video-director/pull/80
+VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; PR /api/health identity+version PASS; launcher reused Director and ComfyUI (spawns 0/0); no unexpected-process conflict; no UV_HANDLE_CLOSING; generation 0; queue mutation NO; ComfyUI process unchanged throughout; canonical main Director restored after test
+RUNTIME_TOUCHED: YES
+SUMMARY: Operator-authorized controlled live acceptance for #72/PR #80. Queue was mechanically idle before any Director stop. Only the verified Director process was stopped/restarted; ComfyUI was not restarted. Temporary PR-branch Director exposed GET /api/health (ai-video-director-harness / 0.19.0). PR launcher status+start reused both services with browser open stage reached. No generation and no queue mutation. After evidence collection, PR Director was stopped and canonical origin/main Director (v0.19.0 without /api/health) was restored. Merge/deploy NOT performed.
+NEXT_RELEVANCE: Explicit operator approval required for PR #80 merge/deploy. No merge or deploy has been authorized by this acceptance.

@@ -32,6 +32,8 @@ export const ACTION = Object.freeze({
   FAIL: "fail"
 });
 
+export const DIRECTOR_HEALTH_IDENTITY = "ai-video-director-harness";
+
 export function normalizeConfig(raw = {}, defaults = DEFAULT_CONFIG) {
   const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
   return {
@@ -245,15 +247,15 @@ export async function probeComfyHealth(baseUrl, { fetchFn = fetch, timeoutMs = 5
 }
 
 export async function probeDirectorHealth(baseUrl, expectedVersion = "", { fetchFn = fetch, timeoutMs = 5000 } = {}) {
-  const result = await probeHttp(`${baseUrl.replace(/\/$/, "")}/api/config`, { fetchFn, timeoutMs });
+  const result = await probeHttp(`${baseUrl.replace(/\/$/, "")}/api/health`, { fetchFn, timeoutMs });
   if (!result.ok) return { healthy: false, ...result };
   try {
     const data = await result.response.json();
     const healthy = Boolean(
       data
       && typeof data === "object"
+      && data.service === DIRECTOR_HEALTH_IDENTITY
       && typeof data.version === "string"
-      && Array.isArray(data.presets)
       && (!expectedVersion || data.version === expectedVersion)
     );
     return { healthy, data, version: data?.version, status: result.status };

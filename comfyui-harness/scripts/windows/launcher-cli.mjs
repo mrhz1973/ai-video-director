@@ -369,10 +369,11 @@ async function main() {
       return;
     }
     console.error("Usage: launcher-cli.mjs <start|status|write-config> [--harness-root PATH] [--config PATH]");
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   } catch (error) {
     console.error(`[ERROR] ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
