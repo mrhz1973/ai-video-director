@@ -1,16 +1,16 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #72
-TASK: Launcher false-conflict - merged deployment
+TASK_REF: #73
+TASK: Single Render cannot be started again after completion without reload
 ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
-BASE_MAIN_SHA: 997edeb03d09f58b487060bc09633c10c6c9fd98
-WORK_REF: docs/issue-72-deploy-evidence
-COMMIT: 7f1078864ed24abf6358d0df06ba27c76858f2a6
-PR: https://github.com/mrhz1973/ai-video-director/pull/81
-VALIDATION: python scripts/validate_project.py PASS; deployment live checks PASS (queue idle; /api/health; launcher reuse); GitHub Actions validate PASS
+BASE_MAIN_SHA: 744c17788970cbcc11387179cc18eaae1a57e3a4
+WORK_REF: fix/issue-73-single-render-readiness
+COMMIT: 026620e07cab89dab1aee43f81a70bdade23b4b4
+PR: https://github.com/mrhz1973/ai-video-director/pull/82
+VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; post-terminal Genera singolo without reload; second independent single render with updated seed/steps/prompt; canonical main restored; validate CI on report push
 RUNTIME_TOUCHED: YES
-SUMMARY: PR #80 merged at 997edeb. Queue was idle (0/0) before deploy. Director restart YES (pre-deploy /api/health absent). ComfyUI restart NO (same process retained). Canonical /api/health PASS (ai-video-director-harness / 0.19.0). Launcher status+start reused Director and ComfyUI (spawns 0/0). Generation 0. Queue mutation NO. No unexpected-process conflict. No UV_HANDLE_CLOSING. Dirty local primary checkout left untouched; deploy used clean merged-main checkout.
-NEXT_RELEVANCE: Issue #72 implementation, live acceptance, merge and deployment complete. Orchestrator should reconcile Workboard #75 / CURRENT_FRONTIER and choose the next Harness lane according to canonical backlog authority.
+SUMMARY: Queue was idle (0/0) before restart. Only Director restarted (PR #82 temporary). ComfyUI restart NO. First single T2V render reached terminal handling; post-terminal readiness without reload PASS (action=generate, label Genera singolo, enabled). Second render without reload PASS using updated editor values (seed 73001, steps 9, updated prompt); exactly one second /api/queue POST. Canonical main Director restored YES (744c177). No Batch/queued-next regression. No merge/deploy.
+NEXT_RELEVANCE: Controlled live acceptance PASS. Explicit operator approval required for merge/deploy of PR #82.
