@@ -15,6 +15,7 @@ export const MONITOR_MAX_VH = 0.5;
 export const RESERVED_LAYOUT_KEYS = Object.freeze([
   "h3WorkspaceHeight:v1",
   "h3SidebarWidth:v1",
+  "h3InspectorCollapsed:v1",
   "h3InspectorTab:v1"
 ]);
 

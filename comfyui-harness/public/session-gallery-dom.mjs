@@ -136,6 +136,10 @@ export function createSessionClipCard(doc, item, {
 
   const actions = doc.createElement("div");
   actions.className = "session-clip-actions";
+  const primary = doc.createElement("div");
+  primary.className = "session-clip-actions-primary";
+  const secondary = doc.createElement("div");
+  secondary.className = "session-clip-actions-secondary";
   if (item.available === false) {
     const flag = doc.createElement("span");
     flag.className = "session-clip-unavailable-flag";
@@ -148,23 +152,37 @@ export function createSessionClipCard(doc, item, {
       open.target = "_blank";
       open.rel = "noopener";
       open.textContent = "Apri video";
-      actions.append(open);
+      open.setAttribute("data-help", "Apre il video originale in una nuova scheda.");
+      primary.append(open);
+    }
+    const isMp4 = /\.mp4$/i.test(String(item.filename || ""));
+    if (isMp4) {
+      const download = doc.createElement("a");
+      download.href = buildDownloadUrl(item);
+      download.textContent = "Scarica MP4";
+      download.download = String(item.filename || "clip.mp4");
+      download.className = "session-clip-download";
+      download.setAttribute("data-help", "Scarica il file MP4 originale senza ricodifica.");
+      primary.append(download);
     }
     const show = doc.createElement("button");
     show.type = "button";
     show.className = "secondary session-clip-show-folder";
     show.textContent = "Mostra nella cartella";
+    show.setAttribute("data-help", "Apre la cartella del file originale e lo seleziona. Non copia né sposta il video.");
     show.addEventListener("click", () => {
       if (typeof onShowInFolder === "function") onShowInFolder(item);
     });
-    actions.append(show);
+    primary.append(show);
 
     const cloudBtn = doc.createElement("button");
     cloudBtn.type = "button";
     cloudBtn.className = "secondary session-clip-cloud-copy";
+    cloudBtn.setAttribute("data-help", "Copia il file nella cartella locale sincronizzata configurata. Non garantisce che il provider cloud abbia già completato l'upload remoto.");
     if (cm?.status === "copied" || cm?.status === "already-copied") {
       cloudBtn.textContent = "Già copiato nel cloud";
       cloudBtn.disabled = true;
+      cloudBtn.setAttribute("data-help-disabled", "Questo file risulta già presente nella cartella cloud configurata.");
     } else if (cm?.status === "failed") {
       cloudBtn.textContent = "Riprova copia cloud";
     } else {
@@ -173,18 +191,10 @@ export function createSessionClipCard(doc, item, {
     cloudBtn.addEventListener("click", () => {
       if (typeof onCloudMirrorCopy === "function") onCloudMirrorCopy(item);
     });
-    actions.append(cloudBtn);
-
-    const isMp4 = /\.mp4$/i.test(String(item.filename || ""));
-    if (isMp4) {
-      const download = doc.createElement("a");
-      download.href = buildDownloadUrl(item);
-      download.textContent = "Scarica MP4";
-      download.download = String(item.filename || "clip.mp4");
-      download.className = "session-clip-download";
-      actions.append(download);
-    }
+    secondary.append(cloudBtn);
   }
+  actions.append(primary);
+  if ((secondary.children || secondary.childNodes || []).length) actions.append(secondary);
 
   const nodes = [meta];
   if (item.url && item.available !== false && /\.(mp4|webm|mov)(\?|$)/i.test(item.filename || item.url)) {

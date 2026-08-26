@@ -57,7 +57,8 @@ const BROWSER_ENTRY_MODULES = [
   "public/workflow-nav.mjs",
   "public/inspector-ui.mjs",
   "public/output-ui.mjs",
-  "public/gpu-power-ui.mjs"
+  "public/gpu-power-ui.mjs",
+  "public/tooltip-boot.mjs"
 ];
 
 const IMPORT_RE = /\bfrom\s+["']([^"']+)["']/g;

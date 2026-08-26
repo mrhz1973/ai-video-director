@@ -56,6 +56,7 @@ function fakeDocument() {
       append(...nodes) {
         for (const node of nodes) children.push(node);
       },
+      setAttribute() {},
       addEventListener(type, fn) { listeners.push({ type, fn }); }
     };
     Object.defineProperty(el, "innerHTML", {

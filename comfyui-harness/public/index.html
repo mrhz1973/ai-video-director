@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="workspace-v0140.css">
   <link rel="stylesheet" href="gpu-power.css">
   <link rel="stylesheet" href="batch.css">
+  <link rel="stylesheet" href="tooltip.css">
 </head>
 <body>
 <main>
@@ -87,13 +88,7 @@
         </div>
       </div>
 
-      <section class="scena-first-frame" id="scenaFirstFrame" aria-label="First frame">
-        <div class="scena-first-frame-thumb" id="scenaFirstFrameThumb" hidden></div>
-        <div class="scena-first-frame-meta">
-          <strong>First frame</strong>
-          <code id="scenaFirstFrameName">Nessun first frame assegnato — usa Input nell'inspector.</code>
-        </div>
-      </section>
+      <section class="scena-first-frame scena-input-strip" id="scenaFirstFrame" aria-label="Input immagine Scena" hidden></section>
 
       <section class="generation-grid quick-generation" id="generationGrid" aria-label="Controlli generazione">
         <label>Workflow<select id="workflow"></select></label>
@@ -311,6 +306,7 @@
 <script type="module" src="inspector-ui.mjs"></script>
 <script type="module" src="output-ui.mjs"></script>
 <script type="module" src="gpu-power-ui.mjs"></script>
+<script type="module" src="tooltip-boot.mjs"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

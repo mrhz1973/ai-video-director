@@ -17,7 +17,7 @@ import { singleInterruptActionable } from "./runtime-interrupt-ui.mjs";
 import { connectionBadge } from "./connection-badge.mjs";
 import { buildAssetStatusUrl, buildInputViewUrl, parseUploadResult } from "./asset-url.mjs";
 import {
-  applyScenaFirstFrameView,
+  applyScenaInputStrip,
   resolveEffectiveFirstFrame
 } from "./first-frame-view.mjs";
 import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
@@ -1380,13 +1380,12 @@ function availabilityOf(filename, subfolder = "") {
 }
 
 function syncScenaFirstFrame() {
-  const binding = resolveEffectiveFirstFrame({
+  return applyScenaInputStrip(document, {
+    preset: currentPreset(),
     sharedFiles: draft.files,
     library: draft.library,
     availability: draft.availability
   });
-  applyScenaFirstFrameView(document, binding);
-  return binding;
 }
 
 async function refreshAvailability() {
@@ -1615,7 +1614,9 @@ function renderMemberCard(group, member, index) {
   const up = document.createElement("button");
   up.type = "button";
   up.textContent = "↑";
+  up.setAttribute("data-help", "Sposta l'elemento verso l'alto nell'ordine.");
   up.disabled = index === 0;
+  if (index === 0) up.setAttribute("data-help-disabled", "Questo membro è già il primo del gruppo.");
   up.onclick = () => {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index - 1);
     updateDirtyFlag();
@@ -1625,7 +1626,9 @@ function renderMemberCard(group, member, index) {
   const down = document.createElement("button");
   down.type = "button";
   down.textContent = "↓";
+  down.setAttribute("data-help", "Sposta l'elemento verso il basso nell'ordine.");
   down.disabled = index >= (group.members.length - 1);
+  if (down.disabled) down.setAttribute("data-help-disabled", "Questo membro è già l'ultimo del gruppo.");
   down.onclick = () => {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index + 1);
     updateDirtyFlag();
@@ -1635,6 +1638,7 @@ function renderMemberCard(group, member, index) {
   const remove = document.createElement("button");
   remove.type = "button";
   remove.textContent = "Rimuovi";
+  remove.setAttribute("data-help", "Rimuove il membro dal gruppo libreria. Non cancella il file da ComfyUI.");
   remove.onclick = () => {
     if (!confirm(`Rimuovere "${primary}" dal progetto? Il file ComfyUI non verrà cancellato.`)) return;
     const result = removeMember(draft.library, activeCategory, group.id, member.id);

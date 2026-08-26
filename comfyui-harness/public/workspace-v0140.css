@@ -64,6 +64,51 @@
   background: rgba(0, 0, 0, 0.18);
 }
 
+.scena-input-strip.slots-2 {
+  align-items: stretch;
+}
+
+.scena-input-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.scena-input-slot-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: #c9d3dc;
+}
+
+.scena-input-slot-name {
+  font-size: 0.78rem;
+  color: #9eabb8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scena-input-strip-arrow {
+  align-self: center;
+  color: #9eabb8;
+  font-size: 1.1rem;
+  padding: 0 0.25rem;
+}
+
+.scena-input-slot .scena-first-frame-thumb,
+.scena-input-slot-thumb {
+  flex: 0 0 auto;
+  width: 5.5rem;
+  height: 5.5rem;
+}
+
+.scena-input-slot-img {
+  object-fit: contain;
+  background: #0b0d10;
+}
+
 .scena-first-frame-meta {
   display: flex;
   flex-direction: column;

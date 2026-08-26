@@ -105,7 +105,9 @@ export function createAssetLightboxController({
       ensureClassList(closeBtn).add("asset-lightbox-close");
       closeBtn.textContent = "Chiudi";
       closeBtn.setAttribute("aria-label", "Chiudi anteprima");
+      closeBtn.setAttribute("data-help", "Chiude l'anteprima grande senza modificare assegnazioni o progetto.");
       closeBtn.addEventListener("click", () => close());
+      backdrop.setAttribute("data-help", "Chiude l'anteprima grande senza modificare assegnazioni o progetto.");
 
       img = documentRef.createElement("img");
       ensureClassList(img).add("asset-lightbox-image");

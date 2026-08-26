@@ -28,7 +28,7 @@ test("Genera singolo, Aggiungi alla coda, and advanced Avvia batch preserved", (
   assert.match(html, /id="send"[^>]*>GENERA SINGOLO</);
   assert.match(batch, /id="batchQueue"/);
   assert.match(batch, /Avvia questo Batch immediatamente/);
-  assert.match(batch, /id="batchAddToQueue">\+ AGGIUNGI ALLA CODA</);
+  assert.match(batch, /id="batchAddToQueue"[^>]*>\+ AGGIUNGI ALLA CODA</);
 });
 
 test("v0.12 runtime interrupt controls still present", () => {

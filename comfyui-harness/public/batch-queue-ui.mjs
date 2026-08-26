@@ -333,23 +333,45 @@ function displayEntries() {
 
 function renderSummary(entries) {
   const node = $("batchQueueSummary");
+  const heading = document.querySelector(".batch-queue-heading");
   if (!node) return;
   const view = buildCodaProgressView({
     entries,
     runtimeView,
     renderProgress: liveRenderProgress
   });
+  const overall = runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE;
   const batchCount = entries.length;
   const jobCount = view.jobs.total;
-  const parts = [`${batchCount} Batch · ${jobCount} Job`];
-  if (view.armed && view.pointer.entryName) {
-    const idx = entries.findIndex(e => e.queueEntryId === runtimeView?.currentEntryId);
-    if (idx >= 0) parts.push(`Batch ${idx + 1} / ${batchCount}`);
-    if (view.pointer.label) parts.push(view.pointer.label);
-  } else if (view.jobs.pending != null) {
-    parts.push(`${view.jobs.pending} job in attesa`);
+  const hasQueued = entries.some(e => e.state === QUEUE_ENTRY_STATE.QUEUED);
+  const completed = overall === QUEUE_OVERALL_STATE.COMPLETED
+    || (batchCount > 0 && !hasQueued && entries.every(e =>
+      e.state === QUEUE_ENTRY_STATE.COMPLETED
+      || e.state === QUEUE_ENTRY_STATE.FAILED
+      || e.state === QUEUE_ENTRY_STATE.CANCELLED
+    ));
+
+  if (!batchCount) {
+    if (heading) heading.textContent = "CODA VUOTA";
+    node.textContent = "Nessun lavoro da eseguire";
+    node.dataset.state = "empty";
+  } else if (completed && overall !== QUEUE_OVERALL_STATE.RECOVERY_REQUIRED) {
+    if (heading) heading.textContent = "✓ CODA COMPLETATA";
+    node.textContent = `${batchCount} Batch · ${jobCount} Job completati`;
+    node.dataset.state = "completed";
+  } else {
+    if (heading) heading.textContent = "CODA";
+    const parts = [`${batchCount} Batch · ${jobCount} Job`];
+    if (view.armed && view.pointer.entryName) {
+      const idx = entries.findIndex(e => e.queueEntryId === runtimeView?.currentEntryId);
+      if (idx >= 0) parts.push(`Batch ${idx + 1} / ${batchCount}`);
+      if (view.pointer.label) parts.push(view.pointer.label);
+    } else if (view.jobs.pending != null) {
+      parts.push(`${view.jobs.pending} job in attesa`);
+    }
+    node.textContent = parts.join(" · ");
+    node.dataset.state = overall || "active";
   }
-  node.textContent = parts.join(" · ");
   renderCodaProgressPanel(view);
 }
 
@@ -462,6 +484,7 @@ function renderQueueControls(entries) {
   const armBtn = $("batchQueueArm");
   const resumeBtn = $("batchQueueResume");
   const policySelect = $("batchQueueFailurePolicy");
+  const controls = document.querySelector(".batch-queue-controls");
   if (!armBtn || !resumeBtn) return;
 
   const overall = runtimeView?.overallState || QUEUE_OVERALL_STATE.IDLE;
@@ -471,6 +494,8 @@ function renderQueueControls(entries) {
   const armed = Boolean(runtimeView?.armed && runtimeView?.authorityPresent);
   const paused = overall === QUEUE_OVERALL_STATE.PAUSED
     || overall === QUEUE_OVERALL_STATE.PAUSED_FAILURE;
+  const completedTerminal = !hasQueued && !armed && !recovery && !paused
+    && (overall === QUEUE_OVERALL_STATE.COMPLETED || overall === QUEUE_OVERALL_STATE.IDLE);
 
   const queuedBatches = entries.filter(e => e.state === QUEUE_ENTRY_STATE.QUEUED).length;
   const queuedJobs = entries
@@ -480,14 +505,22 @@ function renderQueueControls(entries) {
     ? `AVVIA CODA · ${queuedBatches} BATCH / ${queuedJobs} JOB`
     : "AVVIA CODA";
 
-  armBtn.hidden = armed || recovery || paused;
+  // Hide start/policy when nothing actionable; never hide recovery/resume.
+  const hideArm = armed || recovery || paused || completedTerminal || !hasQueued;
+  armBtn.hidden = hideArm;
   armBtn.disabled = !hasQueued;
   resumeBtn.hidden = !recovery && !paused;
   resumeBtn.disabled = recovery && entries.some(e => e.state === QUEUE_ENTRY_STATE.RECOVERY_REQUIRED);
 
-  if (policySelect && plan) {
-    policySelect.value = plan.failurePolicy || BATCH_QUEUE_FAILURE_POLICY.STOP;
-    policySelect.disabled = armed;
+  if (policySelect) {
+    policySelect.hidden = hideArm && !recovery && !paused;
+    if (plan) {
+      policySelect.value = plan.failurePolicy || BATCH_QUEUE_FAILURE_POLICY.STOP;
+      policySelect.disabled = armed;
+    }
+  }
+  if (controls) {
+    controls.classList.toggle("is-terminal-idle", hideArm && !recovery && !paused);
   }
 
   const banner = $("batchQueueRecoveryBanner");

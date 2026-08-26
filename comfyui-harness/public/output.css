@@ -177,6 +177,40 @@
   color: #c7d0d8;
   overflow-wrap: anywhere;
 }
+.session-clip-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.session-clip-actions-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  align-items: center;
+}
+
+.session-clip-actions-primary a,
+.session-clip-actions-primary button {
+  width: auto;
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  font-size: 11px;
+}
+
+.session-clip-actions-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.session-clip-actions-secondary button {
+  width: auto;
+  margin: 0;
+  padding: 0.3rem 0.55rem;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 .session-clip-actions a {
   color: #f1c58e;
   text-decoration: none;

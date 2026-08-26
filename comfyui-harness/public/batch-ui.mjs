@@ -645,19 +645,19 @@ function createUi() {
   section.className = "batch-section";
   section.id = "batchSection";
   section.innerHTML = `
-    <details id="batchDetails">
-      <summary><span>${BATCH_OPTIONAL_HEADING}</span><span id="batchBadge" class="batch-badge">nessun job</span></summary>
-      <p class="batch-help">Usa questa sezione solo per preparare più render. <strong>Genera singolo</strong> crea sempre una sola clip e non modifica i job preparati qui sotto. Workflow, modello e LoRA restano impostazioni comuni del Batch; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job. Dopo «Prepara dal draft» il LoRA del Batch è indipendente da SCENA.</p>
+    <details id="batchDetails" open>
+      <summary><span id="batchCurrentHeading">${BATCH_OPTIONAL_HEADING}</span><span id="batchBadge" class="batch-badge">Batch attuale · 0 job</span></summary>
+      <p class="batch-help">Prepara più render dalla Scena. <strong>Genera singolo</strong> crea sempre una sola clip e non modifica questi job.</p>
       <div class="batch-prepare-row">
-        <label>Numero job<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
-        <button type="button" class="secondary" id="batchPrepare">Prepara dal draft</button>
+        <label>Job da creare<input id="batchCount" type="number" min="${MIN_BATCH_JOBS}" max="${MAX_BATCH_JOBS}" value="4"></label>
+        <button type="button" class="secondary" id="batchPrepare" data-help="Crea i job del Batch a partire da prompt, Input e impostazioni della Scena corrente. Non avvia generazione.">Crea job dalla scena corrente</button>
       </div>
-      <div class="batch-global-settings" id="batchGlobalSettings">
+      <div class="batch-global-settings" id="batchGlobalSettings" data-help="Workflow, modello e LoRA restano impostazioni comuni del Batch; prompt, input/asset, seed, durata, steps, MP e aspect possono essere modificati per job.">
         <div class="batch-global-head">
           <strong>Impostazioni globali batch</strong>
           <div class="batch-expand-tools">
-            <button type="button" class="secondary" id="batchExpandAll">Espandi tutti</button>
-            <button type="button" class="secondary" id="batchCollapseAll">Comprimi tutti</button>
+            <button type="button" class="secondary" id="batchExpandAll" data-help="Espande tutti i job preparati per modificarli.">Espandi tutti</button>
+            <button type="button" class="secondary" id="batchCollapseAll" data-help="Comprime tutti i job preparati per ridurre l'ingombro.">Comprimi tutti</button>
           </div>
         </div>
         <div class="batch-global-grid">
@@ -672,21 +672,23 @@ function createUi() {
           <label>LoRA<select id="batchLoraId" disabled></select><small id="batchLoraHint" class="hint"></small></label>
           <label>Forza LoRA<input id="batchLoraStrength" type="number" min="0" max="1.5" step="0.05" value="0.7" disabled></label>
         </div>
-        <button type="button" class="secondary" id="batchGlobalApply" disabled>Applica a tutti gli 0 job</button>
-        <p class="batch-global-apply-note">«Applica a tutti» aggiorna solo Megapixel, Aspect e Steps su ogni job. LoRA è condiviso a livello Batch e si salva subito.</p>
+        <button type="button" class="secondary" id="batchGlobalApply" disabled data-help="Copia Megapixel, Aspect e Steps globali su ogni job preparato. Non avvia render.">Applica a tutti</button>
       </div>
       <div id="batchList" class="batch-list"></div>
       <div class="batch-actions">
-        <button type="button" class="secondary" id="batchAdd">+ Job</button>
-        <button type="button" class="secondary" id="batchReset">Reset</button>
-        <button type="button" id="batchAddToQueue">+ AGGIUNGI ALLA CODA</button>
+        <button type="button" class="secondary" id="batchAdd" data-help="Aggiunge un nuovo job al Batch preparato (duplica l'ultimo se già esistono job).">+ Job</button>
+        <button type="button" class="secondary" id="batchReset" data-help="Svuota il Batch preparato. Non cancella render già completati.">Reset</button>
+        <button type="button" id="batchAddToQueue" data-help="Copia il Batch preparato nella Coda. Non avvia ancora la generazione.">+ AGGIUNGI ALLA CODA</button>
         <details class="batch-advanced-actions">
           <summary>⋯ Avanzate</summary>
-          <button type="button" class="secondary" id="batchQueue">⋯ Avvia questo Batch immediatamente</button>
+          <button type="button" class="secondary" id="batchQueue" data-help="Avvia subito questo Batch senza passare dalla Coda multi-batch.">⋯ Avvia questo Batch immediatamente</button>
         </details>
       </div>
-      <p id="batchFeedback" class="batch-feedback">Prepara i job qui, poi aggiungili alla Coda. Nessuna modifica avvia una generazione.</p>
-      <div id="batchRuntimeList" class="batch-runtime-list"></div>
+      <p id="batchFeedback" class="batch-feedback">Crea i job, poi aggiungili alla Coda. Nessuna di queste azioni avvia una generazione.</p>
+      <details id="batchRuntimeDetails" class="batch-runtime-details-wrap">
+        <summary id="batchRuntimeSummary" class="batch-runtime-summary">ULTIMA ESECUZIONE</summary>
+        <div id="batchRuntimeList" class="batch-runtime-list"></div>
+      </details>
     </details>`;
   if (mount.id === "batchMount") mount.appendChild(section);
   else mount.insertBefore(section, $("monitorShell") || $("renderMonitor") || null);
@@ -774,7 +776,9 @@ function renderBatch() {
   const host = $("batchList");
   if (!host) return;
   host.replaceChildren();
-  $("batchBadge").textContent = items.length ? `${items.length} job` : "nessun job";
+  $("batchBadge").textContent = items.length
+    ? `Batch attuale · ${items.length} job`
+    : "Batch attuale · 0 job";
   syncBatchGlobalControls();
   const mpField = $("batchGlobalMp");
   const aspectField = $("batchGlobalAspect");
@@ -821,10 +825,10 @@ function renderBatch() {
     const controls = document.createElement("div");
     controls.className = "batch-job-controls";
     controls.innerHTML = `
-      <button type="button" data-action="up" title="Sposta su">↑</button>
-      <button type="button" data-action="down" title="Sposta giù">↓</button>
-      <button type="button" data-action="copy" title="Duplica">Copia</button>
-      <button type="button" data-action="remove" title="Rimuovi">×</button>`;
+      <button type="button" data-action="up" data-help="Sposta l'elemento verso l'alto nell'ordine." title="Sposta su">↑</button>
+      <button type="button" data-action="down" data-help="Sposta l'elemento verso il basso nell'ordine." title="Sposta giù">↓</button>
+      <button type="button" data-action="copy" data-help="Duplica questo elemento." title="Duplica">Copia</button>
+      <button type="button" data-action="remove" data-help="Rimuove questo elemento dall'elenco preparato o dalla libreria (non cancella file ComfyUI)." title="Rimuovi">×</button>`;
     controls.querySelector('[data-action="up"]').disabled = index === 0;
     controls.querySelector('[data-action="down"]').disabled = index === items.length - 1;
     controls.querySelector('[data-action="copy"]').disabled = items.length >= MAX_BATCH_JOBS;
@@ -1071,7 +1075,7 @@ async function queueBatch() {
   const live = collectSourceSnapshot();
   if (live.error) return setFeedback(live.error, "error");
   if (!source || sourceIdentity(live) !== sourceIdentity(source)) {
-    return setFeedback("Il draft comune è cambiato (workflow o modello). Premi “Prepara dal draft” prima di inviare.", "warn");
+    return setFeedback("Il contesto comune della Scena è cambiato (workflow o modello). Premi “Crea job dalla scena corrente” prima di inviare.", "warn");
   }
   const snapshot = freezeSubmissionSnapshot(source, live);
   const validation = validateCurrentBatch(snapshot);
@@ -1277,14 +1281,18 @@ async function stopEntireBatch() {
 function renderRuntime() {
   const host = $("batchRuntimeList");
   const monitor = $("batchMonitorSummary");
+  const wrap = $("batchRuntimeDetails");
+  const summaryEl = $("batchRuntimeSummary");
   if (!host || !monitor) return;
   host.replaceChildren();
   if (!runtime?.jobs?.length) {
     monitor.hidden = true;
+    if (wrap) wrap.hidden = true;
     return;
   }
   const summary = summarizeBatchJobs(runtime.jobs);
   monitor.hidden = false;
+  if (wrap) wrap.hidden = false;
   const progress = buildBatchProgressView({
     jobs: runtime.jobs,
     renderProgress: liveBatchRenderProgress,
@@ -1300,6 +1308,24 @@ function renderRuntime() {
   monitor.innerHTML = `<strong>BATCH ${progress.completed}/${progress.total}</strong><span>${progress.label}${renderBits} · ${runtimeSummary} · ${summary.running} running · ${summary.pending} pending · Tempo ${progress.elapsed.text}${etaBits}</span>`;
   renderBatchInterruptControls();
 
+  const allTerminal = runtime.jobs.every(job => isTerminalBatchState(job.state) || job.state === "cancelled");
+  const needsAttention = runtime.jobs.some(job =>
+    job.state === "failed" || job.state === "error" || job.state === "recovery-required"
+  );
+  if (summaryEl) {
+    summaryEl.textContent = allTerminal
+      ? `ULTIMA ESECUZIONE · ${progress.completed}/${progress.total} COMPLETATI`
+      : `ESECUZIONE IN CORSO · ${progress.completed}/${progress.total}`;
+  }
+  if (wrap) {
+    // Keep open when active or recovery/error; collapse terminal history by default.
+    if (!allTerminal || needsAttention) wrap.open = true;
+    else if (!wrap.dataset.userToggled) wrap.open = false;
+    wrap.addEventListener("toggle", () => {
+      wrap.dataset.userToggled = "1";
+    }, { once: true });
+  }
+
   const title = document.createElement("div");
   title.className = "batch-runtime-head";
   title.textContent = `Ultimo batch · ${runtime.workflowLabel || runtime.workflowId} · ${runtime.model || ""}`;
@@ -1308,33 +1334,32 @@ function renderRuntime() {
   runtime.jobs.forEach(job => {
     const row = document.createElement("details");
     row.className = `batch-runtime-job state-${job.state}`;
-    const summaryEl = document.createElement("summary");
+    const summaryRow = document.createElement("summary");
     const id = job.promptId ? promptIdPrefix(job.promptId) : "—";
-    summaryEl.innerHTML = `<strong>${job.label}</strong><span>${stateLabel(job.state)} · ${id}</span>`;
+    summaryRow.innerHTML = `<strong>${job.label}</strong><span>${stateLabel(job.state)} · ${id}</span>`;
     const details = document.createElement("div");
     details.className = "batch-runtime-details";
-    const seed = job.item?.seed ?? "—";
     details.innerHTML = `<div>prompt_id: <code>${job.promptId || "non inviato"}</code></div><div>${formatBatchJobSummary(job.item || {})} · ${job.item?.steps || "—"} steps</div>${job.error ? `<div class="batch-error">${job.error}</div>` : ""}`;
     const outputRows = batchJobOutputRows(runtime.jobs);
     const outputRow = outputRows[job.index] || outputRows.find(item => item.label === job.label);
     if (outputRow?.url) {
-      const wrap = document.createElement("div");
-      wrap.className = "batch-job-output";
+      const outWrap = document.createElement("div");
+      outWrap.className = "batch-job-output";
       if (outputRow.latest) {
         const flag = document.createElement("span");
         flag.className = "latest-output-flag";
         flag.textContent = "ULTIMO OUTPUT";
-        wrap.append(flag);
+        outWrap.append(flag);
       }
       const link = document.createElement("a");
       link.href = outputRow.url;
       link.target = "_blank";
       link.rel = "noopener";
       link.textContent = "Apri video";
-      wrap.append(link);
-      details.append(wrap);
+      outWrap.append(link);
+      details.append(outWrap);
     }
-    row.append(summaryEl, details);
+    row.append(summaryRow, details);
     host.append(row);
   });
 }
@@ -1460,10 +1485,10 @@ async function init() {
     }
   });
   $("workflow")?.addEventListener("change", () => {
-    if (items.length) setFeedback("Workflow cambiato. Premi “Prepara dal draft” per aggiornare il batch prima dell'invio.", "warn");
+    if (items.length) setFeedback("Workflow cambiato. Premi “Crea job dalla scena corrente” per aggiornare il batch prima dell'invio.", "warn");
   });
   $("model")?.addEventListener("change", () => {
-    if (items.length) setFeedback("Modello cambiato. Premi “Prepara dal draft” per aggiornare il batch prima dell'invio.", "warn");
+    if (items.length) setFeedback("Modello cambiato. Premi “Crea job dalla scena corrente” per aggiornare il batch prima dell'invio.", "warn");
   });
 }
 

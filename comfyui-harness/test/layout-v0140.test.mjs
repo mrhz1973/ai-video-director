@@ -94,7 +94,7 @@ test("workflow nav switches views without generation side effects", () => {
 });
 
 test("8 prepared jobs differ from 1 queued Batch in UI copy", () => {
-  assert.match(batchUi, /BATCH — job preparati|BATCH_OPTIONAL_HEADING/);
+  assert.match(batchUi, /BATCH ATTUALE|BATCH_OPTIONAL_HEADING/);
   assert.match(batchUi, /\+ AGGIUNGI ALLA CODA/);
   assert.match(batchQueueUi, /CODA/);
   assert.match(batchQueueUi, /AVVIA CODA/);
@@ -129,7 +129,7 @@ test("normal CODA UI hides raw item.files / source.files JSON", () => {
 test("Avvia batch is secondary advanced overflow", () => {
   assert.match(batchUi, /batch-advanced-actions/);
   assert.match(batchUi, /Avvia questo Batch immediatamente/);
-  assert.match(batchUi, /id="batchAddToQueue">\+ AGGIUNGI ALLA CODA</);
+  assert.match(batchUi, /id="batchAddToQueue"[^>]*>\+ AGGIUNGI ALLA CODA</);
 });
 
 test("future queued Batch remains editable until claim (editor still present)", () => {
@@ -177,10 +177,15 @@ test("createSessionClipCard renders three actions when available", () => {
     completedAt: "2026-08-24T12:00:00.000Z"
   });
   const actions = card.children.find(c => c.className === "session-clip-actions");
-  const texts = (actions?.children || []).map(c => c.textContent);
+  const texts = [];
+  for (const group of actions?.children || []) {
+    if (group.children?.length) texts.push(...group.children.map(c => c.textContent));
+    else texts.push(group.textContent);
+  }
   assert.ok(texts.includes("Apri video"));
   assert.ok(texts.includes("Mostra nella cartella"));
   assert.ok(texts.includes("Scarica MP4"));
+  assert.ok(texts.includes("Copia nel cloud"));
 });
 
 test("resolveSafeComfyOutputPath accepts valid and rejects traversal/absolute/escape", () => {
