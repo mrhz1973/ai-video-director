@@ -491,7 +491,9 @@ const rememberJob = (promptId, meta = {}) => {
     jobCreatedAt = null;
     jobFirstSeenAt = null;
     stopPolling();
-    stopQueuePolling();
+    // Keep queue polling alive after terminal clear so SCENA readiness can
+    // refresh from /api/active. Stopping it permanently left a stale sample
+    // and caused #73 (Metti in coda after completion).
     stopElapsedClock();
     const keep = ["completed", "error", "interrupted"].includes(monitorState.phase);
     monitorState = initialMonitorState({
@@ -502,12 +504,27 @@ const rememberJob = (promptId, meta = {}) => {
       progress: keep ? monitorState.progress : { kind: "idle", value: null, max: null, percent: null },
       promptId: keep ? monitorState.promptId : null,
       events: monitorState.events,
+      // Retain last sample only until reconcileQueueAfterTerminal overwrites it
+      // with /api/active. Never treat this retention as authoritative readiness.
       queueRunning: monitorState.queueRunning,
       queuePending: monitorState.queuePending
     });
   }
   renderMonitor();
 };
+
+/**
+ * Authoritative post-terminal queue reconciliation (#73).
+ * Fetches live /api/active counts; never blindly forces 0/0 when jobs remain.
+ * Restarts queue polling if it was not already running.
+ */
+async function reconcileQueueAfterTerminal() {
+  await refreshQueueCounts();
+  if (!queueTimer) {
+    queueTimer = setInterval(() => { refreshQueueCounts(); }, QUEUE_POLL_MS);
+  }
+  updateGenerateButton();
+}
 
 const stopPolling = () => { if (!pollTimer) return; clearInterval(pollTimer); pollTimer = undefined; };
 const startPolling = () => { stopPolling(); if (!currentPrompt) return; pollTimer = setInterval(() => { pollHistory(); }, POLL_INTERVAL_MS); };
@@ -1012,6 +1029,7 @@ async function outputs() {
     };
     setBusy(false);
     rememberJob();
+    await reconcileQueueAfterTerminal();
     renderMonitor();
     const { galleryRecords, completion } = buildSingleJobCompletionAttribution(completedPromptId, items, {
       workflowId: $("workflow")?.value || "",
@@ -1040,7 +1058,7 @@ async function outputs() {
   }
 }
 
-function handleHistoryFailure(history) {
+async function handleHistoryFailure(history) {
   stopPolling();
   setBusy(false);
   singleInterruptPending = false;
@@ -1054,6 +1072,7 @@ function handleHistoryFailure(history) {
     monitorState = { ...monitorState, userInterrupted: true };
   }
   rememberJob();
+  await reconcileQueueAfterTerminal();
   renderMonitor();
   add(userInterrupted && label === "interrupted"
     ? "Interrotto dall'utente."
@@ -1069,7 +1088,7 @@ async function pollHistory() {
     if (!response.ok) return;
     const state = classifyHistoryState(data, currentPrompt);
     if (state === "completed") await outputs();
-    else if (state === "failed") handleHistoryFailure(data);
+    else if (state === "failed") await handleHistoryFailure(data);
   } catch { /* ignore */ }
 }
 
@@ -1102,6 +1121,7 @@ async function handleMessage(event) {
       monitorState = { ...monitorState, phase: "interrupted", userInterrupted: true };
     }
     rememberJob();
+    await reconcileQueueAfterTerminal();
     console.warn("ComfyUI execution terminal event", message.data);
     showAppNotice(
       message.type === "execution_interrupted" ? "Generazione interrotta." : "Generazione fallita.",
