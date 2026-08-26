@@ -6,6 +6,7 @@
 import { resolveBatchItemFiles } from "../lib/batch-draft.mjs";
 import { findMemberByFilename } from "../lib/projects.mjs";
 import { buildInputViewUrl } from "./asset-url.mjs";
+import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
 
 export const FIRST_FRAME_ROLE = "firstImage";
 
@@ -84,6 +85,14 @@ export function applyScenaFirstFrameView(documentRef, binding = {}) {
       img.onerror = () => {
         thumbHost.textContent = "?";
       };
+      try {
+        getSharedAssetLightbox({ documentRef }).bindTrigger(img, {
+          src: binding.url,
+          alt: filename,
+          label: binding.label || filename,
+          available: binding.available
+        });
+      } catch { /* document without body in unit tests */ }
       thumbHost.append(img);
     } else {
       thumbHost.textContent = binding.available === false ? "!" : "?";
@@ -111,6 +120,14 @@ export function appendBatchFirstFrameSummary(documentRef, parent, binding = {}) 
     img.alt = filename;
     img.title = binding.label || filename;
     img.decoding = "async";
+    try {
+      getSharedAssetLightbox({ documentRef }).bindTrigger(img, {
+        src: binding.url,
+        alt: filename,
+        label: binding.label || filename,
+        available: binding.available
+      });
+    } catch { /* document without body in unit tests */ }
     wrap.append(img);
   }
   const code = documentRef.createElement("code");
