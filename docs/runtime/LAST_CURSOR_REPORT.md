@@ -1,4 +1,4 @@
-﻿# LAST_CURSOR_REPORT
+# LAST_CURSOR_REPORT
 
 TASK_REF: #73
 TASK: Single Render cannot be started again after completion without reload
@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 744c17788970cbcc11387179cc18eaae1a57e3a4
 WORK_REF: fix/issue-73-single-render-readiness
-COMMIT: pending
+COMMIT: 026620e07cab89dab1aee43f81a70bdade23b4b4
 PR: https://github.com/mrhz1973/ai-video-director/pull/82
 VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; post-terminal Genera singolo without reload; second independent single render with updated seed/steps/prompt; canonical main restored; validate CI on report push
 RUNTIME_TOUCHED: YES
