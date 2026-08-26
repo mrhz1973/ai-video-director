@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 997edeb03d09f58b487060bc09633c10c6c9fd98
 WORK_REF: docs/issue-72-deploy-evidence
-COMMIT: pending
+COMMIT: 4efd1728710b2bc4fc680d65945cd0cb96ba0599
 PR: pending
 VALIDATION: python scripts/validate_project.py; deployment live checks (queue idle; /api/health; launcher reuse)
 RUNTIME_TOUCHED: YES
