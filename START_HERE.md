@@ -1,5 +1,7 @@
 # Start here
 
+> **Bootstrap authority moved.** AI chats execute CORE BOOT from the README AI-BOOT block and `docs/runtime/CURRENT_FRONTIER.md`. This file remains human onboarding and a longer read-order map; it is not the project LIVE STATE owner.
+
 This is the entry point for every new chat or collaborator.
 
 ## What this project is

@@ -1,5 +1,7 @@
 # CHARACTER ELEMENT LAB — STATE
 
+> **Declassified proto-state.** Current IMAGE specialist ACTIVE STATE lives in the Active Workboard IMAGE_ELEMENT_DIRECTOR lane (issue #75). This file is legacy Lab local state, not the project LIVE STATE owner.
+
 Status: initialized
 
 ## Active character

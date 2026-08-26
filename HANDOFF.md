@@ -1,5 +1,7 @@
 # Live handoff
 
+> **Declassified.** Cross-track LIVE STATE is `docs/runtime/CURRENT_FRONTIER.md` (one ACTIVE WORK pointer → Workboard #75). This file is **production-track handoff detail** only. Track B harness narrative below is **historical** as of Harness v0.19.0; current harness architecture is `docs/HARNESS_STATE.md`.
+
 Updated: 2026-08-20
 Repository visibility: public
 
