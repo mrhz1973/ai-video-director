@@ -9,8 +9,8 @@ SOURCE: Cursor
 BASE_MAIN_SHA: 5b5ec93880881f3ad8425ae914dc44175513f21f  
 WORK_REF: fix/issue-97-stable-runtime-v0194  
 PR: https://github.com/mrhz1973/ai-video-director/pull/98  
-PR_HEAD: (pending push)  
-CI: (pending exact-head validate after push)  
+PR_HEAD: 0d482fa  
+CI: PASS (exact-head validate @ 0d482fa)  
 VALIDATION: npm test 993/993 PASS; validate_project.py PASS  
 RUNTIME_TOUCHED: NO  
 
