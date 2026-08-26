@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — final pre-stop race correction
+#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — Controlled Acceptance gate
 
 ## STATUS
 
-CORRECTIONS_REQUIRED
+ACCEPTANCE_GATE
 
 ## GATE
 
-PR #98 current exact head `de79e757c253f6175bfc955f3230d07072852f71` reports npm 987/987 PASS, validator PASS, exact-current-head CI #514 PASS and production runtime untouched. Orchestrator re-review `5035610185` confirms the previous source blockers are resolved except one stale-state race before the destructive Director stop. Controlled Acceptance, merge and deploy remain unauthorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
+PR #98 exact current head `7df684192ebc59e8bc226b557118c8d925ba755c` (latest commit docs-only; functional correction `0d482fabf07d5a25e5bc873e83a28be2f76026d2`) has final orchestrator source review PASS `5035670154`, npm 993/993 PASS, validator PASS and exact-current-head CI #517 PASS. All known #97 deploy-safety source blockers are resolved. Controlled Acceptance now requires explicit operator authorization. Merge and deploy remain unauthorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
 
 ## NEXT
 
-Correct PR #98 on the same branch. After release fetch/verification and any detached checkout, immediately before any Director stop/start perform a fresh safety guard: Director port inspection/identity must still be unambiguous and, when preflight recorded a Director PID, it must be the same exact PID; ComfyUI must still be healthy/unambiguous on the same exact PID; queue must still be 0 running / 0 pending. If any state changed, fail closed before `stopProcessFn`. Add regressions proving Director PID change/reuse, Comfy disappearance/PID change and queue becoming busy after preflight all produce `stopProcessFn=0`, and make post-deploy verification reject ambiguous Director port inspection/no PID. Rerun full `npm test`, `python scripts/validate_project.py`, exact-head CI, update `docs/runtime/LAST_CURSOR_REPORT.md`, then stop for source re-review.
+Await explicit operator authorization for Controlled Acceptance v0.19.4 on exact PR head `7df684192ebc59e8bc226b557118c8d925ba755c`. Acceptance must verify the real stable-runtime/Windows launcher contract without merging or deploying: explicit stable RuntimeRoot, clean detached authority, Desktop target, exact authorized release-SHA planning independent of newer main, strict external ComfyUI, queue-idle and fresh pre-stop fail-closed guards, exact-PID Director behavior, and version/UI/API coherence. Start with read-only/plan-only checks; any temporary candidate runtime/Director exercise must be acceptance-scoped, reversible, exact-PID only, leave ComfyUI untouched and restore production v0.19.3 afterward. Persist evidence and stop for merge gate only if PASS.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 with `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 now resolves fetch ordering, stable runtime authority, installer fail-closed validation, strict external-Comfy deployment and post-deploy checks; only the fresh pre-stop race guard remains before controlled acceptance.
+#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 now has final source review PASS after resolving explicit runtime authority, installer fail-closed validation, exact release-SHA deployment planning, strict external-Comfy behavior, complete post-deploy verification and the final fresh pre-stop PID/queue race guard.
 
 ## GLOBAL RUNTIME INVARIANTS
 
