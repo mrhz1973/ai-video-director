@@ -10,6 +10,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   ACTION,
+  DIRECTOR_HEALTH_IDENTITY,
   buildLauncherBrowserUrls,
   buildLauncherConfigPayload,
   normalizeConfig,
@@ -35,8 +36,8 @@ function comfyStats() {
   return new Response(JSON.stringify({ system: { os: "win" }, devices: [] }), { status: 200 });
 }
 
-function directorConfig(version = expectedDirectorVersion) {
-  return new Response(JSON.stringify({ version, presets: [{ id: "minimax-h3-i2v" }] }), { status: 200 });
+function directorHealth(version = expectedDirectorVersion, service = DIRECTOR_HEALTH_IDENTITY) {
+  return new Response(JSON.stringify({ service, version }), { status: 200 });
 }
 
 async function makeTempConfig(comfyRoot, overrides = {}) {
@@ -94,7 +95,7 @@ test("healthy already-running ComfyUI is reused and browser URL requested once",
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -120,7 +121,7 @@ test("healthy Director browser URL requested once on successful start", async ()
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -145,7 +146,7 @@ test("openBrowser=true requests both Director and ComfyUI URLs exactly once", as
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -172,7 +173,7 @@ test("openBrowser=false requests neither URL", async () => {
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
@@ -245,7 +246,7 @@ test("browser opening adds zero additional spawns when both services already hea
     deps: {
       fetchFn: async url => {
         if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/config")) return directorConfig();
+        if (String(url).includes("/api/health")) return directorHealth();
         return new Response("{}", { status: 404 });
       },
       inspectPortFn: async () => listeningPort(1),
