@@ -42,11 +42,17 @@ function mockGit(state) {
 }
 
 test("A installer shortcut targets stable runtime not dev checkout", () => {
-  const stableRoot = "C:/stable-runtime";
-  const devHarness = "C:/dev-checkout/comfyui-harness";
+  const stableRoot = path.resolve("/stable/runtime");
+  const devHarness = path.resolve("/dev/checkout/comfyui-harness");
   const planned = planInstallerShortcut({ runtimeRoot: stableRoot });
-  assert.notEqual(planned.targetScriptPath, path.join(devHarness, "scripts", "windows", "Start-AIVideoDirector.ps1"));
-  assert.equal(planned.targetScriptPath, path.join(stableRoot, "comfyui-harness", "scripts", "windows", "Start-AIVideoDirector.ps1"));
+  assert.notEqual(
+    planned.targetScriptPath,
+    path.join(devHarness, "scripts", "windows", "Start-AIVideoDirector.ps1")
+  );
+  assert.equal(
+    planned.targetScriptPath,
+    path.join(stableRoot, "comfyui-harness", "scripts", "windows", "Start-AIVideoDirector.ps1")
+  );
   assert.equal(planned.workingDirectory, path.join(stableRoot, "comfyui-harness"));
 });
 
@@ -64,8 +70,8 @@ test("B installer without runtime authority fails closed in source contract", as
 test("C launcher harness root mismatch fails closed before Director mutation", () => {
   assert.throws(
     () => assertHarnessRootMatchesRuntimeAuthority({
-      runtimeRoot: "C:/stable-runtime",
-      harnessRoot: "C:/dev-checkout/comfyui-harness"
+      runtimeRoot: path.resolve("/stable/runtime"),
+      harnessRoot: path.resolve("/dev/checkout/comfyui-harness")
     }),
     /mismatch/i
   );
@@ -134,7 +140,7 @@ test("I release object version mismatch is detectable at preflight", async () =>
 });
 
 test("desktop shortcut validation detects stable runtime drift", () => {
-  const stableRoot = "C:/stable-runtime";
+  const stableRoot = path.resolve("/stable/runtime");
   const planned = planInstallerShortcut({ runtimeRoot: stableRoot });
   const ok = validateDesktopShortcutTarget({
     runtimeRoot: stableRoot,
@@ -144,8 +150,8 @@ test("desktop shortcut validation detects stable runtime drift", () => {
   assert.equal(ok.ok, true);
   const drift = validateDesktopShortcutTarget({
     runtimeRoot: stableRoot,
-    argumentsText: '-File "C:/dev/comfyui-harness/scripts/windows/Start-AIVideoDirector.ps1" -PauseOnError',
-    workingDirectory: "C:/dev/comfyui-harness"
+    argumentsText: `-File "${path.resolve("/dev/comfyui-harness/scripts/windows/Start-AIVideoDirector.ps1")}" -PauseOnError`,
+    workingDirectory: path.resolve("/dev/comfyui-harness")
   });
   assert.equal(drift.ok, false);
 });

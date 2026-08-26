@@ -8,8 +8,9 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor  
 BASE_MAIN_SHA: 06bbf4832dd3d93ff3d54f3b7cfa3c22dab84397  
 WORK_REF: fix/issue-97-stable-runtime-v0194  
-COMMIT: (pending push)  
-PR: (pending)  
+COMMIT: c93681c  
+PR: https://github.com/mrhz1973/ai-video-director/pull/98  
+PR_HEAD: c93681c305ad9c9136c293addacc1323186e3dda  
 VALIDATION: npm test 972/972 PASS; validate_project.py PASS  
 CI: (pending exact-head)  
 RUNTIME_TOUCHED: NO  
