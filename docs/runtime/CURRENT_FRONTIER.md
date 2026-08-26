@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation
+#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — source-review corrections
 
 ## STATUS
 
-IMPLEMENTATION
+CORRECTIONS_REQUIRED
 
 ## GATE
 
-Operator explicitly continued after #95 completion, promoting #97 as the next HARNESS_ENGINEERING lane. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`. #97 implementation is isolated source/test work only: no live runtime advancement, real Desktop shortcut rewrite, Director/ComfyUI restart, generation/upload/queue/GPU/project mutation, merge or deploy is authorized.
+Initial PR #98 candidate at exact head `fc57d433030e7cba4dcf9f809223cca81a775311` reports npm 972/972 PASS, validator PASS, exact-head CI #507 PASS and production runtime untouched. Orchestrator source review `5035496812` found deploy-safety blockers, so Controlled Acceptance, merge and deploy are not authorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
 
 ## NEXT
 
-Implement issue #97 with target v0.19.4 in an isolated branch/worktree. Make stable runtime root explicit and fail-closed for installer/reinstaller; add reusable runtime-checkout validation and an exact-release-SHA Windows deployment operation; prevent any development checkout from silently becoming the Desktop production target; preserve launcher version-aware fail-closed behavior, same-version idempotent reuse, exact-PID Director semantics and external ComfyUI ownership; add deterministic tests; run full `npm test`, `python scripts/validate_project.py`, exact-head CI, persist `docs/runtime/LAST_CURSOR_REPORT.md`, open one PR and stop for orchestrator source review.
+Correct PR #98 on the same branch. Required: fetch origin before verifying a newly authorized release object/version in the real deploy path; enforce unambiguous Director and ComfyUI ownership before any stop/start and make deployment incapable of spawning/restarting ComfyUI; make post-deploy verification fail closed on unchanged ComfyUI PID, final queue 0/0, Desktop stable-runtime target and UI + `/api/health` + `/api/config` version coherence, with actual shortcut reading wired into the real CLI; make installer `-RuntimeRoot` validation require a clean detached stable runtime and reject empty roots instead of resolving them to cwd. Add behavioral regressions, rerun full `npm test`, `python scripts/validate_project.py`, exact-head CI, update `docs/runtime/LAST_CURSOR_REPORT.md` to the new exact PR head, then stop for source re-review.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 with `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. That manually proven invariant is the behavioral baseline #97 must encode permanently.
+#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, initial PR #98 automated validation is green but source review requires the deploy-safety corrections recorded above before controlled acceptance.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -54,10 +54,10 @@ HARNESS_ENGINEERING is ACTIVE on #97. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
-- Installer/reinstaller must not infer production runtime from its own development checkout
+- Installer/reinstaller must not infer production runtime from its own development checkout and must fail closed on invalid runtime authority
 - Release/deploy advances only the dedicated stable runtime checkout to the exact authorized merged release SHA before Director restart
 - Director restart is exact-PID only; no broad `node.exe` kill
-- ComfyUI lifecycle is external to the Director
+- ComfyUI lifecycle is external to the Director and deploy must never start/stop/restart it
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
