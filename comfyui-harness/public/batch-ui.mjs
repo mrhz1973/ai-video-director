@@ -44,6 +44,8 @@ import {
   transferExecutionLaneKind
 } from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
+import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./control-help.mjs";
+import { setControlHelp } from "./tooltip.mjs";
 import {
   applyBatchStopResult,
   batchCurrentInterruptActionable,
@@ -721,6 +723,7 @@ function createUi() {
     btnStop.onclick = () => { void stopEntireBatch(); };
   }
 
+  applyStaticControlHelp(document);
   $("batchPrepare").onclick = prepareFromDraft;
   $("batchExpandAll")?.addEventListener("click", () => setAllBatchJobsExpanded(true));
   $("batchCollapseAll")?.addEventListener("click", () => setAllBatchJobsExpanded(false));
@@ -805,6 +808,7 @@ function renderBatch() {
       batchExpandState.set(index, card.open);
     });
     const summary = document.createElement("summary");
+    setControlHelp(summary, CONTROL_HELP.batchJobDisclosure);
     const jobTitle = document.createElement("strong");
     jobTitle.textContent = `Job ${index + 1}`;
     const summaryText = document.createElement("span");
@@ -825,14 +829,22 @@ function renderBatch() {
     const controls = document.createElement("div");
     controls.className = "batch-job-controls";
     controls.innerHTML = `
-      <button type="button" data-action="up" data-help="Sposta l'elemento verso l'alto nell'ordine." title="Sposta su">↑</button>
-      <button type="button" data-action="down" data-help="Sposta l'elemento verso il basso nell'ordine." title="Sposta giù">↓</button>
-      <button type="button" data-action="copy" data-help="Duplica questo elemento." title="Duplica">Copia</button>
-      <button type="button" data-action="remove" data-help="Rimuove questo elemento dall'elenco preparato o dalla libreria (non cancella file ComfyUI)." title="Rimuovi">×</button>`;
-    controls.querySelector('[data-action="up"]').disabled = index === 0;
-    controls.querySelector('[data-action="down"]').disabled = index === items.length - 1;
-    controls.querySelector('[data-action="copy"]').disabled = items.length >= MAX_BATCH_JOBS;
-    controls.querySelector('[data-action="remove"]').disabled = items.length <= MIN_BATCH_JOBS;
+      <button type="button" data-action="up">↑</button>
+      <button type="button" data-action="down">↓</button>
+      <button type="button" data-action="copy">Copia</button>
+      <button type="button" data-action="remove">×</button>`;
+    const upBtn = controls.querySelector('[data-action="up"]');
+    const downBtn = controls.querySelector('[data-action="down"]');
+    const copyBtn = controls.querySelector('[data-action="copy"]');
+    const removeBtn = controls.querySelector('[data-action="remove"]');
+    upBtn.disabled = index === 0;
+    downBtn.disabled = index === items.length - 1;
+    copyBtn.disabled = items.length >= MAX_BATCH_JOBS;
+    removeBtn.disabled = items.length <= MIN_BATCH_JOBS;
+    applyOperatorHelp(upBtn, CONTROL_HELP.moveUp, { disabledReason: CONTROL_HELP.batchMoveUpDisabled });
+    applyOperatorHelp(downBtn, CONTROL_HELP.moveDown, { disabledReason: CONTROL_HELP.batchMoveDownDisabled });
+    applyOperatorHelp(copyBtn, CONTROL_HELP.duplicate, { disabledReason: CONTROL_HELP.batchCopyDisabled });
+    applyOperatorHelp(removeBtn, CONTROL_HELP.remove, { disabledReason: CONTROL_HELP.batchRemoveDisabled });
     controls.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -1337,6 +1349,7 @@ function renderRuntime() {
     const summaryRow = document.createElement("summary");
     const id = job.promptId ? promptIdPrefix(job.promptId) : "—";
     summaryRow.innerHTML = `<strong>${job.label}</strong><span>${stateLabel(job.state)} · ${id}</span>`;
+    setControlHelp(summaryRow, CONTROL_HELP.batchRuntimeJobDisclosure);
     const details = document.createElement("div");
     details.className = "batch-runtime-details";
     details.innerHTML = `<div>prompt_id: <code>${job.promptId || "non inviato"}</code></div><div>${formatBatchJobSummary(job.item || {})} · ${job.item?.steps || "—"} steps</div>${job.error ? `<div class="batch-error">${job.error}</div>` : ""}`;
@@ -1356,6 +1369,7 @@ function renderRuntime() {
       link.target = "_blank";
       link.rel = "noopener";
       link.textContent = "Apri video";
+      applyOperatorHelp(link, CONTROL_HELP.sessionOpenVideo);
       outWrap.append(link);
       details.append(outWrap);
     }

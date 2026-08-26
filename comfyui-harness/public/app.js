@@ -21,6 +21,8 @@ import {
   resolveEffectiveFirstFrame
 } from "./first-frame-view.mjs";
 import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
+import { applyOperatorHelp, CONTROL_HELP } from "./control-help.mjs";
+import { setControlHelp } from "./tooltip.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
 import {
   CATEGORIES,
@@ -1497,6 +1499,7 @@ function renderGroupCard(group) {
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.textContent = "+ file";
+  applyOperatorHelp(addBtn, CONTROL_HELP.addFile);
   addBtn.onclick = () => {
     targetGroupId = group.id;
     $("assetFileInput").click();
@@ -1504,6 +1507,7 @@ function renderGroupCard(group) {
   const delBtn = document.createElement("button");
   delBtn.type = "button";
   delBtn.textContent = "Elimina";
+  applyOperatorHelp(delBtn, CONTROL_HELP.groupDelete);
   delBtn.onclick = () => {
     if (!confirm(`Eliminare il gruppo "${group.label}" dal progetto? I file ComfyUI non verranno cancellati.`)) return;
     const result = removeGroup(draft.library, activeCategory, group.id);
@@ -1614,9 +1618,10 @@ function renderMemberCard(group, member, index) {
   const up = document.createElement("button");
   up.type = "button";
   up.textContent = "↑";
-  up.setAttribute("data-help", "Sposta l'elemento verso l'alto nell'ordine.");
   up.disabled = index === 0;
-  if (index === 0) up.setAttribute("data-help-disabled", "Questo membro è già il primo del gruppo.");
+  applyOperatorHelp(up, CONTROL_HELP.moveUp, {
+    disabledReason: CONTROL_HELP.memberMoveUpDisabled
+  });
   up.onclick = () => {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index - 1);
     updateDirtyFlag();
@@ -1626,9 +1631,10 @@ function renderMemberCard(group, member, index) {
   const down = document.createElement("button");
   down.type = "button";
   down.textContent = "↓";
-  down.setAttribute("data-help", "Sposta l'elemento verso il basso nell'ordine.");
   down.disabled = index >= (group.members.length - 1);
-  if (down.disabled) down.setAttribute("data-help-disabled", "Questo membro è già l'ultimo del gruppo.");
+  applyOperatorHelp(down, CONTROL_HELP.moveDown, {
+    disabledReason: CONTROL_HELP.memberMoveDownDisabled
+  });
   down.onclick = () => {
     draft.library = reorderMembers(draft.library, activeCategory, group.id, index, index + 1);
     updateDirtyFlag();
@@ -1638,7 +1644,7 @@ function renderMemberCard(group, member, index) {
   const remove = document.createElement("button");
   remove.type = "button";
   remove.textContent = "Rimuovi";
-  remove.setAttribute("data-help", "Rimuove il membro dal gruppo libreria. Non cancella il file da ComfyUI.");
+  applyOperatorHelp(remove, CONTROL_HELP.memberRemove);
   remove.onclick = () => {
     if (!confirm(`Rimuovere "${primary}" dal progetto? Il file ComfyUI non verrà cancellato.`)) return;
     const result = removeMember(draft.library, activeCategory, group.id, member.id);

@@ -286,7 +286,9 @@ test("OUTPUT primary action order and cloud secondary", () => {
 
 test("CODA terminal/idle controls de-emphasized in source", () => {
   const src = readPublic("batch-queue-ui.mjs");
-  assert.match(src, /CODA COMPLETATA|CODA VUOTA/);
+  const progress = readPublic("batch-queue-progress.mjs");
+  assert.match(progress, /CODA COMPLETATA|CODA VUOTA|CODA TERMINATA CON PROBLEMI/);
+  assert.match(src, /formatCodaTerminalSummary/);
   assert.match(src, /is-terminal-idle/);
   assert.match(src, /hideArm/);
 });
