@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — final source-review correction
+UI/UX v0.19.3 Wave 3 — controlled UI acceptance
 
 ## STATUS
 
-CORRECTIONS_REQUIRED
+ACCEPTANCE_GATE
 
 ## GATE
 
-PR #96 corrected candidate at exact head `3ae8f2e8a099e236cdf43349df07b26d11f4ca8b` resolves the original zero-compatible-model fail-safe blocker and the CSS/cascade consolidation blocker. npm test 935/935 PASS, validator PASS and exact-head CI run #479 PASS with runtime untouched. Latest orchestrator re-review marker `5034486382` found one final UI-state defect: `#batchAddToQueue` remains visually enabled while the authoritative model gate says the Batch is not actionable, even though the deeper click/submission path correctly fails safe. Controlled acceptance, merge and deploy remain unauthorized.
+PR #96 final corrected candidate at exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf` has completed source review PASS. npm test 944/944 PASS, validator PASS and exact-head CI run #488 PASS with runtime untouched. Zero-compatible-model Single/Batch fail-safe, measured CSS/cascade consolidation, and primary `+ AGGIUNGI ALLA CODA` disabled/help behavior are source-verified. Controlled UI acceptance now requires explicit operator authorization. Merge and deploy remain unauthorized.
 
 ## NEXT
 
-Correct PR #96 on the same branch: apply `currentModelBlocker()` to the primary `+ AGGIUNGI ALLA CODA` disabled/readiness state and disabled help without overriding unrelated eligibility rules; preserve `getCurrentBatchSnapshotForQueue()` as the deeper fail-safe; add regression; rerun full tests + validator + exact-head CI; update `LAST_CURSOR_REPORT`; stop for orchestrator re-review. Do not touch runtime.
+After explicit operator authorization, perform controlled UI acceptance of candidate v0.19.3 only. Verify UI/API/version coherence, friendly/technical model presentation and unavailable states, zero-compatible-model blocking, Add-to-CODA disabled/help behavior, and Wave 1/2 visual/layout regressions. Acceptance must not generate, upload, mutate live queue/GPU/project state, restart ComfyUI, merge, or deploy. Stop after acceptance evidence for the merge gate.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 with one final correction required. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden PR #96. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 at the Controlled UI Acceptance gate. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden PR #96. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. For #95 / PR #96, exact head `3ae8f2e8a099e236cdf43349df07b26d11f4ca8b` has: zero-compatible-model selection/submission fail-safe RESOLVED; CSS/cascade consolidation RESOLVED with measured deduplication evidence; SYSTEM panel decision `NOT_IMPLEMENTED_BY_DESIGN`; legacy reconciliation persisted; npm test 935/935 PASS; validator PASS; exact-head CI #479 PASS; generation/upload/queue/GPU/runtime mutations zero/NO. One final primary Add-to-CODA disabled-state correction remains before controlled acceptance.
+#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. For #95 / PR #96 exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf`: zero-compatible-model selection/submission fail-safe RESOLVED; CSS/cascade consolidation RESOLVED with measured deduplication evidence; SYSTEM panel decision `NOT_IMPLEMENTED_BY_DESIGN`; legacy reconciliation persisted; Add-to-CODA authoritative model/readiness state RESOLVED; npm test 944/944 PASS; validator PASS; exact-head CI #488 PASS; orchestrator source review PASS marker `5034728957`; generation/upload/queue/GPU/runtime mutations zero/NO.
 
 ## GLOBAL RUNTIME INVARIANTS
 
