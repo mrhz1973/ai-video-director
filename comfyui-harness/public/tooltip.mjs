@@ -225,20 +225,7 @@ export function createTooltipController({
   }
 
   function wrapDisabledHelp(control, helpText) {
-    if (!control || !helpText) return control;
-    const parent = control.parentNode;
-    if (!parent) {
-      setControlHelp(control, helpText);
-      return control;
-    }
-    const wrap = documentRef.createElement("span");
-    wrap.className = "h3-help-wrap";
-    wrap.setAttribute("data-help-wrap", "1");
-    setControlHelp(wrap, helpText);
-    wrap.tabIndex = 0;
-    parent.insertBefore(wrap, control);
-    wrap.append(control);
-    return wrap;
+    return wrapDisabledHelpForControl(documentRef, control, helpText);
   }
 
   bind();
@@ -252,6 +239,60 @@ export function createTooltipController({
     getTip: () => tip,
     findHelpTarget
   };
+}
+
+/**
+ * Idempotent disabled-help wrapper: reuse existing [data-help-wrap="1"] parent
+ * instead of nesting another focusable stop.
+ */
+export function wrapDisabledHelpForControl(documentRef, control, helpText) {
+  if (!control || !helpText) return control;
+  const help = String(helpText || "").trim();
+  if (!help) return control;
+
+  const parent = control.parentNode;
+  if (parent?.getAttribute?.("data-help-wrap") === "1") {
+    setControlHelp(parent, help);
+    if (parent.tabIndex == null || Number(parent.tabIndex) < 0) parent.tabIndex = 0;
+    setControlHelp(control, help, { whenDisabled: help });
+    return parent;
+  }
+
+  const ancestor = typeof control.closest === "function"
+    ? control.closest("[data-help-wrap='1']")
+    : null;
+  if (ancestor) {
+    setControlHelp(ancestor, help);
+    if (ancestor.tabIndex == null || Number(ancestor.tabIndex) < 0) ancestor.tabIndex = 0;
+    setControlHelp(control, help, { whenDisabled: help });
+    return ancestor;
+  }
+
+  if (!parent) {
+    setControlHelp(control, help, { whenDisabled: help });
+    return control;
+  }
+
+  if (!documentRef?.createElement) {
+    setControlHelp(control, help, { whenDisabled: help });
+    return control;
+  }
+
+  if (typeof parent.insertBefore !== "function") {
+    setControlHelp(control, help, { whenDisabled: help });
+    return control;
+  }
+
+  const wrap = documentRef.createElement("span");
+  wrap.className = "h3-help-wrap";
+  wrap.setAttribute("data-help-wrap", "1");
+  setControlHelp(wrap, help);
+  wrap.tabIndex = 0;
+  parent.insertBefore(wrap, control);
+  if (typeof wrap.append === "function") wrap.append(control);
+  else if (typeof wrap.appendChild === "function") wrap.appendChild(control);
+  setControlHelp(control, help, { whenDisabled: help });
+  return wrap;
 }
 
 let shared = null;

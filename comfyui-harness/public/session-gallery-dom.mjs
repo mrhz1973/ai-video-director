@@ -4,6 +4,7 @@
  */
 
 import { formatSessionClipSettingsLine } from "./session-outputs.mjs";
+import { applyOperatorHelp, CONTROL_HELP } from "./control-help.mjs";
 
 function formatClipTime(completedAt) {
   if (!completedAt) return "";
@@ -178,20 +179,28 @@ export function createSessionClipCard(doc, item, {
     const cloudBtn = doc.createElement("button");
     cloudBtn.type = "button";
     cloudBtn.className = "secondary session-clip-cloud-copy";
-    cloudBtn.setAttribute("data-help", "Copia il file nella cartella locale sincronizzata configurata. Non garantisce che il provider cloud abbia già completato l'upload remoto.");
-    if (cm?.status === "copied" || cm?.status === "already-copied") {
+    const alreadyCopied = cm?.status === "copied" || cm?.status === "already-copied";
+    if (alreadyCopied) {
       cloudBtn.textContent = "Già copiato nel cloud";
       cloudBtn.disabled = true;
-      cloudBtn.setAttribute("data-help-disabled", "Questo file risulta già presente nella cartella cloud configurata.");
     } else if (cm?.status === "failed") {
       cloudBtn.textContent = "Riprova copia cloud";
     } else {
       cloudBtn.textContent = "Copia nel cloud";
     }
     cloudBtn.addEventListener("click", () => {
+      if (cloudBtn.disabled) return;
       if (typeof onCloudMirrorCopy === "function") onCloudMirrorCopy(item);
     });
     secondary.append(cloudBtn);
+    if (alreadyCopied) {
+      applyOperatorHelp(cloudBtn, CONTROL_HELP.sessionCloudCopy, {
+        disabledReason: CONTROL_HELP.sessionCloudAlreadyCopied,
+        documentRef: doc
+      });
+    } else {
+      applyOperatorHelp(cloudBtn, CONTROL_HELP.sessionCloudCopy, { documentRef: doc });
+    }
   }
   actions.append(primary);
   if ((secondary.children || secondary.childNodes || []).length) actions.append(secondary);

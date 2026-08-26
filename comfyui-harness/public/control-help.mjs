@@ -2,7 +2,7 @@
  * Issue #88 — explicit operator help text for visible controls.
  * Do not invent help from labels alone.
  */
-import { getSharedTooltipController, setControlHelp } from "./tooltip.mjs";
+import { setControlHelp, wrapDisabledHelpForControl } from "./tooltip.mjs";
 
 export const CONTROL_HELP = Object.freeze({
   projectNew: "Crea un nuovo progetto. Il progetto corrente non viene eliminato.",
@@ -79,6 +79,7 @@ export const CONTROL_HELP = Object.freeze({
   sessionDownloadMp4: "Scarica il file MP4 originale senza ricodifica.",
   sessionShowFolder: "Apre la cartella del file originale e lo seleziona. Non copia né sposta il video.",
   sessionCloudCopy: "Copia il file nella cartella locale sincronizzata configurata. Non garantisce che il provider cloud abbia già completato l'upload remoto.",
+  sessionCloudAlreadyCopied: "Questo file risulta già presente nella cartella cloud configurata. La copia non è disponibile.",
   lightboxClose: "Chiude l'anteprima grande senza modificare assegnazioni o progetto.",
   workflowScena: "Vista Scena: prompt, Input e generazione singola.",
   workflowBatch: "Vista Batch: prepara più job dalla Scena senza avviarli automaticamente.",
@@ -100,12 +101,9 @@ export function applyOperatorHelp(el, text, { disabledReason = "", documentRef =
   if (!el) return el;
   setControlHelp(el, text, { whenDisabled: disabledReason });
   if (el.disabled && disabledReason) {
-    try {
-      const options = documentRef ? { documentRef } : {};
-      getSharedTooltipController(options).wrapDisabledHelp(el, disabledReason);
-    } catch {
-      /* document body may be unavailable in pure unit tests */
-    }
+    const doc = documentRef
+      || (typeof document !== "undefined" ? document : null);
+    wrapDisabledHelpForControl(doc, el, disabledReason);
   }
   return el;
 }

@@ -1,16 +1,16 @@
 # LAST_CURSOR_REPORT
 
 TASK_REF: #88
-TASK: UI/UX v0.19.0 Wave 1 operator-first improvements — orchestrator blocker fixes
+TASK: UI/UX v0.19.0 Wave 1 — final review 5029881414 disabled-wrapper idempotency
 ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 581a42b30cf91b708beeda858e5d388713fe8bea
 WORK_REF: feat/issue-88-uiux-wave1
-COMMIT: aff38f4ad337664f9e1970e5ffa7fe36e846c4fe
+COMMIT: PENDING
 PR: https://github.com/mrhz1973/ai-video-director/pull/90
-VALIDATION: npm test PASS (871/871); python scripts/validate_project.py PASS
+VALIDATION: npm test PASS (875/875); python scripts/validate_project.py PASS
 RUNTIME_TOUCHED: NO
-SUMMARY: Orchestrator blocker 1 fixed — global real-action tooltip inventory PASS; Asset dynamic controls covered (+ file, Elimina, category tabs, member actions); CODA dynamic controls covered (Salva job, recovery, move/rename/remove, job/tech summaries); actionable summaries covered; disabled keyboard-help wrapper strategy covered. Orchestrator blocker 2 fixed — mixed terminal CODA semantics (all success / failed / cancelled / mixed) tested; recovery-required / queued / empty preserved. Branch realigned with current main 581a42b (Metamorfosi commits preserved). Wave 1 contracts preserved. Generation 0. Runtime untouched. Implementation tip aff38f4; subsequent docs commits only update this report — review exact PR head OID.
+SUMMARY: Final orchestrator review 5029881414 only. wrapDisabledHelp is idempotent (reuses existing data-help-wrap; no nested wrappers / duplicate focus stops). "Già copiato nel cloud" stays disabled and exposes disabled reason via one keyboard-focusable wrapper; action remains impossible. Regression tests cover double applyOperatorHelp, double applyStaticControlHelp, and real createSessionClipCard copied/already-copied. All other #88 behavior preserved. Generation 0. No runtime restart. No merge/deploy. No Wave 2.
 NEXT_RELEVANCE: Orchestrator review of exact PR head. Controlled UI acceptance, merge and deploy remain separate gates.
