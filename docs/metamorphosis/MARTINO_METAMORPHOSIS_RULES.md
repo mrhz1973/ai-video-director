@@ -5,7 +5,8 @@ Purpose: durable rules for future Martino age-metamorphosis Character Element wo
 ## Naming
 
 - Use short age codes in the form `M<age>`.
-- Confirmed/expected examples include `M1`, `M2`, `M3`, `M5`, `M16`, `M35`, `M52`.
+- Confirmed/expected examples include `M1`, `M2`, `M3`, `M4`, `M5`, `M10`, `M16`, `M35`, `M52`.
+- Approximate batches may temporarily use the nearest practical node (for example `M4` for an estimated 3–4-year-old set) until the complete inventory supports finer age separation.
 - Do not force the earliest canonical anchor to `M1` or `M5` yet. Choose it after the photo inventory shows which early-age group has the strongest and largest usable reference set.
 
 ## Identity constants
@@ -21,6 +22,7 @@ Purpose: durable rules for future Martino age-metamorphosis Character Element wo
 - For each image, track: age code, age confidence, beard state, view angle, source type, clothing/context, reference role, quality/usefulness, and status.
 - If age classification is materially ambiguous, ask the user one short classification question instead of guessing.
 - If beard state differs within the same age code, keep both variants as separate metadata; do not discard a useful identity angle only because facial hair differs.
+- Do not over-split adjacent childhood ages prematurely. Prefer one robust provisional node when originals clearly belong to the same narrow developmental band, then refine after inventory.
 
 ## Early-age anchor decision
 
