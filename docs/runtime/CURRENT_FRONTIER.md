@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.0 Wave 1 — operator-first interface
+UI/UX v0.19.0 Wave 1 — controlled UI acceptance
 
 ## STATUS
 
-IN_PROGRESS
+WAITING
 
 ## GATE
 
-Isolated implementation/tests + validator + CI + orchestrator review. Controlled UI acceptance is separate. Merge/deploy are separate operator gates. No generation is authorized by this activation.
+Explicit operator authorization for controlled UI acceptance of PR #90. No generation is required or authorized. Merge/deploy remain separate explicit gates.
 
 ## NEXT
 
-Implement #88 Wave 1 only: collapsible Inspector, compact GPU Power, FL2VA START+END frame strip, Batch terminology/history separation, OUTPUT action hierarchy, CODA terminal clarity, and reusable accessible tooltips on all visible buttons/actions.
+Controlled UI acceptance of the exact reviewed PR #90 Wave 1 implementation: Inspector collapse/restore, compact GPU disclosure without power mutation, FL2VA START+END strip/lightbox, Batch terminology/history separation, OUTPUT action hierarchy, CODA terminal clarity, global tooltips, and disabled↔enabled accessibility transitions.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #88. Wave 2/3 are operator-approved roadmap but are not active implementation scope yet.
+HARNESS_ENGINEERING is ACTIVE on #88 and waiting at controlled UI acceptance. Wave 2/3 remain operator-approved roadmap but are not active implementation scope.
 
 ## VERIFIED THROUGH
 
-Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. UI/UX audit #86 completed and operator-approved. No persisted main SHA.
+#88 Wave 1 isolated implementation and automated review gate PASS on PR #90: branch evidence PASS / EVIDENCE_COMPLETE, npm test 878/878 PASS, validator PASS, CI green, PR mergeable, orchestrator code review PASS. Runtime has not been touched for this gate and generation remains 0.
 
 ## GLOBAL RUNTIME INVARIANTS
 
