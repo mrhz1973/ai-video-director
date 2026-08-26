@@ -17,7 +17,7 @@ Before proposing or changing anything:
 9. Read registry/elements.yaml, registry/generations.csv and docs/REFERENCE_ASSETS.md when identity/generation history matters.
 10. Load the relevant project skill listed below.
 
-Specialist roles, seeds and sync: docs/foundation/SPECIALIST_ROLES.md and docs/contracts/CROSS_CHAT_SYNC_V1.md. Use scope-aware authority from README AI-BOOT (frontier ≠ registry ≠ contract ≠ evidence).
+Specialist roles, seeds and sync: docs/foundation/SPECIALIST_ROLES.md and docs/contracts/CROSS_CHAT_SYNC_V1.md. Wiki-LLM Lean METHOD: docs/method/WIKI_LLM_LEAN.md. Cursor evidence persistence before task closure: docs/contracts/CURSOR_EXECUTION_PACKET_V1.md. Use scope-aware authority from README AI-BOOT (frontier ≠ registry ≠ contract ≠ evidence).
 
 Then give a short checkpoint appropriate to the task. Do not make a new user repeat documented context.
 
@@ -38,6 +38,7 @@ For MiniMax H3 harness work, include current harness branch/version, what is alr
 ## Sources of truth
 
 - Cross-track LIVE STATE: docs/runtime/CURRENT_FRONTIER.md (one ACTIVE WORK pointer → Workboard).
+- Latest Cursor pass for agg: docs/runtime/LAST_CURSOR_REPORT.md (overwrite; see CURSOR_EXECUTION_PACKET_V1).
 - Production-track detail: HANDOFF.md and PROJECT_STATUS.md (scoped; not the cross-track LIVE STATE owner).
 - Current MiniMax H3 harness architecture/state: docs/HARNESS_STATE.md.
 - Harness setup/operations: docs/COMFYUI_H3_SETUP.md.
