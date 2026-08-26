@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-Harness stabilization
+Post-Harness activation gate
 
 ## STATUS
 
-IN_PROGRESS
+WAITING
 
 ## GATE
 
-Follow the active specialist-lane gate in Workboard #75
+Explicit activation of the next specialist lane. Creative/production work remains idle until explicitly activated; generation remains separately gated by the project generation authorization contract.
 
 ## NEXT
 
-Continue the active HARNESS_ENGINEERING lane (#74); creative lanes remain idle until explicitly activated
+Await explicit creative/production activation for the post-Harness Phase 2 flow referenced by #58, or explicit activation of a specific Harness backlog issue.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-Lane ACTIVE items (#71, #72, #73, #74, etc.) live **inside** the Workboard. They are not separate project-level ACTIVE WORK pointers.
+No specialist lane is currently ACTIVE. Lane state lives inside the Workboard.
 
 ## VERIFIED THROUGH
 
-Harness #73 single-render post-terminal readiness implementation, tests, orchestrator review, controlled live acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #83; Workboard advanced to #74. No persisted main SHA.
+Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. HARNESS_ENGINEERING returned idle; older open Harness issues remain backlog only until explicitly activated. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 
