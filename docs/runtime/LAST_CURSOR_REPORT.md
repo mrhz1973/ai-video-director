@@ -1,7 +1,7 @@
 # LAST_CURSOR_REPORT
 
 TASK_REF: #88
-TASK: UI/UX v0.19.0 Wave 1 â€” merged deployment
+TASK: UI/UX v0.19.0 Wave 1 Ã¢â‚¬â€ merged deployment
 ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
