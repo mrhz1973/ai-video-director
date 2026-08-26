@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.2 Wave 2 — merge/deploy gate
+UI/UX v0.19.2 Wave 2 — merge/deploy execution
 
 ## STATUS
 
-WAITING_OPERATOR_AUTHORIZATION
+AUTHORIZED
 
 ## GATE
 
-PR #93 source review, tests, validator, exact-head CI and controlled UI acceptance are PASS. Merge + deploy requires separate explicit operator authorization. Generation remains unauthorized. ComfyUI stop/start/restart remains unauthorized. No Wave 3 work is authorized.
+Merge + deploy of PR #93 / release `v0.19.2` is explicitly authorized. Before merge, re-check current `main` and PR mergeability and narrowly realign only docs/bookkeeping if required; accepted Wave 2 behavior must not drift. Generation, upload, live queue mutation, GPU power change, ComfyUI stop/start/restart, Wave 3 and unrelated fixes remain unauthorized.
 
 ## NEXT
 
-After explicit merge + deploy authorization: re-check current `main` and PR #93 mergeability; if needed, narrowly realign only docs/bookkeeping while preserving the accepted implementation; rerun required validation/CI; merge PR #93; deploy merged `v0.19.2` with Director-only restart; verify UI `/api/health` `/api/config` version coherence and representative Wave 2 smoke; preserve ComfyUI PID and final queue 0/0; persist deployment evidence. Do not generate.
+Execute authorized merge + deploy: use current `main` as authority; if PR #93 is non-mergeable solely because `main` advanced with docs/bookkeeping, realign narrowly; rerun full tests + validator + CI; require accepted v0.19.2 code unchanged; merge PR #93; deploy merged main with Director-only exact-PID restart; verify UI `/api/health` `/api/config` all report `0.19.2` and representative Wave 2 smoke passes; preserve ComfyUI PID and final queue 0/0; persist deployment evidence. Do not generate.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #92 and waiting for explicit merge + deploy authorization. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
+HARNESS_ENGINEERING is ACTIVE on #92 with merge + deploy authorized. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX Wave 1 complete end-to-end and deployed. #92 PR #93 exact reviewed implementation head `e8f169177ecb8e1be55a4c56092296ab3057d99c` passed source review `5033127331`, npm test 898/898, validator, exact-head CI, and controlled UI acceptance. Acceptance evidence is persisted on PR #93 and branch report tip `71bd9e7aba9dde26532097d820496866cac59b7f`; commits after the tested implementation head are acceptance/report bookkeeping only, and exact-tip CI run 460 passed. Canonical Director was restored to main `922b9e8b2f9b3222d5466f1845fdd274c92771ad` at v0.19.0; ComfyUI same PID; final queue 0/0; generation/upload/queue/GPU/project persistent mutation all zero/NO.
+#88 UI/UX Wave 1 complete end-to-end and deployed. #92 PR #93 exact reviewed implementation head `e8f169177ecb8e1be55a4c56092296ab3057d99c` passed source review `5033127331`, npm test 898/898, validator, exact-head CI, and controlled UI acceptance. Acceptance evidence is persisted on PR #93 and branch report tip `71bd9e7aba9dde26532097d820496866cac59b7f`; commits after the tested implementation head are acceptance/report bookkeeping only, and exact-tip CI run 460 passed. Canonical Director was restored to main `922b9e8b2f9b3222d5466f1845fdd274c92771ad` at v0.19.0; ComfyUI same PID; final queue 0/0; generation/upload/queue/GPU/project persistent mutation all zero/NO. Operator subsequently authorized merge + deploy for #92.
 
 ## GLOBAL RUNTIME INVARIANTS
 
