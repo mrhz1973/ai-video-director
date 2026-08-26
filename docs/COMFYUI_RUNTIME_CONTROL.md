@@ -87,3 +87,7 @@ Runtime interruption does **not**:
 - kill `python.exe` or `node.exe`;
 - delete output files;
 - write project or editable Batch draft data.
+
+## Stable runtime deployment (Issue #97)
+
+Windows production **stable runtime checkout** advancement and Desktop launcher authority are separate from ComfyUI interrupt/delete contracts. Deployment uses exact authorized release SHAs, detached runtime checkouts, exact-PID Director restart, and ComfyUI external lifecycle preservation. See `comfyui-harness/scripts/windows/README.md`.

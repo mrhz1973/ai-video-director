@@ -85,7 +85,11 @@ function directorHealth(version = expectedDirectorVersion, service = DIRECTOR_HE
 async function makeTempConfig(comfyRoot, overrides = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-launcher-config-"));
   const configPath = path.join(dir, "launcher.json");
-  const payload = buildLauncherConfigPayload({ comfyRoot, ...overrides });
+  const payload = buildLauncherConfigPayload({
+    comfyRoot,
+    runtimeRoot: overrides.runtimeRoot ?? path.dirname(harnessRoot),
+    ...overrides
+  });
   await writeFile(configPath, JSON.stringify(payload), "utf8");
   return { dir, configPath, payload };
 }
@@ -437,8 +441,13 @@ test("status command performs no writes/spawns", async () => {
 
 test("installer config contains supplied machine path only in generated output", async () => {
   const comfyRoot = await makeFakeComfyRoot();
-  const payload = buildLauncherConfigPayload({ comfyRoot, openBrowser: true });
+  const payload = buildLauncherConfigPayload({
+    comfyRoot,
+    runtimeRoot: path.dirname(harnessRoot),
+    openBrowser: true
+  });
   assert.equal(payload.comfyRoot, path.resolve(comfyRoot));
+  assert.equal(payload.runtimeRoot, path.resolve(path.dirname(harnessRoot)));
   const installer = await readFile(path.join(scriptsDir, "Install-AIVideoDirectorLauncher.ps1"), "utf8");
   assert.doesNotMatch(installer, /[A-Za-z]:\\Users\\/);
   assert.doesNotMatch(installer, /comfyRoot\s*=\s*['"][A-Za-z]:\\/);
@@ -457,10 +466,14 @@ test("launcher source contains no /api/queue POST or ComfyUI /prompt POST", asyn
   const files = [
     path.join(harnessRoot, "lib", "windows-launcher.mjs"),
     path.join(harnessRoot, "lib", "windows-port-inspect.mjs"),
+    path.join(harnessRoot, "lib", "stable-runtime.mjs"),
+    path.join(harnessRoot, "lib", "windows-runtime-deploy.mjs"),
     path.join(scriptsDir, "launcher-cli.mjs"),
+    path.join(scriptsDir, "deploy-runtime-cli.mjs"),
     path.join(scriptsDir, "Start-AIVideoDirector.ps1"),
     path.join(scriptsDir, "Get-AIVideoDirectorStatus.ps1"),
     path.join(scriptsDir, "Install-AIVideoDirectorLauncher.ps1"),
+    path.join(scriptsDir, "Deploy-AIVideoDirectorRuntime.ps1"),
     path.join(scriptsDir, "launcher-lib.ps1")
   ];
   for (const file of files) {
@@ -473,6 +486,7 @@ test("launcher source contains no /api/queue POST or ComfyUI /prompt POST", asyn
 test("decision helpers classify occupied and healthy ports", () => {
   assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: true }).action, ACTION.REUSE);
   assert.equal(decideServiceAction({ portState: absentPort(), healthy: false }).action, ACTION.START);
+  assert.equal(decideServiceAction({ portState: absentPort(), healthy: true }).action, ACTION.START);
   assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: false }).action, ACTION.FAIL);
   assert.equal(decideServiceAction({ portState: failedInspection(), healthy: false }).action, ACTION.FAIL);
   assert.equal(classifyServiceState({ listening: true, healthy: false, inspectionOk: true }), PROCESS_CLASS.UNKNOWN);

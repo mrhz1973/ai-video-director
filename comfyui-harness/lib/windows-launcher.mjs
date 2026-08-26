@@ -37,6 +37,7 @@ export const DIRECTOR_HEALTH_IDENTITY = "ai-video-director-harness";
 export function normalizeConfig(raw = {}, defaults = DEFAULT_CONFIG) {
   const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
   return {
+    runtimeRoot: String(merged.runtimeRoot || "").trim(),
     comfyRoot: String(merged.comfyRoot || "").trim(),
     openBrowser: merged.openBrowser !== false,
     comfyTimeoutSeconds: Number(merged.comfyTimeoutSeconds ?? defaults.comfyTimeoutSeconds),
@@ -51,6 +52,14 @@ export function normalizeConfig(raw = {}, defaults = DEFAULT_CONFIG) {
 
 export function validateConfig(config = {}) {
   const errors = [];
+  if (!config.runtimeRoot) errors.push("runtimeRoot is required");
+  else {
+    const root = path.resolve(String(config.runtimeRoot || "").trim());
+    const harness = path.join(root, "comfyui-harness");
+    const startScript = path.join(harness, "scripts", "windows", "Start-AIVideoDirector.ps1");
+    if (!existsSync(harness)) errors.push("runtimeRoot is missing comfyui-harness directory");
+    if (!existsSync(startScript)) errors.push("runtimeRoot is missing Start-AIVideoDirector.ps1");
+  }
   if (!config.comfyRoot) errors.push("comfyRoot is required");
   else {
     const comfyErrors = validateComfyRoot(config.comfyRoot);
@@ -164,7 +173,7 @@ export function decideServiceAction({
     };
   }
 
-  if (healthy) {
+  if (healthy && listening) {
     return {
       action: ACTION.REUSE,
       classification: PROCESS_CLASS.HEALTHY,
@@ -375,12 +384,14 @@ export function resolveConfigPath(explicitPath = "", env = process.env) {
 }
 
 export function buildLauncherConfigPayload({
+  runtimeRoot = "",
   comfyRoot,
   openBrowser = true,
   comfyTimeoutSeconds = 180,
   directorTimeoutSeconds = 30
 } = {}) {
   return {
+    runtimeRoot: path.resolve(String(runtimeRoot || "").trim()),
     comfyRoot: path.resolve(String(comfyRoot || "").trim()),
     openBrowser: Boolean(openBrowser),
     comfyTimeoutSeconds,

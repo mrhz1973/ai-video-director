@@ -1,6 +1,6 @@
 {
   "name": "ai-video-director-harness",
-  "version": "0.19.3",
+  "version": "0.19.4",
   "private": true,
   "description": "Minimal local control surface for MiniMax H3 workflows in ComfyUI",
   "scripts": {

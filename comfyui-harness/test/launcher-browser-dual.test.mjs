@@ -43,7 +43,11 @@ function directorHealth(version = expectedDirectorVersion, service = DIRECTOR_HE
 async function makeTempConfig(comfyRoot, overrides = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-launcher-config-"));
   const configPath = path.join(dir, "launcher.json");
-  const payload = buildLauncherConfigPayload({ comfyRoot, ...overrides });
+  const payload = buildLauncherConfigPayload({
+    comfyRoot,
+    runtimeRoot: overrides.runtimeRoot ?? path.dirname(harnessRoot),
+    ...overrides
+  });
   await writeFile(configPath, JSON.stringify(payload), "utf8");
   return { dir, configPath, config: normalizeConfig(payload) };
 }
