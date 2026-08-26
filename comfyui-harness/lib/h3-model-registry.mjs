@@ -2,7 +2,7 @@
  * Issue #95 — validated H3 model registry (preset contract + ComfyUI discovery).
  * Never invent installed state; preset.options.models remains compatibility authority.
  */
-import { shortModelName } from "../public/output-naming.mjs";
+import { shortModelName } from "./model-name.mjs";
 
 export const H3_UNET_LOADER_CLASS = "UnetLoaderGGUFDynamicVRAM";
 

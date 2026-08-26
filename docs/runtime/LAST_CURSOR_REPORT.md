@@ -1,30 +1,33 @@
 # LAST_CURSOR_REPORT
 
 TASK_REF: #95  
-TASK: UI/UX v0.19.3 Wave 3 — PR #96 final correction (batchAddToQueue gate)  
+TASK: Fix blocked controlled acceptance — lib→public browser import boundary  
 ROLE: HARNESS_ENGINEERING  
 STATUS: PASS  
 EVIDENCE_STATE: EVIDENCE_COMPLETE  
 SOURCE: Cursor  
-BASE_MAIN_SHA: 224046f21342e554b1fbd2f7ca4e7cef01238be0  
+BASE_MAIN_SHA: ceb58d36f0e0abb2154ac660cb1f7dd0edb0ca5c  
 WORK_REF: feat/issue-95-uiux-wave3-v0193  
-COMMIT: 39b8b32  
+COMMIT: 0efb650  
 PR: https://github.com/mrhz1973/ai-video-director/pull/96  
-VALIDATION: npm test 944/944 PASS; validate_project.py PASS  
-CI: PASS  
+VALIDATION: npm test 948/948 PASS; validate_project.py PASS  
+CI: (pending exact-head)  
 RUNTIME_TOUCHED: NO  
 
 ## SUMMARY
 
-- **Main realignment** — merged `origin/main` @ `224046f` (docs/bookkeeping + #97 runtime-deployment invariant preserved).
-- **batchAddToQueue fix** — `syncBatchModelGate()` now disables `#batchAddToQueue` via `resolveBatchAddToQueueGate()` when model gate blocks; exposes truthful Italian `whenDisabled` help; unrelated prepared-batch eligibility (`preparedCount < MIN_BATCH_JOBS`) remains authoritative when model gate clears.
-- **Deeper fail-safe preserved** — `getCurrentBatchSnapshotForQueue()` → `collectSourceSnapshot()` → `currentModelBlocker()` still rejects invalid model on click/submission path.
-- **Regression** — `batch-model-gate.test.mjs` (9 tests): zero-compatible disabled + reason, compatible clears model block, unprepared batch still disabled, model reason precedence, incompatible snapshot rejection, batch-ui wiring.
-- **Wave 3 preserved** — model registry, zero-model fail-safe, CSS consolidation, v0.19.3, Wave 1/2, tooltips.
-- **npm test** — 944 tests, 0 failures.
+- **Main realignment** — merged `origin/main` @ `ceb58d3` (docs/state bookkeeping only; CURRENT_FRONTIER / Workboard / #97 preserved).
+- **Root cause** — `lib/h3-model-registry.mjs` imported `../public/output-naming.mjs`; browser served at `/lib/h3-model-registry.mjs` resolved dependency to **`GET /public/output-naming.mjs` → 404** (Harness serves public modules at site root `/output-naming.mjs`).
+- **Architectural fix** — extracted isomorphic helpers to **`lib/model-name.mjs`** (`sanitizeOutputSegment`, `shortModelName`); `h3-model-registry.mjs` now imports `./model-name.mjs`; `public/output-naming.mjs` re-exports from lib. **lib → public dependency eliminated** in browser graph.
+- **Old failing browser URL:** `/public/output-naming.mjs`
+- **Corrected browser dependency URL:** `/lib/model-name.mjs`
+- **Browser import-graph regression** — `browser-static-import-graph.test.mjs` (4 tests): walks index.html module entries, proves `h3-model-registry` + `model-name` reachable, forbids `/public/*` URLs and `../public/*` imports in served lib modules; includes stale-URL negative proof.
+- **Friendly-label regression** — existing `model-registry.test.mjs` + `output-naming.test.mjs` PASS unchanged behavior (`H3 Q4`, `H3 Q8CR`, `H3 Ref Q4`).
+- **Wave 3 preserved** — v0.19.3 (no bump), model discovery, zero-model fail-safe, batch gates, CSS consolidation, Wave 1/2, SYSTEM NOT_IMPLEMENTED_BY_DESIGN.
+- **npm test** — 948 tests, 0 failures.
 - **Validator** — PASS.
-- **Generation** — 0 | **Upload** — 0 | **Queue mutation** — NO | **GPU mutation** — NO | **Director restart** — NO | **ComfyUI restart** — NO.
+- **Generation** — 0 | **Upload** — 0 | **Queue mutation** — NO | **GPU mutation** — NO | **Project mutation** — NO | **Director restart** — NO | **ComfyUI restart** — NO.
 
 ## NEXT_RELEVANCE
 
-Orchestrator re-review PR #96 exact head. Merge/deploy/acceptance remain separate.
+Operator may re-run controlled UI acceptance on new PR head. Merge/deploy remain separate gates.
