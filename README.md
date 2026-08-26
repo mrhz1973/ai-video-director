@@ -24,7 +24,14 @@ Continue the deterministic pointer chain without asking the user to repeat docum
 
 ### agg (refresh, not reboot)
 
-remote HEAD → CURRENT_FRONTIER → Workboard → own lane → addressed SYNC events after LAST_SYNC → pointed evidence only → resume.
+remote HEAD → CURRENT_FRONTIER → Workboard / own ACTIVE lane → addressed SYNC events after LAST_SYNC → `docs/runtime/LAST_CURSOR_REPORT.md` **once**, IF a Cursor pass result is required to determine NEXT → explicitly pointed evidence only if necessary → AUTO-VIA.
+
+Do not turn `agg` into a full reboot.
+
+If `LAST_CURSOR_REPORT` is absent, stale, or does not match the just-completed Cursor task: classify **`EVIDENCE_NOT_PERSISTED`**. That is **not** `TASK_NOT_EXECUTED`. Absence of GitHub evidence does not prove Cursor failed to execute.
+
+METHOD: `docs/method/WIKI_LLM_LEAN.md`.  
+Cursor task closure contract: `docs/contracts/CURSOR_EXECUTION_PACKET_V1.md`.
 
 ### CONTEXT GUARD
 
@@ -39,7 +46,7 @@ Do not preload all issues, all history, old handoffs, full Harness internals, ci
 | Specialist active state | Workboard lane |
 | Shot / generation / asset facts | `registry/*`, run/lineage/review, `docs/REFERENCE_ASSETS.md` |
 | Rules / safety / machine invariants | CONTRACT (`AGENTS.md`, operating rules, runtime contracts) |
-| Procedure / practice | METHOD (skills, manuals, #58 Phase 2/3 when active) |
+| Procedure / practice | METHOD (`docs/method/WIKI_LLM_LEAN.md`, skills, manuals, #58 Phase 2/3 when active) |
 | Experimental results | EVIDENCE (e.g. #69) |
 | Past state | HISTORY (`CHANGELOG.md`, logs, closed PRs/issues) |
 
@@ -47,6 +54,8 @@ On same-scope contradiction: STOP and report. Do not let one scope override anot
 
 Roles and seeds: `docs/foundation/SPECIALIST_ROLES.md`.  
 Sync contract: `docs/contracts/CROSS_CHAT_SYNC_V1.md`.  
+Wiki-LLM Lean METHOD: `docs/method/WIKI_LLM_LEAN.md`.  
+Cursor execution packet: `docs/contracts/CURSOR_EXECUTION_PACKET_V1.md`.  
 Repo coding agents also follow `AGENTS.md`.
 <!-- AI-BOOT:END -->
 
@@ -66,8 +75,11 @@ Human onboarding still: START_HERE.md. Agent operating contract: AGENTS.md.
 - PROJECT_STATUS.md — production-track status detail (declassified).
 - CONTINUITY_BIBLE.md — character, performance and visual invariants.
 - docs/runtime/CURRENT_FRONTIER.md — only project-level LIVE STATE.
+- docs/runtime/LAST_CURSOR_REPORT.md — latest Cursor pass evidence for `agg` (overwrite, not a history log).
 - docs/foundation/SPECIALIST_ROLES.md — specialist role charters and seeds.
+- docs/method/WIKI_LLM_LEAN.md — Wiki-LLM Lean METHOD (bootstrap / `agg` / evidence).
 - docs/contracts/CROSS_CHAT_SYNC_V1.md — cross-chat sync contract.
+- docs/contracts/CURSOR_EXECUTION_PACKET_V1.md — Cursor task evidence-persistence contract.
 - story/ — source master, shot placeholders and audio plan.
 - shots/ — immutable per-generation run, lineage and review records.
 - prompts/ — immutable prompt versions.
