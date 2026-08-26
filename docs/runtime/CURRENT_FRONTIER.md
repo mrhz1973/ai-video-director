@@ -22,7 +22,7 @@ AI Video Director operating architecture migration
 
 ## BLOCK
 
-Wiki-LLM Lean 9.5 bootstrap + specialist cross-chat synchronization
+Wiki-LLM Lean 9.5 rollout acceptance
 
 ## STATUS
 
@@ -30,11 +30,11 @@ IN_PROGRESS
 
 ## GATE
 
-Architecture PR review / owner merge gate
+fresh CORE BOOT + agg acceptance evidence
 
 ## NEXT
 
-Implement approved PR-1 architecture plan
+Run the fresh VIDEO_DIRECTOR bootstrap acceptance and agg acceptance, record evidence on #71, then determine architecture-workstream completion
 
 ## ACTIVE WORK
 
@@ -44,7 +44,7 @@ Lane ACTIVE items (#71, #72, etc.) live **inside** the Workboard. They are not s
 
 ## VERIFIED THROUGH
 
-Approved revised Wiki-LLM Lean 9.5 Migration Plan + GPT architecture review. No persisted main SHA.
+PR #76 implementation + deterministic validation + GPT architecture review. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 

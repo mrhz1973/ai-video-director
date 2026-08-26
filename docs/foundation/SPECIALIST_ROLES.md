@@ -23,7 +23,7 @@ Reusable Harness/tooling stays separate from bounded creative-production state.
 
 - **Owns:** characters/elements, locations, wardrobe, props, image references, first/last frames, visual identity continuity at the image layer.
 - **Does not own:** video prompt/settings experiments, Harness runtime code, film-level approved/rejected shot authority.
-- **METHOD / CONTRACT pointers:** `.agents/skills/lira-image-prompts/`, `docs/character-element-lab/MASTER_PROMPT_IT.md`, `OPERATING_RULES.md`, `ELEMENT_SCHEMA.md`, `CONTINUITY_BIBLE.md`, `docs/REFERENCE_ASSETS.md`, `registry/elements.yaml`.
+- **METHOD / CONTRACT pointers:** `.agents/skills/lira-image-prompts/`, `docs/character-element-lab/MASTER_PROMPT_IT.md`, `docs/character-element-lab/OPERATING_RULES.md`, `docs/character-element-lab/ELEMENT_SCHEMA.md`, `CONTINUITY_BIBLE.md`, `docs/REFERENCE_ASSETS.md`, `registry/elements.yaml`.
 - **Cross-chat:** emit SYNC when identity/reference authorities change; consume MASTER continuity decisions and VIDEO reference needs.
 
 ### VIDEO_DIRECTOR
