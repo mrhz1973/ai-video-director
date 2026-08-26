@@ -22,33 +22,33 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.2 Wave 2 — workflow usability and scalable operator views
+UI/UX v0.19.2 Wave 2 — orchestrator correction pass
 
 ## STATUS
 
-IN_PROGRESS
+BLOCKED
 
 ## GATE
 
-Isolated implementation/tests + validator + CI + orchestrator review. Controlled UI acceptance is a later separate gate. Merge/deploy is a later separate explicit gate. No generation, upload, live queue mutation, GPU power change or ComfyUI restart is authorized.
+PR #93 must correct orchestrator review `5032521337`, rerun full tests + validator, reach green CI, and pass exact-head orchestrator re-review. Controlled UI acceptance is a later separate gate. Merge/deploy is a later separate explicit gate. No generation, upload, live queue mutation, GPU power change or ComfyUI restart is authorized.
 
 ## NEXT
 
-Implement issue #92 only: contextual Inspector by active workspace; CODA filters and compact terminal history; OUTPUT compact/gallery views with authoritative filtering/grouping/ordering; clearer BATCH summaries and shared-input vs per-job override state; compact project strip; preserve Wave 1 global tooltip/accessibility contract. Release target is `v0.19.2` with package/UI/API version coherence and regression protection.
+Correct issue #92 on the same isolated PR #93 branch without Wave 3 scope: real numeric OUTPUT timestamp ordering; refresh BATCH summaries/Inspector for non-firstImage overrides; prevent restored CODA filters from hiding/stranding recovery actions; provide meaningful live read-only CODA/OUTPUT Inspector context. Preserve target `v0.19.2`, Wave 1 tooltip/accessibility contract, compact project strip, and all already-passing Wave 2 work.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #92. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
+HARNESS_ENGINEERING is ACTIVE on #92 and blocked in orchestrator review on PR #93. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX Wave 1 complete end-to-end and deployed: implementation/tests/review/controlled UI acceptance/merge/deploy PASS; deployment evidence persisted via PR #91. Harness release before Wave 2 remains `v0.19.0`; Wave 2 must release as `v0.19.2` and future functional/UI releases must advance the version again. Docs/evidence-only bookkeeping commits are exempt.
+#88 UI/UX Wave 1 complete end-to-end and deployed. #92 initial isolated implementation exists on PR #93 with branch report PASS (892/892 tests + validator PASS) and target version `v0.19.2`, but orchestrator source review found four blockers before controlled UI acceptance. CI on the reviewed PR head was still queued at the review checkpoint.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical Harness package before Wave 2: **v0.19.0**
+- Canonical deployed Harness package before Wave 2: **v0.19.0**
 - Wave 2 target release: **v0.19.2**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
