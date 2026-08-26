@@ -293,6 +293,43 @@ export function formatBatchJobSummary(item = {}) {
   return parts.join(" · ");
 }
 
+/** Structured chips for collapsed Batch job summaries (Issue #92). */
+export function buildBatchJobSummaryChips(item = {}, source = {}) {
+  const files = item?.files && typeof item.files === "object" ? item.files : {};
+  const sharedFiles = source?.files && typeof source.files === "object" ? source.files : {};
+  const overrideKeys = Object.keys(files).filter(k => String(files[k] || "").trim());
+  const chips = [
+    { key: "duration", label: "Durata", value: formatDurationCompact(item.duration) },
+    { key: "megapixels", label: "MP", value: item.megapixels != null && item.megapixels !== "" ? `${item.megapixels}MP` : "—" },
+    { key: "aspect", label: "Aspect", value: item.aspect ? String(item.aspect) : "—" },
+    { key: "steps", label: "Steps", value: item.steps != null && item.steps !== "" ? String(item.steps) : "—" },
+    { key: "seed", label: "Seed", value: item.seed != null && item.seed !== "" ? String(item.seed) : "—" }
+  ];
+  const workflow = source?.workflowLabel || source?.workflowId;
+  if (workflow) chips.push({ key: "workflow", label: "Workflow", value: String(workflow) });
+  if (source?.model) chips.push({ key: "model", label: "Modello", value: String(source.model) });
+
+  const inputNames = [];
+  for (const key of new Set([...Object.keys(sharedFiles), ...Object.keys(files)])) {
+    const name = String(files[key] || sharedFiles[key] || "").trim();
+    if (name) inputNames.push(name);
+  }
+  if (inputNames.length) {
+    chips.push({
+      key: "inputs",
+      label: overrideKeys.length ? "Override input" : "Input comune",
+      value: inputNames.join(", "),
+      overridden: overrideKeys.length > 0
+    });
+  }
+  return chips;
+}
+
+export function jobHasInputOverrides(item = {}) {
+  const files = item?.files && typeof item.files === "object" ? item.files : {};
+  return Object.keys(files).some(k => String(files[k] || "").trim());
+}
+
 export const BATCH_ASPECT_OPTIONS = Object.freeze(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
 
 export function detectBatchWideFieldState(items = [], field) {

@@ -1,7 +1,10 @@
-/** Right inspector tab switching (v0.14.0). Project/Output moved to primary workflow views. */
+/** Right inspector tab switching + contextual panels (v0.14.0 / Issue #92 Wave 2). */
+
+import { resolveInspectorContext, normalizeInspectorContext } from "./inspector-context.mjs";
 
 export const INSPECTOR_TAB_KEY = "h3InspectorTab:v1";
 export const INSPECTOR_TABS = Object.freeze(["asset", "input"]);
+export const INSPECTOR_FORCE_ASSETS_ATTR = "data-inspector-force-assets";
 
 export function normalizeInspectorTab(value, fallback = "asset") {
   const key = String(value || "").trim().toLowerCase();
@@ -45,6 +48,112 @@ export function applyInspectorTab(root, tab) {
   return next;
 }
 
+function setHidden(el, hidden) {
+  if (!el) return;
+  el.hidden = Boolean(hidden);
+}
+
+/**
+ * Apply contextual Inspector chrome for the active workflow view.
+ * Collapse/width stay in workspace-resize; this only toggles content priority.
+ */
+export function applyInspectorContextUi(view, {
+  documentRef = typeof document !== "undefined" ? document : null,
+  aside = null
+} = {}) {
+  if (!documentRef) return resolveInspectorContext(view);
+  const inspector = aside
+    || documentRef.getElementById?.("inspector")
+    || documentRef.querySelector?.("aside.inspector");
+  const resolved = resolveInspectorContext(view);
+  const forceAssets = inspector?.getAttribute?.(INSPECTOR_FORCE_ASSETS_ATTR) === "1";
+  const showAssetInput = resolved.showAssetInput || forceAssets;
+
+  documentRef.documentElement?.setAttribute?.("data-inspector-context", resolved.context);
+
+  setHidden(documentRef.getElementById?.("panel-inspector-batch"), !resolved.showBatchContext);
+  setHidden(documentRef.getElementById?.("panel-inspector-coda"), !resolved.showCodaContext);
+  setHidden(documentRef.getElementById?.("panel-inspector-output"), !resolved.showOutputContext);
+
+  const tabs = documentRef.getElementById?.("inspectorTabs");
+  setHidden(tabs, !showAssetInput);
+
+  const panelsHost = inspector?.querySelector?.(".inspector-panels");
+  if (panelsHost) setHidden(panelsHost, !showAssetInput);
+
+  if (showAssetInput && inspector) {
+    applyInspectorTab(inspector, readStoredInspectorTab());
+  } else if (inspector) {
+    for (const panel of inspector.querySelectorAll?.("[data-inspector-panel]") || []) {
+      panel.hidden = true;
+      panel.classList.remove("active");
+    }
+  }
+
+  const gpu = documentRef.getElementById?.("gpuPowerSection");
+  if (gpu?.classList) {
+    gpu.classList.toggle("gpu-power-context-compact", Boolean(resolved.gpuCompactOnly));
+  }
+
+  return { ...resolved, showAssetInput, forceAssets };
+}
+
+/**
+ * Refresh BATCH inspector context from the prepared draft (display-only).
+ * @param {{ items?: object[], source?: object, focusedIndex?: number }} detail
+ */
+export function updateInspectorBatchContext(detail = {}, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const host = documentRef?.getElementById?.("inspectorBatchContext");
+  if (!host) return;
+  const items = Array.isArray(detail.items) ? detail.items : [];
+  const source = detail.source && typeof detail.source === "object" ? detail.source : {};
+  if (!items.length) {
+    host.textContent = "Nessun batch preparato. Crea job dalla Scena per vedere input comune e override.";
+    return;
+  }
+  let index = Number(detail.focusedIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+    index = items.findIndex((_, i) => detail.openIndexes?.has?.(i));
+    if (index < 0) index = 0;
+  }
+  const item = items[index] || {};
+  const shared = Object.entries(source.files || {})
+    .filter(([, v]) => String(v || "").trim())
+    .map(([k, v]) => `${k}: ${v}`);
+  const overrides = Object.entries(item.files || {})
+    .filter(([, v]) => String(v || "").trim())
+    .map(([k, v]) => `${k}: ${v}`);
+  const lines = [
+    `Job ${index + 1} / ${items.length}`,
+    shared.length ? `Input comune: ${shared.join(" · ")}` : "Input comune: nessuno assegnato",
+    overrides.length ? `Override di questo job: ${overrides.join(" · ")}` : "Override di questo job: nessuno"
+  ];
+  host.replaceChildren();
+  const doc = documentRef;
+  for (const line of lines) {
+    if (typeof doc.createElement === "function") {
+      const p = doc.createElement("p");
+      p.className = "inspector-context-line";
+      p.textContent = line;
+      host.append(p);
+    }
+  }
+  if (!host.childNodes?.length) host.textContent = lines.join(" · ");
+}
+
+export function setInspectorForceAssets(enabled, {
+  documentRef = typeof document !== "undefined" ? document : null
+} = {}) {
+  const inspector = documentRef?.getElementById?.("inspector");
+  if (!inspector) return;
+  if (enabled) inspector.setAttribute(INSPECTOR_FORCE_ASSETS_ATTR, "1");
+  else inspector.removeAttribute(INSPECTOR_FORCE_ASSETS_ATTR);
+  const view = documentRef.documentElement?.getAttribute?.("data-workflow-view") || "scena";
+  applyInspectorContextUi(view, { documentRef, aside: inspector });
+}
+
 export function initInspectorUi(root = document) {
   const aside = root.getElementById?.("inspector") || root.querySelector?.("aside.inspector") || root;
   if (!aside) return;
@@ -76,6 +185,30 @@ export function initInspectorUi(root = document) {
     select(next.getAttribute("data-inspector-tab"));
     next.focus();
   });
+
+  const onWorkflowView = event => {
+    const view = normalizeInspectorContext(event?.detail?.view
+      || root.documentElement?.getAttribute?.("data-workflow-view")
+      || "scena");
+    // Leaving CODA/OUTPUT clears temporary Asset/Input reveal.
+    if (view === "scena" || view === "batch") {
+      aside.removeAttribute(INSPECTOR_FORCE_ASSETS_ATTR);
+    }
+    applyInspectorContextUi(view, { documentRef: root, aside });
+  };
+
+  root.addEventListener?.("h3-workflow-view", onWorkflowView);
+
+  for (const btn of root.querySelectorAll?.(".inspector-open-assets") || []) {
+    btn.addEventListener("click", () => {
+      setInspectorForceAssets(true, { documentRef: root });
+    });
+  }
+
+  const initial = normalizeInspectorContext(
+    root.documentElement?.getAttribute?.("data-workflow-view") || "scena"
+  );
+  applyInspectorContextUi(initial, { documentRef: root, aside });
 }
 
 if (typeof window !== "undefined") {

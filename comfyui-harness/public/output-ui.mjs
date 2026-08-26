@@ -28,6 +28,12 @@ import {
   shouldCloudFallbackAfterArchiveFailure
 } from "./output-copy-orchestration.mjs";
 import { CONTROL_HELP, syncOperatorHelpState } from "./control-help.mjs";
+import {
+  collectWorkflowFilterOptions,
+  persistOutputViewPrefs,
+  prepareSessionClipsView,
+  readOutputViewPrefs
+} from "./output-view.mjs";
 
 const $ = id => document.getElementById(id);
 const SETTINGS_PREFIX = "h3OutputSettings:v1:";
@@ -740,50 +746,116 @@ function renderSessionGallery() {
   const title = $("sessionGalleryTitle");
   if (!list || !empty || !title) return;
   const items = readSessionOutputs(sessionStorage);
+  let prefs = readOutputViewPrefs(localStorage);
+  syncOutputViewControls(prefs, items);
+  prefs = readOutputViewPrefs(localStorage);
+  const view = prepareSessionClipsView(items, prefs);
   title.textContent = `CLIP SESSIONE · ${items.length}`;
   list.replaceChildren();
-  empty.hidden = items.length > 0;
-  for (const item of items) {
-    list.append(createSessionClipCard(document, item, {
-      onPreviewError: clip => {
-        markSessionOutputUnavailable(sessionStorage, clip.id);
-        notifySessionOutputsChanged();
-      },
-      onShowInFolder: clip => {
-        void fetch("/api/show-in-folder", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            promptId: clip.promptId || "",
-            filename: clip.filename,
-            subfolder: clip.subfolder || "",
-            type: "output"
-          })
-        }).then(async response => {
-          if (response.ok) {
-            setStatus("Cartella ComfyUI aperta con il file selezionato.", "ok");
-            return;
-          }
-          const data = await response.json().catch(() => ({}));
-          setStatus(data.error || "Impossibile aprire la cartella ComfyUI.", "error");
-        }).catch(error => {
-          setStatus(`Impossibile aprire la cartella ComfyUI: ${error?.message || error}`, "error");
-        });
-      },
-      onCloudMirrorCopy: clip => {
-        void mirrorOutputs(clip.promptId, [{
-          filename: clip.filename,
-          subfolder: clip.subfolder,
-          url: clip.url
-        }], { auto: false });
-      }
-    }));
+  list.dataset.viewMode = view.prefs.mode;
+  list.classList.toggle("session-gallery-list-mode", view.prefs.mode === "list");
+  empty.hidden = items.length > 0 && !view.empty;
+  if (items.length && view.empty) {
+    empty.hidden = false;
+    empty.textContent = "Nessuna clip corrisponde ai filtri selezionati.";
+  } else if (!items.length) {
+    empty.textContent = "Nessuna clip generata in questa sessione.";
   }
+
+  const cardOpts = {
+    viewMode: view.prefs.mode,
+    onPreviewError: clip => {
+      markSessionOutputUnavailable(sessionStorage, clip.id);
+      notifySessionOutputsChanged();
+    },
+    onShowInFolder: clip => {
+      void fetch("/api/show-in-folder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          promptId: clip.promptId || "",
+          filename: clip.filename,
+          subfolder: clip.subfolder || "",
+          type: "output"
+        })
+      }).then(async response => {
+        if (response.ok) {
+          setStatus("Cartella ComfyUI aperta con il file selezionato.", "ok");
+          return;
+        }
+        const data = await response.json().catch(() => ({}));
+        setStatus(data.error || "Impossibile aprire la cartella ComfyUI.", "error");
+      }).catch(error => {
+        setStatus(`Impossibile aprire la cartella ComfyUI: ${error?.message || error}`, "error");
+      });
+    },
+    onCloudMirrorCopy: clip => {
+      void mirrorOutputs(clip.promptId, [{
+        filename: clip.filename,
+        subfolder: clip.subfolder,
+        url: clip.url
+      }], { auto: false });
+    }
+  };
+
+  for (const group of view.groups) {
+    if (view.prefs.groupBy !== "none" && group.items.length) {
+      const heading = document.createElement("h4");
+      heading.className = "session-gallery-group-heading";
+      heading.textContent = `${group.label} · ${group.items.length}`;
+      list.append(heading);
+    }
+    for (const item of group.items) {
+      list.append(createSessionClipCard(document, item, cardOpts));
+    }
+  }
+}
+
+function syncOutputViewControls(prefs, items = []) {
+  const mode = prefs?.mode || "gallery";
+  for (const btn of document.querySelectorAll?.("[data-output-view-mode]") || []) {
+    const active = btn.getAttribute("data-output-view-mode") === mode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  const groupBy = $("outputGroupBy");
+  const orderBy = $("outputOrderBy");
+  const sourceFilter = $("outputSourceFilter");
+  const workflowFilter = $("outputWorkflowFilter");
+  if (groupBy && groupBy.value !== prefs.groupBy) groupBy.value = prefs.groupBy;
+  if (orderBy && orderBy.value !== prefs.orderBy) orderBy.value = prefs.orderBy;
+  if (sourceFilter && sourceFilter.value !== prefs.sourceFilter) sourceFilter.value = prefs.sourceFilter || "";
+  if (workflowFilter) {
+    const current = prefs.workflowFilter || "";
+    const options = collectWorkflowFilterOptions(items);
+    workflowFilter.replaceChildren(new Option("Tutti", ""));
+    for (const opt of options) {
+      workflowFilter.append(new Option(opt.label, opt.value));
+    }
+    const nextValue = options.some(o => o.value === current) ? current : "";
+    workflowFilter.value = nextValue;
+    if (nextValue !== current) {
+      persistOutputViewPrefs({ ...prefs, workflowFilter: nextValue }, localStorage);
+    }
+  }
+}
+
+function readPrefsFromControls() {
+  const current = readOutputViewPrefs(localStorage);
+  return persistOutputViewPrefs({
+    mode: document.querySelector?.("[data-output-view-mode].active")?.getAttribute("data-output-view-mode")
+      || current.mode,
+    groupBy: $("outputGroupBy")?.value || current.groupBy,
+    orderBy: $("outputOrderBy")?.value || current.orderBy,
+    workflowFilter: $("outputWorkflowFilter")?.value || "",
+    sourceFilter: $("outputSourceFilter")?.value || ""
+  }, localStorage);
 }
 
 function bindSessionGallery() {
   if (!$("sessionGallerySection")) return;
   applySessionGalleryReconstruction(sessionStorage, localStorage);
+  syncOutputViewControls(readOutputViewPrefs(localStorage), readSessionOutputs(sessionStorage));
   renderSessionGallery();
   window.addEventListener(SESSION_OUTPUTS_CHANGED, renderSessionGallery);
   $("sessionGalleryClear")?.addEventListener("click", () => {
@@ -795,6 +867,26 @@ function bindSessionGallery() {
     notifySessionOutputsChanged();
     void sessionGalleryClearSideEffects();
   });
+
+  const toolbar = $("sessionGalleryToolbar");
+  if (toolbar && !toolbar.dataset.bound) {
+    toolbar.dataset.bound = "1";
+    toolbar.addEventListener("click", event => {
+      const btn = event.target?.closest?.("[data-output-view-mode]");
+      if (!btn || !toolbar.contains(btn)) return;
+      persistOutputViewPrefs({
+        ...readOutputViewPrefs(localStorage),
+        mode: btn.getAttribute("data-output-view-mode")
+      }, localStorage);
+      renderSessionGallery();
+    });
+    for (const id of ["outputGroupBy", "outputOrderBy", "outputWorkflowFilter", "outputSourceFilter"]) {
+      $(id)?.addEventListener("change", () => {
+        readPrefsFromControls();
+        renderSessionGallery();
+      });
+    }
+  }
 }
 
 function bindUi() {

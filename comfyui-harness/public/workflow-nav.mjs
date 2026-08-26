@@ -32,6 +32,9 @@ export function applyWorkflowView(view, {
     (storage || globalThis.sessionStorage)?.setItem?.(STORAGE_KEY, next);
   } catch { /* ignore */ }
   root.documentElement?.setAttribute?.("data-workflow-view", next);
+  try {
+    root.dispatchEvent?.(new CustomEvent("h3-workflow-view", { detail: { view: next } }));
+  } catch { /* ignore */ }
   return next;
 }
 

@@ -46,6 +46,14 @@ import {
 } from "./batch-queue-progress.mjs";
 import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
+import {
+  codaFilterEmptyMessage,
+  filterCodaEntries,
+  isCompactCodaEntry,
+  normalizeCodaFilter,
+  persistCodaFilter,
+  readStoredCodaFilter
+} from "./coda-filters.mjs";
 
 const $ = id => document.getElementById(id);
 const POLL_MS = 4000;
@@ -69,6 +77,8 @@ const jobDisclosureOpen = new Set();
 let liveRenderProgress = null;
 /** nodeId → displayNode from executing events (sampler-step identification). */
 const nodeDisplayById = new Map();
+/** Display-only list filter; never mutates plan/runtime. */
+let codaFilter = "tutti";
 
 function currentProjectId() {
   return String(projectIdProvider() || "").trim();
@@ -629,7 +639,9 @@ export function setBatchQueueAssetContextProvider(fn) {
 
 function renderEntryCard(entry, index, entries) {
   const card = document.createElement("div");
-  card.className = "batch-queue-card";
+  card.className = isCompactCodaEntry(entry)
+    ? "batch-queue-card batch-queue-card-compact"
+    : "batch-queue-card";
   card.dataset.entryId = entry.queueEntryId;
   card.dataset.entryState = entry.state || "";
   const jobs = entry.snapshot?.items || [];
@@ -771,11 +783,28 @@ function renderEntryCard(entry, index, entries) {
   return card;
 }
 
+function syncCodaFilterBar() {
+  const bar = $("codaFilterBar");
+  if (!bar) return;
+  for (const btn of bar.querySelectorAll("[data-coda-filter]")) {
+    const active = normalizeCodaFilter(btn.getAttribute("data-coda-filter")) === codaFilter;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function setCodaFilter(next) {
+  codaFilter = persistCodaFilter(next);
+  syncCodaFilterBar();
+  renderQueueUi();
+}
+
 function renderQueueUi() {
   const list = $("batchQueueList");
   const section = $("batchQueueSection");
   if (!list || !section) return;
   const entries = displayEntries();
+  const filtered = filterCodaEntries(entries, codaFilter);
   list.replaceChildren();
   if (!entries.length) {
     section.hidden = false;
@@ -789,7 +818,18 @@ function renderQueueUi() {
     return;
   }
   section.hidden = false;
-  entries.forEach((entry, index) => list.append(renderEntryCard(entry, index, entries)));
+  if (!filtered.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-queue-empty batch-queue-empty-filter";
+    empty.textContent = codaFilterEmptyMessage(codaFilter);
+    list.append(empty);
+  } else {
+    for (const entry of filtered) {
+      const index = entries.findIndex(item => item.queueEntryId === entry.queueEntryId);
+      list.append(renderEntryCard(entry, index < 0 ? 0 : index, entries));
+    }
+  }
+  // Summary + controls always use unfiltered authoritative displayEntries().
   renderSummary(entries);
   renderQueueControls(entries);
   renderQueueInterruptControls();
@@ -963,6 +1003,28 @@ function createUi() {
   $("batchQueueResume")?.addEventListener("click", () => { void resumeQueue(); });
   $("batchQueueInterruptCurrent")?.addEventListener("click", () => { void interruptCurrentQueueBatchJob(); });
   $("batchQueueInterruptAll")?.addEventListener("click", () => { void stopCurrentQueueBatch(); });
+  const filterBar = $("codaFilterBar");
+  if (filterBar && !filterBar.dataset.bound) {
+    filterBar.dataset.bound = "1";
+    filterBar.addEventListener("click", event => {
+      const btn = event.target?.closest?.("[data-coda-filter]");
+      if (!btn || !filterBar.contains(btn)) return;
+      setCodaFilter(btn.getAttribute("data-coda-filter"));
+    });
+    for (const btn of filterBar.querySelectorAll("[data-coda-filter]")) {
+      const key = normalizeCodaFilter(btn.getAttribute("data-coda-filter"));
+      const helpKey = {
+        tutti: "codaFilterTutti",
+        "in-coda": "codaFilterInCoda",
+        "in-corso": "codaFilterInCorso",
+        completati: "codaFilterCompletati",
+        problemi: "codaFilterProblemi"
+      }[key];
+      if (helpKey && CONTROL_HELP[helpKey]) applyOperatorHelp(btn, CONTROL_HELP[helpKey]);
+    }
+  }
+  codaFilter = readStoredCodaFilter();
+  syncCodaFilterBar();
   applyStaticControlHelp(document);
 }
 

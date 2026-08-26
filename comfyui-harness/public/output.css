@@ -266,3 +266,16 @@
   .output-grid { grid-template-columns: 1fr; }
   .output-grid .wide { grid-column: auto; }
 }
+
+/* Issue #92 Wave 2 — OUTPUT list/gallery toolbar */
+.session-gallery-toolbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:end;margin:0 0 10px}
+.session-gallery-mode{display:flex;gap:4px}
+.session-view-mode-btn.active,.session-view-mode-btn[aria-pressed=true]{border-color:#e0893c;color:#edf1f4}
+.session-gallery-filter{display:flex;flex-direction:column;gap:2px;font-size:10px;color:#9eabb8;margin:0}
+.session-gallery-filter select{background:#0f1317;color:#edf1f4;border:1px solid #343b45;border-radius:7px;padding:5px 7px;font-size:11px;min-width:7rem}
+.session-gallery-group-heading{margin:8px 0 4px;font-size:11px;color:#c7d0d8;letter-spacing:.04em;text-transform:uppercase;grid-column:1/-1}
+.session-gallery-list.session-gallery-list-mode,.session-gallery-list[data-view-mode=list]{display:flex;flex-direction:column;gap:6px}
+.session-clip.session-clip-list{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:8px 10px;align-items:start}
+.session-clip.session-clip-list .session-clip-paths,.session-clip.session-clip-list .session-clip-actions{grid-column:1/-1;margin:0}
+.session-clip.session-clip-list .session-clip-preview{display:none}
+
