@@ -1,16 +1,16 @@
-# LAST_CURSOR_REPORT
+﻿# LAST_CURSOR_REPORT
 
 TASK_REF: #73
-TASK: Single Render cannot be started again after completion without reload
+TASK: Single Render readiness after terminal - merged deployment
 ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
-BASE_MAIN_SHA: 744c17788970cbcc11387179cc18eaae1a57e3a4
-WORK_REF: fix/issue-73-single-render-readiness
-COMMIT: 026620e07cab89dab1aee43f81a70bdade23b4b4
-PR: https://github.com/mrhz1973/ai-video-director/pull/82
-VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; post-terminal Genera singolo without reload; second independent single render with updated seed/steps/prompt; canonical main restored; validate CI on report push
+BASE_MAIN_SHA: 8cfcba903e2bb1df336ca08fb7e447cd64c8fb11
+WORK_REF: docs/issue-73-deploy-evidence
+COMMIT: pending
+PR: pending
+VALIDATION: python scripts/validate_project.py; deployment live checks (queue idle; /api/health; served app.js #73; SCENA load; ComfyUI unchanged)
 RUNTIME_TOUCHED: YES
-SUMMARY: Queue was idle (0/0) before restart. Only Director restarted (PR #82 temporary). ComfyUI restart NO. First single T2V render reached terminal handling; post-terminal readiness without reload PASS (action=generate, label Genera singolo, enabled). Second render without reload PASS using updated editor values (seed 73001, steps 9, updated prompt); exactly one second /api/queue POST. Canonical main Director restored YES (744c177). No Batch/queued-next regression. No merge/deploy.
-NEXT_RELEVANCE: Controlled live acceptance PASS. Explicit operator approval required for merge/deploy of PR #82.
+SUMMARY: PR #82 merged at 8cfcba9. Queue idle (0/0) before deploy. Director restart YES. ComfyUI restart NO (same process). /api/health PASS (ai-video-director-harness / 0.19.0). Merged #73 frontend served PASS (running Director /app.js contains reconcileQueueAfterTerminal). SCENA loaded PASS. Generation 0. Queue mutation NO.
+NEXT_RELEVANCE: Issue #73 implementation, tests, review, live acceptance, merge and deployment complete. Orchestrator should reconcile Workboard #75 / CURRENT_FRONTIER and choose the next Harness lane according to canonical backlog authority.
