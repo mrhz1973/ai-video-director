@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-Post-Harness activation gate
+UI/UX audit v0.19.0
 
 ## STATUS
 
-WAITING
+IN_PROGRESS
 
 ## GATE
 
-Explicit activation of the next specialist lane. Creative/production work remains idle until explicitly activated; generation remains separately gated by the project generation authorization contract.
+Read-only audit report + operator review before any implementation activation. No application code/runtime/generation/upload/queue/deploy work is authorized by audit activation.
 
 ## NEXT
 
-Await explicit creative/production activation for the post-Harness Phase 2 flow referenced by #58, or explicit activation of a specific Harness backlog issue.
+Complete #86 read-only UI/UX audit of canonical v0.19.0, reconcile older Harness UX backlog against the current app, and present prioritized P0/P1/P2/P3 findings for operator selection.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-No specialist lane is currently ACTIVE. Lane state lives inside the Workboard.
+HARNESS_ENGINEERING is ACTIVE on #86 audit only. Other specialist lanes remain independently governed by the Workboard.
 
 ## VERIFIED THROUGH
 
-Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. HARNESS_ENGINEERING returned idle; older open Harness issues remain backlog only until explicitly activated. No persisted main SHA.
+Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. #86 is an audit-only activation and does not reopen runtime stabilization by itself. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 
