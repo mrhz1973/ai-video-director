@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: ca101ee025ab1302dc6cb42d6c4630a549acbd7d
 WORK_REF: docs/issue-88-deploy-evidence
-COMMIT: pending
+COMMIT: 766fd44a2f3e61d3f99f9ea0a18b3078f970372c
 PR: https://github.com/mrhz1973/ai-video-director/pull/91
 VALIDATION: python scripts/validate_project.py PASS; deployment live checks (queue idle; /api/health; /api/config; served tooltip/control-help/batch/output Wave 1 modules)
 RUNTIME_TOUCHED: YES
