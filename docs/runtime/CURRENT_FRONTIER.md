@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — structural polish, design system and model registry
+UI/UX v0.19.3 Wave 3 — source-review corrections
 
 ## STATUS
 
-ACTIVE
+CORRECTIONS_REQUIRED
 
 ## GATE
 
-Issue #95 is explicitly activated for isolated implementation/test/CI/review only. Runtime activation, controlled live/UI acceptance, merge and deploy remain later separate gates. Generation, upload, live queue mutation, GPU power change, Director/ComfyUI restart, creative work and #89 are not authorized by this activation.
+PR #96 first implementation candidate passed npm test 924/924, validator and exact-head CI, but orchestrator source review on exact head `6a73972088f0d87eefdbd36e83f02866d9ba12d0` found two blockers: zero-available-model selection does not yet fail safe, and the CSS work adds new overlay layers without materially reducing historical cascade/override duplication as required by #95. Corrections remain isolated; runtime activation, controlled live/UI acceptance, merge and deploy are not authorized. Generation, upload, live queue mutation, GPU power change and Director/ComfyUI restart remain unauthorized.
 
 ## NEXT
 
-Implement #95 from current canonical `main` in an isolated branch/worktree: consolidate legacy CSS into a coherent design system; standardize buttons/badges/spacing/type/state surfaces; implement authoritative friendly validated model registry/discovery while reconciling #6; make an evidence-based decision on the optional unified SYSTEM panel; reconcile legacy #46/#15/#7/#6/#4 after the final Wave 3 state. Target release `v0.19.3`; preserve all Wave 1/2 contracts; run full tests + validator + CI and persist `LAST_CURSOR_REPORT`; stop for orchestrator review. Do not touch runtime.
+Correct PR #96 on the same branch: make discovery-success/all-models-missing a truthful non-selectable state that blocks Single Render/Batch readiness; add the missing behavioral model-registry regressions; perform measured narrow CSS/cascade consolidation with before/after evidence while preserving Wave 1/2 geometry and visual language; rerun full tests + validator + exact-head CI; update `LAST_CURSOR_REPORT`; stop for orchestrator re-review.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #95 / Wave 3 target `v0.19.3`. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 with corrections required. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden PR #96. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`: PR #93 merged; authorized Director-only deployment PASS; deployment evidence persisted via PR #94 and merged to main. UI/API version coherence PASS; tests 898/898; validator PASS; CI PASS; Wave 2 smoke PASS; ComfyUI unchanged; queue preflight/final 0/0; generation/upload/queue/GPU/project persistent mutation zero/NO. Issue #95 now activates the operator-approved Wave 3 roadmap from audit #86.
+#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. #95 first implementation candidate on PR #96 reached exact head `6a73972088f0d87eefdbd36e83f02866d9ba12d0`, npm test 924/924 PASS, validator PASS and CI run #476 PASS with runtime untouched. Orchestrator review `5034021270` requires corrections before controlled acceptance. During operator launcher verification, a stale development checkout was found as the Desktop launch target; a dedicated stable runtime checkout was established locally and issue #97 now makes that separation a permanent deployment invariant. Eventual #95 deployment must advance the dedicated runtime checkout to the exact authorized merged release SHA before Director restart.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -52,6 +52,7 @@ HARNESS_ENGINEERING is ACTIVE on #95 / Wave 3 target `v0.19.3`. #89 remains a se
 - Wave 3 target release: **v0.19.3**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
+- Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
 - ComfyUI lifecycle is external to the Director
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
