@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 3b8de2b3f614c21b3ef766e33f861790f698f0c6
 WORK_REF: fix/issue-72-launcher-health-reuse
-COMMIT: 47b3d0e09ce27716501d396921159e878abd8046 (+ report fill commit on branch tip)
+COMMIT: 2a4d3dc9eeb39f6415f880bf68439789d77b611c
 PR: https://github.com/mrhz1973/ai-video-director/pull/80
 VALIDATION: npm test 829 pass / 0 fail; python scripts/validate_project.py PASS; GitHub Actions validate PASS (runs 32924826457, 32924906139)
 RUNTIME_TOUCHED: NO
