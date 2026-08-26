@@ -204,6 +204,8 @@ async function refreshCloudMirrorConfig() {
     }
     setCloudMirrorStatus("Impossibile leggere la configurazione cloud mirror.", "warn");
   }
+
+  refreshOutputInspectorContext(); // cloud config
 }
 
 async function chooseCloudMirrorFolder() {
@@ -409,6 +411,8 @@ async function refreshFolderLabel() {
     }
     setStatus("Impossibile leggere la configurazione archivio Director.", "warn");
   }
+
+  refreshOutputInspectorContext(); // archive label
 }
 
 async function chooseFolder() {
@@ -443,6 +447,7 @@ async function chooseFolder() {
       syncFolderOpenHelp($("outputOpenFolder"), "archive");
     }
     setStatus("Cartella archivio configurata sul Director. Nessun permesso browser richiesto.", "ok");
+    refreshOutputInspectorContext(); // choose folder
   } catch (error) {
     setStatus(`Errore cartella: ${error?.message || error}`, "error");
   }
@@ -741,6 +746,27 @@ window.fetch = async (input, init = undefined) => {
   return response;
 };
 
+
+/**
+ * Recompute live OUTPUT Inspector from authoritative session/prefs/destination state.
+ * Never invents a current clip — only shows Clip corrente when selectedLabel is explicit.
+ */
+function refreshOutputInspectorContext({ selectedLabel = "" } = {}) {
+  const items = readSessionOutputs(sessionStorage);
+  const prefs = readOutputViewPrefs(localStorage);
+  const view = prepareSessionClipsView(items, prefs);
+  const selected = String(selectedLabel || "").trim();
+  updateInspectorOutputContext({
+    prefs: view.prefs,
+    totalCount: items.length,
+    visibleCount: view.filtered.length,
+    selectedLabel: selected,
+    archiveConfigured: Boolean(archiveDestination.configured),
+    cloudConfigured: Boolean(cloudMirrorState.configured),
+    cloudEnabled: Boolean(cloudMirrorState.enabled)
+  });
+}
+
 function renderSessionGallery() {
   const list = $("sessionGalleryList");
   const empty = $("sessionGalleryEmpty");
@@ -810,15 +836,8 @@ function renderSessionGallery() {
       list.append(createSessionClipCard(document, item, cardOpts));
     }
   }
-  updateInspectorOutputContext({
-    prefs: view.prefs,
-    totalCount: items.length,
-    visibleCount: view.filtered.length,
-    selectedLabel: view.filtered[0]?.jobLabel || view.filtered[0]?.filename || "",
-    archiveConfigured: Boolean(archiveDestination.configured),
-    cloudConfigured: Boolean(cloudMirrorState.configured),
-    cloudEnabled: Boolean(cloudMirrorState.enabled)
-  });
+  // Session-level context only — do not invent a current clip from filtered[0].
+  refreshOutputInspectorContext();
 }
 
 function syncOutputViewControls(prefs, items = []) {

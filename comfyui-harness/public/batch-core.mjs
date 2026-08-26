@@ -330,6 +330,49 @@ export function jobHasInputOverrides(item = {}) {
   return Object.keys(files).some(k => String(files[k] || "").trim());
 }
 
+/**
+ * Pure apply of a per-job file override (same semantics as batch-ui setItemFileOverride).
+ * Returns a new item; does not mutate the input.
+ */
+export function applyBatchItemFileOverride(item = {}, roleKey, value) {
+  const next = { ...(item && typeof item === "object" ? item : {}) };
+  const files = { ...(normalizeItemFiles(next.files) || {}) };
+  const role = String(roleKey || "").trim();
+  const trimmed = String(value || "").trim();
+  if (!role) return next;
+  if (!trimmed) delete files[role];
+  else files[role] = trimmed;
+  const normalized = normalizeItemFiles(files);
+  if (normalized) next.files = normalized;
+  else delete next.files;
+  return next;
+}
+
+/**
+ * Display model shared by collapsed chips / Override badge / Inspector Batch lines.
+ */
+export function buildBatchJobDisplayModel(item = {}, source = {}) {
+  const overrides = normalizeItemFiles(item?.files) || {};
+  const overrideKeys = Object.keys(overrides);
+  const hasOverride = overrideKeys.length > 0;
+  const chips = buildBatchJobSummaryChips(item, source);
+  const inputChip = chips.find(chip => chip.key === "inputs") || null;
+  const sharedFiles = source?.files && typeof source.files === "object" ? source.files : {};
+  const resolvedFiles = resolveBatchItemFiles(item, sharedFiles);
+  return {
+    hasOverride,
+    overrideBadge: hasOverride,
+    overrideKeys,
+    overrides: { ...overrides },
+    resolvedFiles: { ...resolvedFiles },
+    inputChipLabel: inputChip?.label || null,
+    inputChipOverridden: Boolean(inputChip?.overridden),
+    inspectorOverrideLine: hasOverride
+      ? `Override di questo job: ${overrideKeys.map(k => `${k}: ${overrides[k]}`).join(" · ")}`
+      : "Override di questo job: nessuno"
+  };
+}
+
 export const BATCH_ASPECT_OPTIONS = Object.freeze(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]);
 
 export function detectBatchWideFieldState(items = [], field) {

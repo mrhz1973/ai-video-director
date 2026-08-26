@@ -8,6 +8,7 @@ import {
   createBatchItems,
   detectBatchWideFieldState,
   duplicateBatchItem,
+  applyBatchItemFileOverride,
   buildBatchJobSummaryChips,
   formatBatchJobSummary,
   isTerminalBatchState,
@@ -558,12 +559,8 @@ function freezeSubmissionSnapshot(preparedSource = source, live = null) {
 }
 
 function setItemFileOverride(item, roleKey, value) {
-  const next = { ...(normalizeItemFiles(item.files) || {}) };
-  const trimmed = String(value || "").trim();
-  if (!trimmed) delete next[roleKey];
-  else next[roleKey] = trimmed;
-  const normalized = normalizeItemFiles(next);
-  if (normalized) item.files = normalized;
+  const next = applyBatchItemFileOverride(item, roleKey, value);
+  if (next.files) item.files = next.files;
   else delete item.files;
 }
 

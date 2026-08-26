@@ -15,6 +15,7 @@ import {
   entryMatchesCodaFilter,
   filterCodaEntries,
   filterCodaEntriesForDisplay,
+  reconcileCodaDisplayModel,
   isCompactCodaEntry,
   normalizeCodaFilter,
   persistCodaFilter,
@@ -44,6 +45,8 @@ import {
 import { normalizeSessionOutput } from "../public/session-outputs.mjs";
 import { applyWorkflowView } from "../public/workflow-nav.mjs";
 import {
+  applyBatchItemFileOverride,
+  buildBatchJobDisplayModel,
   buildBatchJobSummaryChips,
   jobHasInputOverrides
 } from "../public/batch-core.mjs";
@@ -540,14 +543,135 @@ test("live CODA and OUTPUT inspector context refresh from display state", () => 
   assert.notEqual(out1, out2);
 });
 
-test("BATCH input override change refreshes UI for every role key", () => {
-  const src = readFileSync(path.join(PUBLIC, "batch-ui.mjs"), "utf8");
+test("BATCH lastImage override add/remove updates shared display model", () => {
+  const source = {
+    workflowLabel: "FL2VA",
+    files: {
+      firstImage: "shared-start.png",
+      lastImage: "shared-end.png"
+    }
+  };
+  let item = { duration: "5", files: {} };
+  let model = buildBatchJobDisplayModel(item, source);
+  assert.equal(model.hasOverride, false);
+  assert.equal(model.overrideBadge, false);
+  assert.equal(model.resolvedFiles.firstImage, "shared-start.png");
+  assert.equal(model.resolvedFiles.lastImage, "shared-end.png");
+  assert.equal(model.inputChipOverridden, false);
+  assert.match(model.inspectorOverrideLine, /nessuno/i);
+
+  item = applyBatchItemFileOverride(item, "lastImage", "override-end.png");
+  model = buildBatchJobDisplayModel(item, source);
+  assert.equal(model.resolvedFiles.firstImage, "shared-start.png");
+  assert.equal(model.resolvedFiles.lastImage, "override-end.png");
+  assert.deepEqual(model.overrideKeys, ["lastImage"]);
+  assert.equal(model.hasOverride, true);
+  assert.equal(model.overrideBadge, true);
+  assert.equal(model.inputChipOverridden, true);
+  assert.match(model.inputChipLabel, /Override/i);
+  assert.match(model.inspectorOverrideLine, /lastImage: override-end\.png/);
+
+  item = applyBatchItemFileOverride(item, "lastImage", "");
+  model = buildBatchJobDisplayModel(item, source);
+  assert.equal(model.hasOverride, false);
+  assert.equal(model.overrideBadge, false);
+  assert.equal(model.resolvedFiles.firstImage, "shared-start.png");
+  assert.equal(model.resolvedFiles.lastImage, "shared-end.png");
+  assert.equal(model.inputChipOverridden, false);
+  assert.match(model.inputChipLabel, /comune/i);
+  assert.match(model.inspectorOverrideLine, /nessuno/i);
+
+  const batchSrc = readFileSync(path.join(PUBLIC, "batch-ui.mjs"), "utf8");
   assert.doesNotMatch(
-    src,
+    batchSrc,
     /if\s*\(\s*role\.key\s*===\s*["']firstImage["']\s*\)\s*renderBatch\s*\(\s*\)/
   );
-  assert.match(
-    src,
-    /setItemFileOverride\([\s\S]*?renderBatch\s*\(\s*\)/
-  );
+  assert.match(batchSrc, /setItemFileOverride\([\s\S]*?renderBatch\s*\(\s*\)/);
 });
+
+test("CODA restored Completati filter reconciles to recovery-visible display model", () => {
+  const entries = [
+    { queueEntryId: "done", state: "completed", name: "Done batch" },
+    { queueEntryId: "need", state: "recovery-required", name: "Needs recovery" }
+  ];
+  const frozen = structuredClone(entries);
+  const model = reconcileCodaDisplayModel(entries, "completati");
+  assert.equal(model.requestedFilter, "completati");
+  assert.equal(model.effectiveFilter, "problemi");
+  assert.equal(model.filterChanged, true);
+  assert.equal(model.filterLabel, "Problemi");
+  assert.equal(model.visibleEntries.some(e => e.queueEntryId === "need"), true);
+  assert.equal(model.visibleEntries.some(e => e.queueEntryId === "done"), false);
+  assert.equal(model.completedVisible, false);
+  assert.equal(model.recoveryActionable, true);
+  assert.ok(model.recoveryActions.every(a => a.visible && a.actions.includes("mark-completed")));
+  assert.deepEqual(entries, frozen);
+
+  const after = reconcileCodaDisplayModel(
+    [{ queueEntryId: "done", state: "completed" }],
+    "completati"
+  );
+  assert.equal(after.effectiveFilter, "completati");
+  assert.equal(after.filterChanged, false);
+  assert.equal(after.recoveryActionable, false);
+  assert.equal(after.visibleEntries[0]?.queueEntryId, "done");
+
+  const queueSrc = readFileSync(path.join(PUBLIC, "batch-queue-ui.mjs"), "utf8");
+  assert.match(queueSrc, /reconcileCodaDisplayModel\(/);
+});
+
+test("OUTPUT Inspector omits invented current clip and refreshes archive/cloud live", () => {
+  const { documentRef, createElement, body } = makeDom();
+  const host = createElement("div");
+  host.id = "inspectorOutputContext";
+  body.append(host);
+  const textOf = () => [...(host.childNodes || [])].map(n => n.textContent).join(" | ") || host.textContent;
+
+  updateInspectorOutputContext({
+    prefs: { mode: "gallery", groupBy: "none", orderBy: "newest" },
+    totalCount: 2,
+    visibleCount: 2,
+    selectedLabel: "",
+    archiveConfigured: false,
+    cloudConfigured: false,
+    cloudEnabled: false
+  }, { documentRef });
+  let text = textOf();
+  assert.doesNotMatch(text, /Clip corrente/i);
+  assert.match(text, /Archivio locale: non configurato/);
+  assert.match(text, /Cloud mirror: disattivato/);
+
+  updateInspectorOutputContext({
+    prefs: { mode: "gallery", groupBy: "none", orderBy: "newest" },
+    totalCount: 2,
+    visibleCount: 2,
+    selectedLabel: "",
+    archiveConfigured: true,
+    cloudConfigured: true,
+    cloudEnabled: true
+  }, { documentRef });
+  text = textOf();
+  assert.doesNotMatch(text, /Clip corrente/i);
+  assert.match(text, /Archivio locale: configurato/);
+  assert.match(text, /Cloud mirror: attivo(?! ma)/);
+
+  updateInspectorOutputContext({
+    prefs: { mode: "list", groupBy: "none", orderBy: "oldest" },
+    totalCount: 2,
+    visibleCount: 1,
+    selectedLabel: "explicit-clip.mp4",
+    archiveConfigured: true,
+    cloudConfigured: false,
+    cloudEnabled: true
+  }, { documentRef });
+  text = textOf();
+  assert.match(text, /Clip corrente: explicit-clip\.mp4/);
+  assert.match(text, /Cloud mirror: attivo ma cartella assente/);
+
+  const outputSrc = readFileSync(path.join(PUBLIC, "output-ui.mjs"), "utf8");
+  assert.doesNotMatch(outputSrc, /selectedLabel:\s*view\.filtered\[0\]/);
+  assert.match(outputSrc, /function refreshOutputInspectorContext/);
+  assert.match(outputSrc, /refreshOutputInspectorContext\(\); \/\/ archive label/);
+  assert.match(outputSrc, /refreshOutputInspectorContext\(\); \/\/ cloud config/);
+});
+

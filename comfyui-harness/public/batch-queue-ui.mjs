@@ -50,6 +50,7 @@ import {
   codaFilterEmptyMessage,
   ensureCodaFilterShowsRecovery,
   filterCodaEntriesForDisplay,
+  reconcileCodaDisplayModel,
   isCompactCodaEntry,
   normalizeCodaFilter,
   persistCodaFilter,
@@ -806,13 +807,13 @@ function renderQueueUi() {
   const section = $("batchQueueSection");
   if (!list || !section) return;
   const entries = displayEntries();
-  // Never strand recovery behind a restored Completati/In coda filter.
-  const safeFilter = ensureCodaFilterShowsRecovery(entries, codaFilter);
-  if (safeFilter !== codaFilter) {
-    codaFilter = persistCodaFilter(safeFilter);
+  // Pure reconciliation model: never strand recovery behind a restored Completati filter.
+  const displayModel = reconcileCodaDisplayModel(entries, codaFilter);
+  if (displayModel.effectiveFilter !== codaFilter) {
+    codaFilter = persistCodaFilter(displayModel.effectiveFilter);
     syncCodaFilterBar();
   }
-  const filtered = filterCodaEntriesForDisplay(entries, codaFilter);
+  const filtered = displayModel.visibleEntries;
   list.replaceChildren();
   if (!entries.length) {
     section.hidden = false;

@@ -104,3 +104,43 @@ export function persistCodaFilter(filter, storage = globalThis.localStorage) {
   try { storage?.setItem?.(CODA_FILTER_STORAGE_KEY, next); } catch { /* browser-local */ }
   return next;
 }
+
+const CODA_FILTER_LABELS = Object.freeze({
+  tutti: "Tutti",
+  "in-coda": "In coda",
+  "in-corso": "In corso",
+  completati: "Completati",
+  problemi: "Problemi"
+});
+
+/**
+ * Pure display reconciliation used by renderQueueUi.
+ * Never mutates entries / queue plan / runtime. May change the effective visual filter
+ * so recovery-required cards stay actionable.
+ */
+export function reconcileCodaDisplayModel(entries, requestedFilter) {
+  const list = Array.isArray(entries) ? entries.map(entry => ({ ...entry })) : [];
+  const requested = normalizeCodaFilter(requestedFilter);
+  const effectiveFilter = ensureCodaFilterShowsRecovery(list, requested);
+  const visibleEntries = filterCodaEntriesForDisplay(list, effectiveFilter);
+  const recoveryEntries = list.filter(entryIsUrgentRecovery);
+  const visibleIds = new Set(visibleEntries.map(e => String(e?.queueEntryId ?? "")));
+  const recoveryActions = recoveryEntries.map(entry => ({
+    queueEntryId: entry.queueEntryId,
+    state: entry.state,
+    actions: ["mark-completed", "mark-cancelled"],
+    visible: visibleIds.has(String(entry.queueEntryId ?? ""))
+  }));
+  return {
+    requestedFilter: requested,
+    effectiveFilter,
+    filterChanged: effectiveFilter !== requested,
+    filterLabel: CODA_FILTER_LABELS[effectiveFilter] || effectiveFilter,
+    entries: list,
+    visibleEntries,
+    recoveryEntries,
+    recoveryActions,
+    recoveryActionable: recoveryActions.length > 0 && recoveryActions.every(a => a.visible),
+    completedVisible: visibleEntries.some(e => String(e?.state || "").toLowerCase() === "completed")
+  };
+}
