@@ -486,6 +486,7 @@ test("launcher source contains no /api/queue POST or ComfyUI /prompt POST", asyn
 test("decision helpers classify occupied and healthy ports", () => {
   assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: true }).action, ACTION.REUSE);
   assert.equal(decideServiceAction({ portState: absentPort(), healthy: false }).action, ACTION.START);
+  assert.equal(decideServiceAction({ portState: absentPort(), healthy: true }).action, ACTION.START);
   assert.equal(decideServiceAction({ portState: listeningPort(1), healthy: false }).action, ACTION.FAIL);
   assert.equal(decideServiceAction({ portState: failedInspection(), healthy: false }).action, ACTION.FAIL);
   assert.equal(classifyServiceState({ listening: true, healthy: false, inspectionOk: true }), PROCESS_CLASS.UNKNOWN);

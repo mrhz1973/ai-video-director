@@ -173,7 +173,7 @@ export function decideServiceAction({
     };
   }
 
-  if (healthy) {
+  if (healthy && listening) {
     return {
       action: ACTION.REUSE,
       classification: PROCESS_CLASS.HEALTHY,

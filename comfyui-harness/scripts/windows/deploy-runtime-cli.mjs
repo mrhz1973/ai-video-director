@@ -8,7 +8,7 @@ import {
   runRuntimeDeployment
 } from "../../lib/windows-runtime-deploy.mjs";
 import { resolveConfigPath } from "../../lib/windows-launcher.mjs";
-import { createDefaultGitRunner } from "../../lib/stable-runtime.mjs";
+import { createDefaultGitRunner, readWindowsDesktopShortcut } from "../../lib/stable-runtime.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,10 +44,18 @@ async function stopProcessWindows(pid) {
   ], { windowsHide: true });
 }
 
+function buildReadShortcutFn(execFileFn) {
+  if (process.platform !== "win32") {
+    return null;
+  }
+  return () => readWindowsDesktopShortcut({ execFileFn });
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const configPath = resolveConfigPath(args.config);
   const gitRunner = createDefaultGitRunner(execFileAsync);
+  const readShortcutFn = buildReadShortcutFn(execFileAsync);
 
   if (args.command === "plan") {
     const plan = await planDeploymentPreflight({
@@ -55,7 +63,8 @@ export async function main(argv = process.argv.slice(2)) {
       releaseSha: args.releaseSha,
       expectedVersion: args.expectedVersion,
       configPath,
-      gitRunner
+      gitRunner,
+      readShortcutFn
     });
     console.log(JSON.stringify(plan, null, 2));
     process.exitCode = plan.ok ? 0 : 1;
@@ -69,7 +78,8 @@ export async function main(argv = process.argv.slice(2)) {
         releaseSha: args.releaseSha,
         expectedVersion: args.expectedVersion,
         configPath,
-        gitRunner
+        gitRunner,
+        readShortcutFn
       });
       console.log(JSON.stringify({ ok: plan.ok, planOnly: true, plan }, null, 2));
       process.exitCode = plan.ok ? 0 : 1;
@@ -83,6 +93,7 @@ export async function main(argv = process.argv.slice(2)) {
       gitRunner,
       execFileFn: execFileAsync,
       stopProcessFn: stopProcessWindows,
+      readShortcutFn,
       deps: {
         execFileFn: execFileAsync
       }

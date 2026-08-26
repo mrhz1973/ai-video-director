@@ -3,9 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { inspectPort } from "../../lib/windows-port-inspect.mjs";
-import { assertHarnessRootMatchesRuntimeAuthority, validateRuntimeFilesystem } from "../../lib/stable-runtime.mjs";
+import { assertHarnessRootMatchesRuntimeAuthority, createDefaultGitRunner, validateRuntimeFilesystem, validateRuntimeForInstall } from "../../lib/stable-runtime.mjs";
 import {
   ACTION,
   DEFAULT_CONFIG,
@@ -314,6 +315,118 @@ export async function runStart({
   };
 }
 
+export async function runDeployDirector({
+  harnessRoot,
+  configPath,
+  configOverride = {},
+  requiredComfyPid = null,
+  deps = {}
+} = {}) {
+  const { fetchFn, spawnFn, inspectPortFn, sleepFn, log } = resolveDeps(deps);
+
+  const loaded = await loadConfig(configPath, { required: true });
+  const config = normalizeConfig({ ...loaded, ...configOverride });
+  assertHarnessRootMatchesRuntimeAuthority({ runtimeRoot: config.runtimeRoot, harnessRoot });
+  const configErrors = validateConfig(config);
+  if (configErrors.length) throw new Error(configErrors.join("; "));
+
+  const expectedVersion = await readDirectorPackageVersion(harnessRoot);
+  const comfyUrl = serviceBaseUrl(config, SERVICE.COMFY);
+  const directorUrl = serviceBaseUrl(config, SERVICE.DIRECTOR);
+
+  const comfyPortState = await inspectPortFn(config.comfyPort, deps);
+  const comfyHealth = await probeComfyHealth(comfyUrl, { fetchFn });
+  const comfyDecision = decideServiceAction({
+    portState: comfyPortState,
+    healthy: comfyHealth.healthy,
+    service: SERVICE.COMFY
+  });
+
+  if (comfyDecision.action === ACTION.FAIL) {
+    assertServiceDecision({
+      decision: comfyDecision,
+      portState: comfyPortState,
+      service: SERVICE.COMFY,
+      port: config.comfyPort
+    });
+  }
+  if (comfyDecision.action === ACTION.START) {
+    throw new Error("deployment cannot start ComfyUI");
+  }
+  if (comfyDecision.action !== ACTION.REUSE) {
+    throw new Error("ComfyUI must be healthy and running before deployment Director restart");
+  }
+  const comfyPid = comfyPortState.processInfo?.pid ?? null;
+  if (requiredComfyPid != null && comfyPid !== requiredComfyPid) {
+    throw new Error(`ComfyUI PID changed from ${requiredComfyPid} to ${comfyPid ?? "absent"}`);
+  }
+  log("[OK]", `ComfyUI reuse-only on ${config.comfyPort} (PID ${comfyPid ?? "unknown"})`);
+
+  let directorSpawnCount = 0;
+  let directorPortState = await inspectPortFn(config.directorPort, deps);
+  let directorHealth = await probeDirectorHealth(directorUrl, expectedVersion, { fetchFn });
+  let directorDecision = decideServiceAction({
+    portState: directorPortState,
+    healthy: directorHealth.healthy,
+    service: SERVICE.DIRECTOR
+  });
+
+  if (directorDecision.action === ACTION.FAIL) {
+    assertServiceDecision({
+      decision: directorDecision,
+      portState: directorPortState,
+      service: SERVICE.DIRECTOR,
+      port: config.directorPort
+    });
+  }
+
+  if (directorDecision.action === ACTION.REUSE) {
+    log("[OK]", `Director v${directorHealth.version || expectedVersion} already healthy on ${config.directorPort}`);
+  } else {
+    log("[START]", "Director...");
+    const nodeExecutable = config.nodeExecutable || "node";
+    const directorCmd = buildDirectorCommand(harnessRoot, nodeExecutable, {
+      comfyRoot: config.comfyRoot
+    });
+    spawnFn(directorCmd);
+    directorSpawnCount = 1;
+    const wait = await waitForHealth(
+      () => probeDirectorHealth(directorUrl, expectedVersion, { fetchFn }),
+      { timeoutMs: config.directorTimeoutSeconds * 1000, intervalMs: 500, sleepFn }
+    );
+    if (!wait.healthy) {
+      throw new Error(`Director did not become healthy within ${config.directorTimeoutSeconds}s`);
+    }
+    directorHealth = wait.attempts;
+    log("[OK]", `Director v${directorHealth.version || expectedVersion} healthy on ${config.directorPort}`);
+    directorPortState = await inspectPortFn(config.directorPort, deps);
+    directorHealth = await probeDirectorHealth(directorUrl, expectedVersion, { fetchFn });
+    directorDecision = decideServiceAction({
+      portState: directorPortState,
+      healthy: directorHealth.healthy,
+      service: SERVICE.DIRECTOR
+    });
+    assertServiceDecision({
+      decision: directorDecision,
+      portState: directorPortState,
+      service: SERVICE.DIRECTOR,
+      port: config.directorPort
+    });
+  }
+
+  return {
+    comfy: comfyDecision,
+    director: directorDecision,
+    directorVersion: directorHealth.version || expectedVersion,
+    browserOpened: false,
+    browserUrls: null,
+    spawns: {
+      comfy: 0,
+      director: directorSpawnCount
+    }
+  };
+}
+
 export function spawnDetached(command) {
   const child = spawn(command.executable, command.arguments, {
     cwd: command.cwd,
@@ -345,11 +458,33 @@ export async function writeInstallerConfig(configPath, payload) {
   await writeFile(configPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
-export async function runValidateRuntime({ runtimeRoot, requireDetached = false } = {}) {
+export async function runValidateRuntime({
+  runtimeRoot,
+  requireDetached = true,
+  requireClean = true,
+  gitRunner = null,
+  deps = {}
+} = {}) {
   const fs = validateRuntimeFilesystem({ runtimeRoot });
   if (!fs.ok) throw new Error(fs.errors.join("; "));
-  return fs;
+
+  const git = gitRunner || (deps.execFileFn ? createDefaultGitRunner(deps.execFileFn) : null);
+  const install = await validateRuntimeForInstall({
+    runtimeRoot: fs.runtimeRoot,
+    gitRunner: git,
+    requireDetached,
+    requireClean
+  });
+  if (!install.ok) throw new Error(install.errors.join("; "));
+
+  return {
+    ...fs,
+    git: install.git,
+    packageVersion: install.packageVersion
+  };
 }
+
+const execFileAsync = promisify(execFile);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -381,7 +516,11 @@ async function main() {
       return;
     }
     if (args.command === "validate-runtime") {
-      const result = await runValidateRuntime({ runtimeRoot: args.runtimeRoot });
+      const gitRunner = createDefaultGitRunner(execFileAsync);
+      const result = await runValidateRuntime({
+        runtimeRoot: args.runtimeRoot,
+        gitRunner
+      });
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
       return;
     }

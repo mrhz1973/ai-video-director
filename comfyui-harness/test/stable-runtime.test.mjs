@@ -17,7 +17,8 @@ import {
   validateDesktopShortcutTarget,
   validateRuntimeFilesystem,
   validateStableRuntimeCheckout,
-  verifyReleaseObjectExists
+  verifyReleaseObjectExists,
+  parseDesktopShortcutTarget
 } from "../lib/stable-runtime.mjs";
 
 const harnessRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -184,4 +185,52 @@ test("inspectGitRuntimeState reports porcelain and branch", async () => {
 test("runtime block codes are stable", () => {
   assert.equal(RUNTIME_BLOCK.HARNESS_ROOT_MISMATCH, "HARNESS_ROOT_MISMATCH");
   assert.equal(RUNTIME_BLOCK.QUEUE_NOT_IDLE, "QUEUE_NOT_IDLE");
+});
+
+test("empty runtimeRoot fails closed without using cwd", () => {
+  const result = validateRuntimeFilesystem({ runtimeRoot: "" });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /empty/i);
+  assert.equal(result.runtimeRoot, "");
+});
+
+test("whitespace runtimeRoot fails closed", () => {
+  const result = validateRuntimeFilesystem({ runtimeRoot: "   " });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /empty/i);
+});
+
+test("installer runtime validation blocks dirty checkout", async () => {
+  const gitRunner = mockGit({ headSha: "abc123", branch: "HEAD", porcelain: " M dirty" });
+  const { validateRuntimeForInstall } = await import("../lib/stable-runtime.mjs");
+  const result = await validateRuntimeForInstall({
+    runtimeRoot: repoRoot,
+    gitRunner,
+    requireDetached: true,
+    requireClean: true
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /dirty/i);
+});
+
+test("installer runtime validation blocks attached branch", async () => {
+  const gitRunner = mockGit({ headSha: "abc123", branch: "main", porcelain: "" });
+  const { validateRuntimeForInstall } = await import("../lib/stable-runtime.mjs");
+  const result = await validateRuntimeForInstall({
+    runtimeRoot: repoRoot,
+    gitRunner,
+    requireDetached: true,
+    requireClean: true
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /attached/i);
+});
+
+test("runValidateRuntime requires clean detached runtime authority", async () => {
+  const { runValidateRuntime } = await import("../scripts/windows/launcher-cli.mjs");
+  const gitRunner = mockGit({ headSha: "abc", branch: "main", porcelain: "" });
+  await assert.rejects(
+    () => runValidateRuntime({ runtimeRoot: repoRoot, gitRunner }),
+    /attached/i
+  );
 });

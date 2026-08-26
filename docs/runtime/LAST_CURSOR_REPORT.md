@@ -6,36 +6,32 @@ ROLE: HARNESS_ENGINEERING
 STATUS: PASS  
 EVIDENCE_STATE: EVIDENCE_COMPLETE  
 SOURCE: Cursor  
-BASE_MAIN_SHA: 06bbf4832dd3d93ff3d54f3b7cfa3c22dab84397  
+BASE_MAIN_SHA: 76045ca2f58405dcd022465a1af3cef43fb55d0b  
 WORK_REF: fix/issue-97-stable-runtime-v0194  
-COMMIT: c93681c (+ 54d07d7 CI path fix)  
 PR: https://github.com/mrhz1973/ai-video-director/pull/98  
-PR_HEAD: 54d07d7f50864840875bf69ad51fd8c7570a8170  
-CI: PASS  
-VALIDATION: npm test 972/972 PASS; validate_project.py PASS  
-CI: PASS (exact-head validate @ 54d07d7)  
+PR_HEAD: (pending push — see commit below)  
+CI: (pending exact-head validate after push)  
+VALIDATION: npm test 987/987 PASS; validate_project.py PASS  
 RUNTIME_TOUCHED: NO  
 
-## SUMMARY
+## SUMMARY — SOURCE REVIEW CORRECTIONS (#5035496812)
 
-- **Implementation branch:** `fix/issue-97-stable-runtime-v0194` from `origin/main` @ `06bbf48`
-- **Version:** `0.19.3` → **`0.19.4`** (package/UI/API coherent)
-- **Explicit runtime-root design:** `launcher.json.runtimeRoot` + mandatory installer `-RuntimeRoot`; production harness = `<runtimeRoot>\comfyui-harness`; no inference from installer source checkout
-- **Installer dev-checkout regression:** `Install-AIVideoDirectorLauncher.ps1` requires `-RuntimeRoot`; Desktop shortcut + WorkingDirectory bind to stable runtime Start script (never `Get-HarnessRoot` from dev checkout)
-- **Launcher mismatch guard:** `runStart()` fail-closed via `assertHarnessRootMatchesRuntimeAuthority()` when configured runtime root disagrees with executing harness root
-- **Runtime validation:** `lib/stable-runtime.mjs` — filesystem/git/detached/clean/desktop/queue checks (testable, no auto-clean/reset/stash)
-- **Deployment design:** `lib/windows-runtime-deploy.mjs` + `deploy-runtime-cli.mjs` + `Deploy-AIVideoDirectorRuntime.ps1`; authority = exact `-ReleaseSha` (fetch + detached checkout only); idempotent noop when already at SHA + healthy Director
-- **Exact-PID semantics:** deployment stops only verified Director PID via injected `stopProcessFn`; no broad node/python kill
-- **ComfyUI external/no-restart:** deployment preflight reads health/queue/PID; never stops/starts ComfyUI; requires same PID pre/post
-- **Idempotent behavior:** same SHA + expected version + healthy Director → `action: noop`, spawn 0
-- **npm test:** 972 tests, 0 failures (+24 new stable-runtime/deploy regressions)
+- **Main realignment:** branch already merged `origin/main` @ `76045ca` (docs bookkeeping only); CURRENT_FRONTIER / Workboard preserved
+- **Fetch-before-release-verification:** `planDeploymentPreflight()` local checks → `git fetch origin` → verify authorized SHA → read package at SHA → version match; `advanceRuntimeCheckout()` skips redundant fetch
+- **Unseen-release-after-fetch regression:** release object absent pre-fetch → fetch → verification proceeds; main HEAD irrelevant
+- **Director ownership before stop:** unexpected/ambiguous 8787 owner => BLOCK; `decideServiceAction()` FAIL surfaced in preflight; only verified PID reaches `stopProcessFn`; older healthy Director (correct identity) allowed as predecessor
+- **ComfyUI strictly external:** deployment uses `runDeployDirector()` (Comfy REUSE ONLY, START forbidden); pre/post same-PID enforcement via `assertComfyUnchangedForDeploy()`
+- **Post-deploy verification complete:** runtime HEAD/clean/detached/package; Director health; `/api/health` + `/api/config` + UI bootstrap coherence; same Comfy PID; queue 0/0; Desktop shortcut target via real `readWindowsDesktopShortcut()` wired in `deploy-runtime-cli.mjs`
+- **Installer runtime validation:** `runValidateRuntime()` / `validateRuntimeForInstall()` require git repo, clean, detached, readable package, Start script; dirty/attached BLOCK before config/shortcut write path
+- **Empty RuntimeRoot fail-closed:** `normalizeRuntimeRoot("")` / whitespace => explicit BLOCK; never silently resolves to cwd
+- **npm test:** 987 tests, 0 failures (+15 correction regressions)
 - **Validator:** PASS
 - **Production runtime untouched:** YES (`ai-video-director-runtime` @ `01a4d90` / v0.19.3)
-- **Desktop shortcut untouched:** YES
+- **Desktop real shortcut untouched:** YES
 - **Director restart:** NO
 - **ComfyUI restart:** NO
 - **Generation:** 0 | **Upload:** 0 | **Queue mutation:** NO | **GPU mutation:** NO | **Project mutation:** NO
 
 ## NEXT_RELEVANCE
 
-Orchestrator source review #97. Live deploy/install remains operator-gated.
+Orchestrator re-review #97 / PR #98. Live deploy/install remains operator-gated.

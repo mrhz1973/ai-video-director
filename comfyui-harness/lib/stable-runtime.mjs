@@ -34,7 +34,13 @@ const REQUIRED_HARNESS_FILES = Object.freeze([
 ]);
 
 export function normalizeRuntimeRoot(runtimeRoot = "") {
-  return path.resolve(String(runtimeRoot || "").trim());
+  const trimmed = String(runtimeRoot ?? "").trim();
+  if (!trimmed) {
+    const error = new Error("runtimeRoot is empty");
+    error.code = RUNTIME_BLOCK.RUNTIME_ROOT_UNCONFIGURED;
+    throw error;
+  }
+  return path.resolve(trimmed);
 }
 
 export function resolveRuntimeHarnessRoot(runtimeRoot = "") {
@@ -109,19 +115,105 @@ export async function readPackageVersion(harnessRoot = "", readFileFn = readFile
 }
 
 export function validateRuntimeFilesystem({ runtimeRoot = "", existsFn = existsSync } = {}) {
-  const root = normalizeRuntimeRoot(runtimeRoot);
   const errors = [];
-  if (!root) errors.push("runtimeRoot is empty");
-  if (root && !existsFn(root)) errors.push(`runtime root does not exist: ${root}`);
+  let root = "";
+  try {
+    root = normalizeRuntimeRoot(runtimeRoot);
+  } catch (error) {
+    errors.push(error.message);
+    return { ok: false, errors, runtimeRoot: "", harnessRoot: "" };
+  }
+  if (!existsFn(root)) errors.push(`runtime root does not exist: ${root}`);
   const harnessRoot = resolveRuntimeHarnessRoot(root);
-  if (root && !existsFn(harnessRoot)) errors.push(`harness directory missing: ${harnessRoot}`);
+  if (!existsFn(harnessRoot)) errors.push(`harness directory missing: ${harnessRoot}`);
   for (const rel of REQUIRED_HARNESS_FILES) {
     const target = path.join(harnessRoot, ...rel.split("/"));
-    if (root && existsFn(harnessRoot) && !existsFn(target)) {
+    if (existsFn(harnessRoot) && !existsFn(target)) {
       errors.push(`required harness file missing: ${rel}`);
     }
   }
   return { ok: errors.length === 0, errors, runtimeRoot: root, harnessRoot };
+}
+
+export async function validateRuntimeForInstall({
+  runtimeRoot = "",
+  gitRunner,
+  existsFn = existsSync,
+  requireDetached = true,
+  requireClean = true
+} = {}) {
+  const fs = validateRuntimeFilesystem({ runtimeRoot, existsFn });
+  const errors = [...fs.errors];
+  let git = null;
+  let packageVersion = null;
+
+  if (fs.ok && gitRunner) {
+    try {
+      git = await inspectGitRuntimeState({ runtimeRoot: fs.runtimeRoot, gitRunner });
+      if (requireClean && !git.clean) {
+        errors.push("runtime working tree is dirty");
+      }
+      if (requireDetached && !git.detached) {
+        errors.push(`runtime checkout is attached to branch ${git.branch}; installer requires detached HEAD`);
+      }
+    } catch (error) {
+      errors.push(error.message);
+    }
+  } else if (fs.ok && !gitRunner) {
+    errors.push("runtime git validation requires gitRunner");
+  }
+
+  if (fs.ok) {
+    try {
+      packageVersion = await readPackageVersion(fs.harnessRoot);
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    runtimeRoot: fs.runtimeRoot,
+    harnessRoot: fs.harnessRoot,
+    git,
+    packageVersion
+  };
+}
+
+export function defaultDesktopShortcutPath() {
+  const profile = process.env.USERPROFILE || process.env.HOME || "";
+  return profile ? path.join(profile, "Desktop", "AI Video Director.lnk") : "";
+}
+
+export async function readWindowsDesktopShortcut({
+  shortcutPath = "",
+  execFileFn
+} = {}) {
+  if (!execFileFn) {
+    throw new Error("readWindowsDesktopShortcut requires execFileFn");
+  }
+  const resolved = path.resolve(String(shortcutPath || defaultDesktopShortcutPath()).trim());
+  if (!resolved) {
+    throw new Error("Desktop shortcut path is empty");
+  }
+  const escaped = resolved.replace(/'/g, "''");
+  const script = [
+    "$shell = New-Object -ComObject WScript.Shell",
+    `$lnk = $shell.CreateShortcut('${escaped}')`,
+    "@{ Arguments = $lnk.Arguments; WorkingDirectory = $lnk.WorkingDirectory } | ConvertTo-Json -Compress"
+  ].join("; ");
+  const { stdout } = await execFileFn(
+    "powershell.exe",
+    ["-NoProfile", "-Command", script],
+    { encoding: "utf8", windowsHide: true, maxBuffer: 10 * 1024 * 1024 }
+  );
+  const parsed = JSON.parse(String(stdout || "").trim());
+  return {
+    shortcutPath: resolved,
+    argumentsText: String(parsed.Arguments || ""),
+    workingDirectory: String(parsed.WorkingDirectory || "")
+  };
 }
 
 /**

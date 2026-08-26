@@ -10,26 +10,49 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   advanceRuntimeCheckout,
+  assertComfyUnchangedForDeploy,
+  fetchAndVerifyReleaseAuthority,
   planDeploymentPreflight,
-  runRuntimeDeployment
+  planLocalDeploymentPreflight,
+  runRuntimeDeployment,
+  verifyPostDeployment
 } from "../lib/windows-runtime-deploy.mjs";
 import { buildLauncherConfigPayload, DIRECTOR_HEALTH_IDENTITY } from "../lib/windows-launcher.mjs";
+import { planInstallerShortcut } from "../lib/stable-runtime.mjs";
 
 const harnessRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.dirname(harnessRoot);
 const expectedVersion = JSON.parse(await import("node:fs/promises").then(fs => fs.readFile(path.join(harnessRoot, "package.json"), "utf8"))).version;
 
 function mockGit(state) {
+  state.knownObjects = state.knownObjects || new Set([state.headSha].filter(Boolean));
   return async (args, cwd) => {
     const key = args.join(" ");
     if (key === "status --porcelain") return state.porcelain ?? "";
     if (key === "rev-parse HEAD") return state.headSha;
     if (key === "rev-parse --abbrev-ref HEAD") return state.branch ?? "HEAD";
-    if (key.startsWith("cat-file -t")) return "commit";
-    if (key.startsWith("show ")) return JSON.stringify({ version: state.releaseVersion || expectedVersion });
-    if (key === "fetch origin") return "";
+    if (key.startsWith("cat-file -t")) {
+      const sha = args[2];
+      if (!state.knownObjects.has(sha)) {
+        throw new Error(`Not a valid object name: ${sha}`);
+      }
+      return state.objectType ?? "commit";
+    }
+    if (key.startsWith("show ")) {
+      const ref = args[1].split(":")[0];
+      if (!state.knownObjects.has(ref)) {
+        throw new Error(`Not a valid object name: ${ref}`);
+      }
+      return JSON.stringify({ version: state.releaseVersion || expectedVersion });
+    }
+    if (key === "fetch origin") {
+      state.fetched = true;
+      if (state.releaseSha) state.knownObjects.add(state.releaseSha);
+      return "";
+    }
     if (key.startsWith("checkout --detach")) {
       state.headSha = args[2];
+      state.branch = "HEAD";
       return "";
     }
     throw new Error(`unexpected git: ${key}`);
@@ -72,26 +95,56 @@ function directorHealth(version = expectedVersion) {
   return new Response(JSON.stringify({ service: DIRECTOR_HEALTH_IDENTITY, version }), { status: 200 });
 }
 
+function directorConfig(version = expectedVersion) {
+  return new Response(JSON.stringify({ version }), { status: 200 });
+}
+
+function directorIndex() {
+  return new Response('<html><h1>MiniMax H3 Director <small id="version"></small></h1></html>', { status: 200 });
+}
+
 function idleQueue() {
   return new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), { status: 200 });
 }
 
+function deployFetch(version = expectedVersion, { queue = idleQueue } = {}) {
+  return async url => {
+    const text = String(url);
+    if (text.includes("/system_stats")) return comfyStats();
+    if (text.includes("/api/health")) return directorHealth(version);
+    if (text.includes("/api/config")) return directorConfig(version);
+    if (text.endsWith("/") || text.match(/:\d+\/?$/)) return directorIndex();
+    if (text.includes("/queue")) return queue();
+    return new Response("{}", { status: 404 });
+  };
+}
+
 function busyDeps({ directorPid = 8787, comfyPid = 8188, directorVersion = expectedVersion } = {}) {
   return {
-    fetchFn: async url => {
-      if (String(url).includes("/system_stats")) return comfyStats();
-      if (String(url).includes("/api/health")) return directorHealth(directorVersion);
-      if (String(url).includes("/queue")) return idleQueue();
-      return new Response("{}", { status: 404 });
-    },
+    fetchFn: deployFetch(directorVersion),
     inspectPortFn: async port => (port === 8188 ? listeningPort(comfyPid) : listeningPort(directorPid))
   };
+}
+
+function shortcutReader(runtimeRoot = repoRoot) {
+  const planned = planInstallerShortcut({ runtimeRoot });
+  return async () => ({
+    argumentsText: `-File "${planned.targetScriptPath}" -PauseOnError`,
+    workingDirectory: planned.workingDirectory
+  });
 }
 
 test("J deployment restart uses exact PID stop hook only", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
-  const gitState = { headSha: "release-sha", branch: "HEAD", porcelain: "", releaseVersion: expectedVersion };
+  const gitState = {
+    headSha: "release-sha",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"])
+  };
   const gitRunner = mockGit(gitState);
   const stopped = [];
   let directorListening = true;
@@ -99,6 +152,8 @@ test("J deployment restart uses exact PID stop hook only", async () => {
   const fetchFn = async url => {
     if (String(url).includes("/system_stats")) return comfyStats();
     if (String(url).includes("/api/health")) return directorHealth(directorVersion);
+    if (String(url).includes("/api/config")) return directorConfig(expectedVersion);
+    if (String(url).endsWith("/8787/") || String(url).match(/8787\/?$/)) return directorIndex();
     if (String(url).includes("/queue")) return idleQueue();
     return new Response("{}", { status: 404 });
   };
@@ -107,6 +162,7 @@ test("J deployment restart uses exact PID stop hook only", async () => {
     if (port === 8188) return listeningPort(8188);
     return listeningPort(9001);
   };
+  const spawns = [];
   const result = await runRuntimeDeployment({
     runtimeRoot: repoRoot,
     releaseSha: "release-sha",
@@ -120,14 +176,17 @@ test("J deployment restart uses exact PID stop hook only", async () => {
     },
     fetchFn,
     inspectPortFn,
+    readShortcutFn: shortcutReader(),
     deps: {
-      spawnFn: () => {},
+      spawnFn: cmd => spawns.push(cmd),
       sleepFn: async () => {},
       log: () => {}
     }
   });
   assert.deepEqual(stopped, [9001]);
   assert.equal(result.directorRestarted, true);
+  assert.equal(spawns.length, 1);
+  assert.equal(result.startResult.spawns.comfy, 0);
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
@@ -139,7 +198,9 @@ test("K ComfyUI PID preserved across deployment plan", async () => {
     headSha: "release-sha",
     branch: "HEAD",
     porcelain: "",
-    releaseVersion: expectedVersion
+    releaseVersion: expectedVersion,
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"])
   });
   const plan = await planDeploymentPreflight({
     runtimeRoot: repoRoot,
@@ -158,7 +219,13 @@ test("K ComfyUI PID preserved across deployment plan", async () => {
 test("L queue non-idle blocks deployment preflight", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
-  const gitRunner = mockGit({ headSha: "release-sha", branch: "HEAD", porcelain: "" });
+  const gitRunner = mockGit({
+    headSha: "release-sha",
+    branch: "HEAD",
+    porcelain: "",
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"])
+  });
   const plan = await planDeploymentPreflight({
     runtimeRoot: repoRoot,
     releaseSha: "release-sha",
@@ -169,9 +236,7 @@ test("L queue non-idle blocks deployment preflight", async () => {
       if (String(url).includes("/queue")) {
         return new Response(JSON.stringify({ queue_running: [{}], queue_pending: [] }), { status: 200 });
       }
-      if (String(url).includes("/system_stats")) return comfyStats();
-      if (String(url).includes("/api/health")) return directorHealth();
-      return new Response("{}", { status: 404 });
+      return deployFetch()(url);
     },
     inspectPortFn: busyDeps().inspectPortFn
   });
@@ -185,7 +250,14 @@ test("M same-version healthy deployment is noop with spawn 0", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
   const releaseSha = "already-there";
-  const gitRunner = mockGit({ headSha: releaseSha, branch: "HEAD", porcelain: "", releaseVersion: expectedVersion });
+  const gitRunner = mockGit({
+    headSha: releaseSha,
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha,
+    knownObjects: new Set([releaseSha])
+  });
   const spawns = [];
   const result = await runRuntimeDeployment({
     runtimeRoot: repoRoot,
@@ -194,6 +266,7 @@ test("M same-version healthy deployment is noop with spawn 0", async () => {
     configPath,
     gitRunner,
     stopProcessFn: async () => { throw new Error("should not stop"); },
+    readShortcutFn: shortcutReader(),
     ...busyDeps({ directorPid: 47800 }),
     deps: {
       spawnFn: cmd => spawns.push(cmd),
@@ -206,12 +279,20 @@ test("M same-version healthy deployment is noop with spawn 0", async () => {
   assert.equal(result.directorRestarted, false);
   assert.equal(spawns.length, 0);
   assert.equal(result.startResult.spawns.director, 0);
+  assert.equal(result.ok, true);
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
 
 test("N idempotent already-deployed target skips checkout", async () => {
-  const gitState = { headSha: "target", branch: "HEAD", porcelain: "", releaseVersion: expectedVersion };
+  const gitState = {
+    headSha: "target",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "other",
+    knownObjects: new Set(["other"])
+  };
   const gitRunner = mockGit(gitState);
   const advanced = await advanceRuntimeCheckout({
     runtimeRoot: repoRoot,
@@ -222,7 +303,14 @@ test("N idempotent already-deployed target skips checkout", async () => {
 });
 
 test("exact release SHA checkout verifies package version", async () => {
-  const gitState = { headSha: "old", branch: "HEAD", porcelain: "", releaseVersion: expectedVersion };
+  const gitState = {
+    headSha: "old",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "new-sha",
+    knownObjects: new Set(["new-sha"])
+  };
   const gitRunner = mockGit(gitState);
   const advanced = await advanceRuntimeCheckout({
     runtimeRoot: repoRoot,
@@ -236,7 +324,7 @@ test("exact release SHA checkout verifies package version", async () => {
 test("attached branch blocks deployment preflight", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
-  const gitRunner = mockGit({ headSha: "sha", branch: "main", porcelain: "" });
+  const gitRunner = mockGit({ headSha: "sha", branch: "main", porcelain: "", releaseSha: "sha", knownObjects: new Set(["sha"]) });
   const plan = await planDeploymentPreflight({
     runtimeRoot: repoRoot,
     releaseSha: "sha",
@@ -254,7 +342,14 @@ test("attached branch blocks deployment preflight", async () => {
 test("I release version mismatch blocks deployment preflight", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
-  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "", releaseVersion: "0.19.3" });
+  const gitRunner = mockGit({
+    headSha: "sha",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: "0.19.3",
+    releaseSha: "sha",
+    knownObjects: new Set(["sha"])
+  });
   const plan = await planDeploymentPreflight({
     runtimeRoot: repoRoot,
     releaseSha: "sha",
@@ -265,6 +360,247 @@ test("I release version mismatch blocks deployment preflight", async () => {
   });
   assert.equal(plan.ok, false);
   assert.match(plan.blockers.join(" "), /advertises version 0\.19\.3/);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("unseen release object becomes available after fetch before verification", async () => {
+  const gitState = {
+    headSha: "main-head",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "authorized-release",
+    knownObjects: new Set(["main-head"])
+  };
+  const gitRunner = mockGit(gitState);
+  await assert.rejects(
+    () => fetchAndVerifyReleaseAuthority({
+      runtimeRoot: repoRoot,
+      releaseSha: "authorized-release",
+      expectedVersion,
+      gitRunner,
+      skipFetch: true
+    }),
+    /Not a valid object name/
+  );
+  const verified = await fetchAndVerifyReleaseAuthority({
+    runtimeRoot: repoRoot,
+    releaseSha: "authorized-release",
+    expectedVersion,
+    gitRunner
+  });
+  assert.equal(verified.releaseVersion, expectedVersion);
+  assert.equal(gitState.fetched, true);
+});
+
+test("unexpected Director owner blocks preflight before stopProcessFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const gitRunner = mockGit({
+    headSha: "release-sha",
+    branch: "HEAD",
+    porcelain: "",
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"])
+  });
+  const plan = await planDeploymentPreflight({
+    runtimeRoot: repoRoot,
+    releaseSha: "release-sha",
+    expectedVersion,
+    configPath,
+    gitRunner,
+    fetchFn: async url => {
+      if (String(url).includes("/api/health")) {
+        return new Response("{}", { status: 503 });
+      }
+      return deployFetch()(url);
+    },
+    inspectPortFn: async port => {
+      if (port === 8188) return listeningPort(8188);
+      return {
+        listening: true,
+        inspectionOk: true,
+        processInfo: { pid: 99999, executable: "notepad.exe", commandLine: "notepad" }
+      };
+    }
+  });
+  assert.equal(plan.ok, false);
+  assert.match(plan.blockers.join(" "), /unexpected process/i);
+  await assert.rejects(() => runRuntimeDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "release-sha",
+    expectedVersion,
+    configPath,
+    gitRunner,
+    stopProcessFn: async () => { throw new Error("must not stop"); },
+    fetchFn: async url => {
+      if (String(url).includes("/api/health")) {
+        return new Response("{}", { status: 503 });
+      }
+      return deployFetch()(url);
+    },
+    inspectPortFn: async port => {
+      if (port === 8188) return listeningPort(8188);
+      return {
+        listening: true,
+        inspectionOk: true,
+        processInfo: { pid: 99999, executable: "notepad.exe" }
+      };
+    }
+  }), /unexpected process|DEPLOY_PREFLIGHT_BLOCKED/);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("ComfyUI absent between preflight and restart blocks deployment with spawn 0", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const gitState = {
+    headSha: "old",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"])
+  };
+  const gitRunner = mockGit(gitState);
+  const spawns = [];
+  let comfyPresent = true;
+  const inspectPortFn = async port => {
+    if (port === 8188) return comfyPresent ? listeningPort(8188) : absentPort();
+    return listeningPort(9001);
+  };
+  await assert.rejects(() => runRuntimeDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "release-sha",
+    expectedVersion,
+    configPath,
+    gitRunner,
+    stopProcessFn: async () => {},
+    fetchFn: async url => {
+      if (!comfyPresent && String(url).includes("/system_stats")) {
+        return new Response("{}", { status: 503 });
+      }
+      return deployFetch()(url);
+    },
+    inspectPortFn,
+    deps: {
+      spawnFn: cmd => spawns.push(cmd),
+      sleepFn: async () => {
+        comfyPresent = false;
+      },
+      log: () => {}
+    }
+  }), /ComfyUI|unhealthy|cannot start/i);
+  assert.equal(spawns.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("verifyPostDeployment fails when Comfy PID changes", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: deployFetch(),
+    inspectPortFn: async port => listeningPort(port === 8188 ? 111 : 222),
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 999
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /PID changed/i);
+});
+
+test("verifyPostDeployment fails on final queue busy", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: deployFetch(expectedVersion, {
+      queue: () => new Response(JSON.stringify({ queue_running: [{}], queue_pending: [] }), { status: 200 })
+    }),
+    inspectPortFn: async port => listeningPort(port === 8188 ? 8188 : 8787),
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 8188
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /queue not idle/i);
+});
+
+test("verifyPostDeployment fails on desktop target drift", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: deployFetch(),
+    inspectPortFn: async port => listeningPort(port === 8188 ? 8188 : 8787),
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 8188,
+    readShortcutFn: async () => ({
+      argumentsText: '-File "C:\\dev\\Start-AIVideoDirector.ps1" -PauseOnError',
+      workingDirectory: "C:\\dev"
+    })
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /Desktop shortcut/i);
+});
+
+test("verifyPostDeployment fails on /api/config wrong version", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: deployFetch("0.19.3"),
+    inspectPortFn: async port => listeningPort(port === 8188 ? 8188 : 8787),
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 8188
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /\/api\/config version 0\.19\.3/);
+});
+
+test("verifyPostDeployment fails on UI wrong version", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: async url => {
+      if (String(url).includes("/api/health")) return directorHealth(expectedVersion);
+      if (String(url).includes("/api/config")) return directorConfig("0.19.3");
+      if (String(url).includes("/queue")) return idleQueue();
+      if (String(url).includes("/system_stats")) return comfyStats();
+      return directorIndex();
+    },
+    inspectPortFn: async port => listeningPort(port === 8188 ? 8188 : 8787),
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 8188
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /UI version|\/api\/config/i);
+});
+
+test("local preflight allows older healthy Director predecessor", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const plan = await planLocalDeploymentPreflight({
+    runtimeRoot: repoRoot,
+    configPath,
+    gitRunner: mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" }),
+    ...busyDeps({ directorVersion: "0.19.3" })
+  });
+  assert.equal(plan.ok, true);
+  assert.equal(plan.director.version, "0.19.3");
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
@@ -286,4 +622,14 @@ test("runStart rejects harness root mismatch before spawn", async () => {
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
   await rm(wrongHarness, { recursive: true, force: true });
+});
+
+test("assertComfyUnchangedForDeploy blocks when Comfy disappears", async () => {
+  const config = buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" });
+  await assert.rejects(() => assertComfyUnchangedForDeploy({
+    config,
+    comfyPidBefore: 8188,
+    inspectPortFn: async () => absentPort(),
+    fetchFn: async () => new Response("{}", { status: 503 })
+  }), /unhealthy|cannot start|inspection/i);
 });
