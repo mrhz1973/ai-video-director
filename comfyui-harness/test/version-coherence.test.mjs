@@ -8,13 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const EXPECTED = "0.19.2";
+const EXPECTED = "0.19.3";
 
 function read(rel) {
   return readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("package.json version is 0.19.2", () => {
+test("package.json version is 0.19.3", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.version, EXPECTED);
 });
@@ -46,8 +46,8 @@ test("no stale hard-coded 0.19.0 UI version strings in harness entry surfaces", 
     read("public/app.js"),
     read("server.mjs")
   ].join("\n");
-  // package/UI/API must not advertise the previous Wave 1 release as current
-  assert.doesNotMatch(surfaces, /"version"\s*:\s*"0\.19\.0"/);
-  assert.doesNotMatch(read("package.json"), /0\.19\.0/);
+  // package/UI/API must not advertise the previous Wave 2 release as current
+  assert.doesNotMatch(surfaces, /"version"\s*:\s*"0\.19\.2"/);
+  assert.doesNotMatch(read("package.json"), /0\.19\.2/);
   assert.equal(JSON.parse(read("package.json")).version, EXPECTED);
 });

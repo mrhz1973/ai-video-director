@@ -23,7 +23,9 @@ import {
 import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
 import { applyOperatorHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
+import { populateModelSelect, refreshModelHint } from "./model-select-ui.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
+import { resolveModelSelection, describeModelSelectionBlocker, assertModelSubmissionAllowed } from "/lib/h3-model-registry.mjs";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -802,6 +804,7 @@ async function prepareSingleRenderPayload() {
     const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
     throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
   }
+  assertModelSubmissionAllowed(registryForPreset(preset), $("model").value);
   return buildSingleRenderPayload({
     clientId,
     workflowId: $("workflow").value,
@@ -1272,7 +1275,8 @@ function updateGenerateButton() {
     busy: false,
     submitting: false,
     safeFitStatus: currentSafeFitStatus(),
-    loraBlockedReason: h3LoraSelectionBlockedReason()
+    loraBlockedReason: h3LoraSelectionBlockedReason(),
+    modelBlockedReason: h3ModelSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,
@@ -1796,6 +1800,16 @@ function renderRoleFields() {
   syncScenaFirstFrame();
 }
 
+function registryForPreset(preset) {
+  const presetId = preset?.id || $("workflow")?.value || "";
+  return config?.h3Models?.byPreset?.[presetId] || null;
+}
+
+function h3ModelSelectionBlockedReason() {
+  const blocker = describeModelSelectionBlocker(registryForPreset(currentPreset()), $("model")?.value || "");
+  return blocker.blocked ? blocker.reason : null;
+}
+
 function selectPreset({
   preserveLibrary = true,
   clearProjectSelection = false,
@@ -1806,16 +1820,16 @@ function selectPreset({
   applyMegapixelsContract();
   monitorState = { ...monitorState, title: workflowTitle() };
   renderMonitor();
-  const models = preset?.options?.models || [""];
+  const registry = registryForPreset(preset);
   const currentModel = preferredModel !== undefined ? preferredModel : $("model").value;
-  $("model").replaceChildren(...models.map(name => new Option(name, name)));
-  const restored = restoreModelSelection({
-    availableModels: models,
-    savedModel: currentModel,
-    presetDefault: models[0]
-  });
-  $("model").value = restored.model;
-  if (restored.warning) add(restored.warning);
+  const modelResult = populateModelSelect($("model"), registry, { selected: currentModel });
+  refreshModelHint($("modelHint"), registry, $("model").value);
+  if (modelResult.warning) add(modelResult.warning);
+  if (!modelResult.usable) {
+    setControlHelp($("model"), modelResult.reason || CONTROL_HELP.modelSelect);
+  } else {
+    setControlHelp($("model"), CONTROL_HELP.modelSelect);
+  }
   // Never destroy stored bindings when merely viewing another workflow.
   if (!preserveLibrary) draft.library = emptyLibrary();
   if (clearProjectSelection) {
@@ -1882,12 +1896,21 @@ async function loadProjectById(id) {
     if (!shouldCommitLoadGeneration(myGeneration, projectLoadGeneration)) return;
 
     const preset = currentPreset();
-    const modelResult = restoreModelSelection({
-      availableModels: preset?.options?.models || [],
-      savedModel: normalized.settings?.model,
-      presetDefault: preset?.options?.models?.[0]
-    });
-    if (modelResult.warning) add(modelResult.warning, "system");
+    const registry = registryForPreset(preset);
+    if (registry && normalized.settings?.model) {
+      const modelResult = resolveModelSelection(registry, {
+        savedModel: normalized.settings.model,
+        presetDefault: registry.selectableFilenames?.[0] || preset?.options?.models?.[0]
+      });
+      if (modelResult.warning) add(modelResult.warning, "system");
+    } else {
+      const modelResult = restoreModelSelection({
+        availableModels: preset?.options?.models || [],
+        savedModel: normalized.settings?.model,
+        presetDefault: preset?.options?.models?.[0]
+      });
+      if (modelResult.warning) add(modelResult.warning, "system");
+    }
 
     const batchResult = await restoreProjectBatch(normalized);
     importBatchQueueFromProject(normalized.batchQueue || null);
@@ -2196,7 +2219,12 @@ $("aspect").onchange = () => {
 };
 for (const id of ["prompt", "projectLabel", "model", "steps", "duration", "seed"]) {
   $(id).addEventListener("input", updateDirtyFlag);
-  $(id).addEventListener("change", updateDirtyFlag);
+  $(id).addEventListener("change", () => {
+    updateDirtyFlag();
+    if (id === "model") {
+      refreshModelHint($("modelHint"), registryForPreset(currentPreset()), $("model").value);
+    }
+  });
 }
 
 for (const tab of document.querySelectorAll(".cat-tab")) {
@@ -2375,7 +2403,8 @@ $("send").onclick = async () => {
     busy: false,
     submitting: false,
     safeFitStatus: currentSafeFitStatus(),
-    loraBlockedReason: h3LoraSelectionBlockedReason()
+    loraBlockedReason: h3LoraSelectionBlockedReason(),
+    modelBlockedReason: h3ModelSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,

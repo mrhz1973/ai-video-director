@@ -630,10 +630,14 @@ export function describeGenerateBlockers({
   busy = false,
   submitting = false,
   safeFitStatus = null,
-  loraBlockedReason = null
+  loraBlockedReason = null,
+  modelBlockedReason = null
 } = {}) {
   if (busy || submitting) {
     return { blocked: true, reason: "Generazione in corso", code: "busy" };
+  }
+  if (modelBlockedReason) {
+    return { blocked: true, reason: String(modelBlockedReason), code: "model-unavailable" };
   }
   if (loraBlockedReason) {
     return { blocked: true, reason: String(loraBlockedReason), code: "lora-unavailable" };

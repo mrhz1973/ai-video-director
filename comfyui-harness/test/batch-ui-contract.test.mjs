@@ -21,7 +21,7 @@ test("batch submission always releases the transient lock in finally", () => {
   const start = source.indexOf("async function queueBatch()");
   const end = source.indexOf("\nfunction stateLabel", start);
   const body = source.slice(start, end);
-  assert.match(body, /finally\s*\{[\s\S]*submitting = false;[\s\S]*updateQueueButton\(\);[\s\S]*\}/);
+  assert.match(body, /finally\s*\{[\s\S]*submitting = false;[\s\S]*syncBatchModelGate\(\);[\s\S]*\}/);
 });
 
 test("batch UI documents per-job input overrides and keeps workflow/model/LoRA common", () => {
