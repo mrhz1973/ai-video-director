@@ -22,35 +22,35 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — Controlled Acceptance authorized
+#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — merge gate
 
 ## STATUS
 
-ACCEPTANCE_AUTHORIZED
+MERGE_GATE
 
 ## GATE
 
-Controlled Acceptance is explicitly authorized for PR #98 exact head `7df684192ebc59e8bc226b557118c8d925ba755c` by operator authorization persisted as PR comment `5432231886`. Final source review `5035670154` is PASS; npm 993/993 PASS, validator PASS and exact-current-head CI #517 PASS. Acceptance only is authorized. Merge and deploy remain unauthorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
+PR #98 exact accepted head `7df684192ebc59e8bc226b557118c8d925ba755c` has final source review PASS `5035670154`, npm 993/993 PASS, validator PASS, exact-head CI #517 PASS, and Controlled Acceptance PASS persisted as PR comment `5432335099`. Acceptance confirms explicit stable-runtime validation, exact authorized release-SHA planning independent of newer main, candidate UI + `/api/health` + `/api/config` v0.19.4 PASS, strict external ComfyUI with same PID, queue 0/0, production v0.19.3 restored, stable runtime SHA unchanged and prohibited side effects zero/NO. Merge now requires explicit operator authorization. Deploy remains separately unauthorized.
 
 ## NEXT
 
-Execute Controlled Acceptance v0.19.4 on exact authorized PR head `7df684192ebc59e8bc226b557118c8d925ba755c`. Begin with real read-only/plan-only checks of explicit stable RuntimeRoot, clean detached runtime authority, Desktop target, exact authorized release-SHA planning independent of newer main, strict external ComfyUI, queue-idle and fresh pre-stop fail-closed guards. If a temporary candidate Director/runtime exercise is required, it must be acceptance-scoped and reversible, use exact-PID Director handling only, never start/stop/restart ComfyUI, and restore production v0.19.3 afterward. Persist top-level PR acceptance evidence and stop for merge gate only if PASS.
+Await explicit operator merge authorization for PR #98 exact head `7df684192ebc59e8bc226b557118c8d925ba755c`. Before merge reverify exact head, PR open/mergeable state, source review `5035670154`, acceptance evidence `5432335099`, and exact-head CI #517 PASS. If all still match, merge only. After merge, advance to a separate deploy gate and stop; do not automatically advance the dedicated stable runtime or restart production.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `MERGE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 has final source review PASS after resolving explicit runtime authority, installer fail-closed validation, exact release-SHA deployment planning, strict external-Comfy behavior, complete post-deploy verification and the final fresh pre-stop PID/queue race guard.
+#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 now has final source review PASS and Controlled Acceptance PASS after validating the permanent stable-runtime/launcher/deployment contract without changing production authority.
 
 ## GLOBAL RUNTIME INVARIANTS
 
 - Canonical deployed Harness baseline: **v0.19.3**
 - #97 target release: **v0.19.4**
-- Production release SHA remains `01a4d907655a076c2357dd9690731a2d1ce8c484` until later explicit release gates
+- Production release SHA remains `01a4d907655a076c2357dd9690731a2d1ce8c484` until later explicit deploy authorization
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
