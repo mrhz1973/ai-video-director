@@ -1,16 +1,16 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #73
-TASK: Single Render readiness after terminal - merged deployment
+TASK_REF: #74
+TASK: Asset thumbnails should open a large preview/lightbox
 ROLE: HARNESS_ENGINEERING
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
-BASE_MAIN_SHA: 8cfcba903e2bb1df336ca08fb7e447cd64c8fb11
-WORK_REF: docs/issue-73-deploy-evidence
-COMMIT: c2001aa9c676d9531e95c6efe451c95f327cefc2
-PR: https://github.com/mrhz1973/ai-video-director/pull/83
-VALIDATION: python scripts/validate_project.py; deployment live checks (queue idle; /api/health; served app.js #73; SCENA load; ComfyUI unchanged)
-RUNTIME_TOUCHED: YES
-SUMMARY: PR #82 merged at 8cfcba9. Queue idle (0/0) before deploy. Director restart YES. ComfyUI restart NO (same process). /api/health PASS (ai-video-director-harness / 0.19.0). Merged #73 frontend served PASS (running Director /app.js contains reconcileQueueAfterTerminal). SCENA loaded PASS. Generation 0. Queue mutation NO.
-NEXT_RELEVANCE: Issue #73 implementation, tests, review, live acceptance, merge and deployment complete. Orchestrator should reconcile Workboard #75 / CURRENT_FRONTIER and choose the next Harness lane according to canonical backlog authority.
+BASE_MAIN_SHA: 37c932cdb3d3a817ec8061fbc642e675e2c1ff56
+WORK_REF: fix/issue-74-asset-lightbox
+COMMIT: 10e1be3
+PR: https://github.com/mrhz1973/ai-video-director/pull/84
+VALIDATION: node --test test/asset-lightbox.test.mjs (9 pass); npm test (850 pass / 0 fail); python scripts/validate_project.py (PASS)
+RUNTIME_TOUCHED: NO
+SUMMARY: Reusable asset lightbox for image thumbs (library character/element/location/prop, first/last role preview, SCENA/BATCH first-frame). Uses existing /api/view URLs; Escape/close/backdrop dismiss; no selection/assignment/dirty/upload/queue/generation side effects. Isolated branch from activation main; PR #84 opened; runtime untouched.
+NEXT_RELEVANCE: Orchestrator review of #74 PR. Canonical runtime untouched. Controlled UI/live acceptance, merge and deploy remain separate gates.
