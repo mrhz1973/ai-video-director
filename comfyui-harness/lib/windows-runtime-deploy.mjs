@@ -349,6 +349,105 @@ export async function assertComfyUnchangedForDeploy({
   return { pid, healthy: true };
 }
 
+export async function assertFreshPreStopSafety({
+  config = DEFAULT_CONFIG,
+  directorPidPreflight = null,
+  comfyPidPreflight = null,
+  inspectPortFn = inspectPort,
+  fetchFn = fetch
+} = {}) {
+  const directorUrl = serviceBaseUrl(config, SERVICE.DIRECTOR);
+  const comfyUrl = serviceBaseUrl(config, SERVICE.COMFY);
+
+  const comfyPortState = await inspectPortFn(config.comfyPort, { inspectPortFn });
+  const comfyHealth = await probeComfyHealth(comfyUrl, { fetchFn });
+  const comfyDecision = decideServiceAction({
+    portState: comfyPortState,
+    healthy: Boolean(comfyHealth?.healthy),
+    service: SERVICE.COMFY
+  });
+  if (comfyPortState.inspectionOk === false) {
+    const error = new Error(`ComfyUI port inspection failed on ${config.comfyPort}`);
+    error.code = RUNTIME_BLOCK.PORT_AMBIGUOUS;
+    throw error;
+  }
+  if (!comfyHealth?.healthy) {
+    const error = new Error("ComfyUI is not healthy at pre-stop safety snapshot");
+    throw error;
+  }
+  if (comfyDecision.action !== ACTION.REUSE) {
+    const error = new Error("ComfyUI must remain in REUSE state at pre-stop safety snapshot");
+    throw error;
+  }
+  const comfyPid = comfyPortState.processInfo?.pid ?? null;
+  if (comfyPidPreflight != null && comfyPid !== comfyPidPreflight) {
+    const error = new Error(`ComfyUI PID changed from ${comfyPidPreflight} to ${comfyPid ?? "absent"}`);
+    throw error;
+  }
+
+  const queueResp = await fetchFn(`${comfyUrl.replace(/\/$/, "")}/queue`);
+  if (!queueResp.ok) {
+    const error = new Error(`ComfyUI queue probe failed (${queueResp.status}) at pre-stop safety snapshot`);
+    throw error;
+  }
+  const queue = await queueResp.json();
+  assertQueueIdle({
+    running: queue.queue_running?.length || 0,
+    pending: queue.queue_pending?.length || 0
+  });
+
+  const directorPortState = await inspectPortFn(config.directorPort, { inspectPortFn });
+  const directorHealth = await probeDirectorHealth(directorUrl, "", { fetchFn });
+  const directorDecision = decideServiceAction({
+    portState: directorPortState,
+    healthy: Boolean(directorHealth?.healthy),
+    service: SERVICE.DIRECTOR
+  });
+
+  if (directorPortState.inspectionOk === false) {
+    const error = new Error(`Director port inspection failed on ${config.directorPort}`);
+    error.code = RUNTIME_BLOCK.PORT_AMBIGUOUS;
+    throw error;
+  }
+
+  const directorPid = directorPortState.processInfo?.pid ?? null;
+
+  if (directorPidPreflight != null) {
+    if (!directorPortState.listening || directorPid == null) {
+      const error = new Error(`Director disappeared after preflight (expected PID ${directorPidPreflight})`);
+      throw error;
+    }
+    if (directorPid !== directorPidPreflight) {
+      const error = new Error(`Director PID changed from ${directorPidPreflight} to ${directorPid}`);
+      throw error;
+    }
+    if (directorDecision.action === ACTION.FAIL) {
+      const error = new Error(directorDecision.message);
+      throw error;
+    }
+    if (directorDecision.action !== ACTION.REUSE) {
+      const error = new Error("Director must remain the verified preflight process at pre-stop safety snapshot");
+      throw error;
+    }
+    if (!directorHealth?.healthy) {
+      const error = new Error("Director service identity verification failed at pre-stop safety snapshot");
+      throw error;
+    }
+  } else if (directorPortState.listening || directorDecision.action === ACTION.FAIL || directorDecision.action === ACTION.REUSE) {
+    const error = new Error("Unexpected Director process appeared after preflight");
+    throw error;
+  }
+
+  return {
+    directorPid: directorPidPreflight != null ? directorPid : null,
+    comfyPid,
+    queue: {
+      running: queue.queue_running?.length || 0,
+      pending: queue.queue_pending?.length || 0
+    }
+  };
+}
+
 export async function advanceRuntimeCheckout({
   runtimeRoot = "",
   releaseSha = "",
@@ -448,6 +547,16 @@ export async function verifyPostDeployment({
   if (!git.clean) errors.push("runtime working tree dirty after deployment");
   if (!git.detached) errors.push("runtime checkout not detached after deployment");
   if (packageVersion !== expectedVersion) errors.push(`package version ${packageVersion} != ${expectedVersion}`);
+  if (directorPortState.inspectionOk === false) {
+    errors.push(`Director port inspection failed on ${config.directorPort}`);
+  }
+  if (directorHealth.healthy && directorPortState.inspectionOk !== false) {
+    if (!directorPortState.listening) {
+      errors.push("Director health probe succeeded but port is not listening");
+    } else if (!directorPortState.processInfo?.pid) {
+      errors.push("Director port inspection did not yield a concrete PID");
+    }
+  }
   if (!directorHealth.healthy) errors.push("Director health verification failed");
   if (!configVersion.ok) {
     errors.push(
@@ -576,20 +685,21 @@ export async function runRuntimeDeployment({
   let startResult = null;
 
   if (preflight.idempotent.restartDirector) {
-    if (directorPidBefore && stopProcessFn) {
-      await stopProcessFn(directorPidBefore);
+    const fresh = await assertFreshPreStopSafety({
+      config,
+      directorPidPreflight: directorPidBefore,
+      comfyPidPreflight: comfyPidBefore,
+      inspectPortFn,
+      fetchFn
+    });
+
+    if (fresh.directorPid && stopProcessFn) {
+      await stopProcessFn(fresh.directorPid);
       if (deps.sleepFn) await deps.sleepFn(500);
       else await new Promise(resolve => setTimeout(resolve, 500));
     } else if (directorPidBefore && !stopProcessFn) {
       throw new Error("Director restart required but stopProcessFn was not provided");
     }
-
-    await assertComfyUnchangedForDeploy({
-      config,
-      comfyPidBefore,
-      inspectPortFn,
-      fetchFn
-    });
 
     startResult = await runDeployDirector({
       harnessRoot,

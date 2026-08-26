@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   advanceRuntimeCheckout,
   assertComfyUnchangedForDeploy,
+  assertFreshPreStopSafety,
   fetchAndVerifyReleaseAuthority,
   planDeploymentPreflight,
   planLocalDeploymentPreflight,
@@ -134,6 +135,47 @@ function shortcutReader(runtimeRoot = repoRoot) {
   });
 }
 
+function restartGitState(overrides = {}) {
+  return {
+    headSha: "release-sha",
+    branch: "HEAD",
+    porcelain: "",
+    releaseVersion: expectedVersion,
+    releaseSha: "release-sha",
+    knownObjects: new Set(["release-sha"]),
+    ...overrides
+  };
+}
+
+async function runRestartDeployment({
+  gitState = restartGitState(),
+  inspectPortFn,
+  fetchFn = deployFetch("0.19.3"),
+  stopProcessFn = async () => {},
+  deps = {},
+  configPath,
+  readShortcutFn = shortcutReader()
+} = {}) {
+  const gitRunner = mockGit(gitState);
+  return runRuntimeDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "release-sha",
+    expectedVersion,
+    configPath,
+    gitRunner,
+    stopProcessFn,
+    fetchFn,
+    inspectPortFn,
+    readShortcutFn,
+    deps: {
+      spawnFn: () => {},
+      sleepFn: async () => {},
+      log: () => {},
+      ...deps
+    }
+  });
+}
+
 test("J deployment restart uses exact PID stop hook only", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
@@ -178,7 +220,10 @@ test("J deployment restart uses exact PID stop hook only", async () => {
     inspectPortFn,
     readShortcutFn: shortcutReader(),
     deps: {
-      spawnFn: cmd => spawns.push(cmd),
+      spawnFn: cmd => {
+        spawns.push(cmd);
+        directorListening = true;
+      },
       sleepFn: async () => {},
       log: () => {}
     }
@@ -187,6 +232,7 @@ test("J deployment restart uses exact PID stop hook only", async () => {
   assert.equal(result.directorRestarted, true);
   assert.equal(spawns.length, 1);
   assert.equal(result.startResult.spawns.comfy, 0);
+  assert.equal(result.ok, true);
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
@@ -456,44 +502,175 @@ test("unexpected Director owner blocks preflight before stopProcessFn", async ()
 test("ComfyUI absent between preflight and restart blocks deployment with spawn 0", async () => {
   const comfyRoot = await makeFakeComfyRoot();
   const { configPath, dir } = await makeTempConfig(comfyRoot);
-  const gitState = {
-    headSha: "old",
-    branch: "HEAD",
-    porcelain: "",
-    releaseVersion: expectedVersion,
-    releaseSha: "release-sha",
-    knownObjects: new Set(["release-sha"])
-  };
-  const gitRunner = mockGit(gitState);
   const spawns = [];
-  let comfyPresent = true;
+  const stopped = [];
+  let comfyInspects = 0;
   const inspectPortFn = async port => {
-    if (port === 8188) return comfyPresent ? listeningPort(8188) : absentPort();
+    if (port === 8188) {
+      comfyInspects += 1;
+      if (comfyInspects === 1) return listeningPort(8188);
+      return absentPort();
+    }
     return listeningPort(9001);
   };
-  await assert.rejects(() => runRuntimeDeployment({
-    runtimeRoot: repoRoot,
-    releaseSha: "release-sha",
-    expectedVersion,
+  await assert.rejects(() => runRestartDeployment({
     configPath,
-    gitRunner,
-    stopProcessFn: async () => {},
-    fetchFn: async url => {
-      if (!comfyPresent && String(url).includes("/system_stats")) {
-        return new Response("{}", { status: 503 });
-      }
-      return deployFetch()(url);
-    },
     inspectPortFn,
-    deps: {
-      spawnFn: cmd => spawns.push(cmd),
-      sleepFn: async () => {
-        comfyPresent = false;
-      },
-      log: () => {}
-    }
-  }), /ComfyUI|unhealthy|cannot start/i);
+    stopProcessFn: async pid => { stopped.push(pid); },
+    deps: { spawnFn: cmd => spawns.push(cmd) }
+  }), /ComfyUI|unhealthy|pre-stop/i);
   assert.equal(spawns.length, 0);
+  assert.equal(stopped.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("A fresh pre-stop Director PID change blocks before stopProcessFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  let directorInspects = 0;
+  const inspectPortFn = async port => {
+    if (port === 8188) return listeningPort(8188);
+    directorInspects += 1;
+    return listeningPort(directorInspects === 1 ? 9001 : 9002);
+  };
+  await assert.rejects(() => runRestartDeployment({
+    configPath,
+    inspectPortFn,
+    stopProcessFn: async pid => { stopped.push(pid); }
+  }), /Director PID changed/i);
+  assert.equal(stopped.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("B fresh pre-stop Director disappearance blocks before stopProcessFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  let directorInspects = 0;
+  const inspectPortFn = async port => {
+    if (port === 8188) return listeningPort(8188);
+    directorInspects += 1;
+    if (directorInspects === 1) return listeningPort(9001);
+    return absentPort();
+  };
+  await assert.rejects(() => runRestartDeployment({
+    configPath,
+    inspectPortFn,
+    stopProcessFn: async pid => { stopped.push(pid); }
+  }), /Director disappeared/i);
+  assert.equal(stopped.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("C fresh pre-stop Comfy PID change blocks before stopProcessFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  const spawns = [];
+  let comfyInspects = 0;
+  const inspectPortFn = async port => {
+    if (port === 8188) {
+      comfyInspects += 1;
+      return listeningPort(comfyInspects === 1 ? 8188 : 8199);
+    }
+    return listeningPort(9001);
+  };
+  await assert.rejects(() => runRestartDeployment({
+    configPath,
+    inspectPortFn,
+    stopProcessFn: async pid => { stopped.push(pid); },
+    deps: { spawnFn: cmd => spawns.push(cmd) }
+  }), /ComfyUI PID changed/i);
+  assert.equal(stopped.length, 0);
+  assert.equal(spawns.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("E fresh pre-stop queue busy blocks before stopProcessFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  let queueFetches = 0;
+  const fetchFn = async url => {
+    if (String(url).includes("/queue")) {
+      queueFetches += 1;
+      if (queueFetches === 1) return idleQueue();
+      return new Response(JSON.stringify({ queue_running: [{}], queue_pending: [] }), { status: 200 });
+    }
+    return deployFetch("0.19.3")(url);
+  };
+  await assert.rejects(() => runRestartDeployment({
+    configPath,
+    fetchFn,
+    inspectPortFn: busyDeps({ directorPid: 9001, comfyPid: 8188, directorVersion: "0.19.3" }).inspectPortFn,
+    stopProcessFn: async pid => { stopped.push(pid); }
+  }), /not idle|pre-stop/i);
+  assert.equal(stopped.length, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("F verifyPostDeployment fails when Director port inspection is ambiguous", async () => {
+  const gitRunner = mockGit({ headSha: "sha", branch: "HEAD", porcelain: "" });
+  const post = await verifyPostDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "sha",
+    expectedVersion,
+    gitRunner,
+    fetchFn: deployFetch(),
+    inspectPortFn: async port => {
+      if (port === 8188) return listeningPort(8188);
+      return { listening: true, inspectionOk: false, processInfo: null };
+    },
+    config: buildLauncherConfigPayload({ runtimeRoot: repoRoot, comfyRoot: "C:/fake" }),
+    comfyPidBefore: 8188
+  });
+  assert.equal(post.ok, false);
+  assert.match(post.errors.join(" "), /port inspection failed/i);
+});
+
+test("G normal unchanged Director and Comfy PIDs allow exact single stop", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  const spawns = [];
+  let directorListening = true;
+  let directorVersion = "0.19.3";
+  const fetchFn = async url => {
+    if (String(url).includes("/system_stats")) return comfyStats();
+    if (String(url).includes("/api/health")) return directorHealth(directorVersion);
+    if (String(url).includes("/api/config")) return directorConfig(expectedVersion);
+    if (String(url).endsWith("/8787/") || String(url).match(/8787\/?$/)) return directorIndex();
+    if (String(url).includes("/queue")) return idleQueue();
+    return new Response("{}", { status: 404 });
+  };
+  const inspectPortFn = async port => {
+    if (port === 8787 && !directorListening) return absentPort();
+    if (port === 8188) return listeningPort(8188);
+    return listeningPort(9001);
+  };
+  const result = await runRestartDeployment({
+    configPath,
+    fetchFn,
+    inspectPortFn,
+    stopProcessFn: async pid => {
+      stopped.push(pid);
+      directorListening = false;
+      directorVersion = expectedVersion;
+    },
+    deps: { spawnFn: cmd => {
+      spawns.push(cmd);
+      directorListening = true;
+    } }
+  });
+  assert.deepEqual(stopped, [9001]);
+  assert.equal(spawns.length, 1);
+  assert.equal(result.ok, true);
   await rm(dir, { recursive: true, force: true });
   await rm(comfyRoot, { recursive: true, force: true });
 });
