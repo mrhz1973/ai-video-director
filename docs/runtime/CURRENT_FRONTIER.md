@@ -22,29 +22,29 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.0 Wave 1 — merge/deploy gate
+HARNESS_ENGINEERING idle after #88 Wave 1 completion
 
 ## STATUS
 
-WAITING
+IDLE
 
 ## GATE
 
-Explicit operator authorization to merge PR #90 and deploy the merged Wave 1 Harness. Deploy requires idle queue preflight, no generation, and no ComfyUI restart. Wave 2/3 are not active.
+Explicit activation before starting Wave 2 or another Harness issue. Generation remains separately gated by the project generation authorization contract.
 
 ## NEXT
 
-If authorized: re-check current main and PR #90 mergeability/CI, merge PR #90, deploy canonical merged main with Director restart only as required, preserve ComfyUI process, verify health/UI/queue, and persist deployment evidence. Otherwise remain waiting.
+Await explicit operator/orchestrator activation of Wave 2 or another Harness issue. Wave 2/3 remain approved roadmap but inactive. #89 autonomous specialist intake remains a separate reusable-framework follow-up and is not auto-promoted by #88 completion.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #88 and waiting for merge/deploy authorization. Wave 2/3 remain operator-approved roadmap but inactive.
+HARNESS_ENGINEERING is idle. Other specialist lanes are governed independently by the Workboard and scoped production authority.
 
 ## VERIFIED THROUGH
 
-#88 Wave 1 implementation and automated validation PASS on PR #90: npm test 878/878, validator PASS, CI green, orchestrator code review PASS. Controlled UI acceptance also PASS on the exact reviewed code head: Inspector collapse/restore, compact GPU disclosure without power mutation, SCENA workflow strip behavior, Batch terminology, CODA empty terminal clarity, and sampled global tooltip behavior passed; unavailable live states retained automated coverage. Acceptance used generation 0, upload 0, POST /prompt 0, POST /api/queue 0, queue mutation NO, GPU mutation NO, project persistent mutation NO; ComfyUI PID remained unchanged and canonical Director was restored afterward.
+#88 UI/UX v0.19.0 Wave 1 complete end-to-end. PR #90 merged at `ca101ee025ab1302dc6cb42d6c4630a549acbd7d`; authorized Director-only deployment PASS. Final deployment evidence persisted via PR #91 and merged to main. Deployment evidence records queue preflight 0/0, Director restart YES (exact PID only), ComfyUI restart NO / same PID YES, `/api/health` PASS, `/api/config` PASS, Wave 1 smoke PASS, generation 0, upload 0, POST `/prompt` 0, POST `/api/queue` 0, queue mutation NO, GPU mutation NO.
 
 ## GLOBAL RUNTIME INVARIANTS
 
