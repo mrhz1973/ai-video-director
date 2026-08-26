@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 0e836f2acb85c8c073c95a39784444cb16399f56
 WORK_REF: feat/issue-88-uiux-wave1
-COMMIT: pending
+COMMIT: 2deb5c35cb3c69f800562b6a5b8d1cdfa2f2e30d
 PR: https://github.com/mrhz1973/ai-video-director/pull/90
 VALIDATION: controlled UI acceptance + npm test 878/878 already PASS + validator PASS
 RUNTIME_TOUCHED: YES
