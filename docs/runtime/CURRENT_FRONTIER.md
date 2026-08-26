@@ -22,34 +22,34 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.2 Wave 2 — merge/deploy execution
+HARNESS_ENGINEERING idle after UI/UX v0.19.2 Wave 2
 
 ## STATUS
 
-AUTHORIZED
+IDLE
 
 ## GATE
 
-Merge + deploy of PR #93 / release `v0.19.2` is explicitly authorized. Before merge, re-check current `main` and PR mergeability and narrowly realign only docs/bookkeeping if required; accepted Wave 2 behavior must not drift. Generation, upload, live queue mutation, GPU power change, ComfyUI stop/start/restart, Wave 3 and unrelated fixes remain unauthorized.
+Explicit activation is required before starting another Harness lane. Generation remains separately gated by the project generation authorization phrase. ComfyUI lifecycle remains external to the Director. Wave 3 remains inactive until explicitly activated.
 
 ## NEXT
 
-Execute authorized merge + deploy: use current `main` as authority; if PR #93 is non-mergeable solely because `main` advanced with docs/bookkeeping, realign narrowly; rerun full tests + validator + CI; require accepted v0.19.2 code unchanged; merge PR #93; deploy merged main with Director-only exact-PID restart; verify UI `/api/health` `/api/config` all report `0.19.2` and representative Wave 2 smoke passes; preserve ComfyUI PID and final queue 0/0; persist deployment evidence. Do not generate.
+Await explicit operator/orchestrator activation of another Harness issue/lane. Do not auto-promote Wave 3, #89, older Harness backlog, or creative production work.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #92 with merge + deploy authorized. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up.
+HARNESS_ENGINEERING is IDLE. Wave 3 remains operator-approved roadmap but inactive. #89 remains a separate reusable-framework follow-up. Creative lanes remain governed by their own explicit activation gates.
 
 ## VERIFIED THROUGH
 
-#88 UI/UX Wave 1 complete end-to-end and deployed. #92 PR #93 exact reviewed implementation head `e8f169177ecb8e1be55a4c56092296ab3057d99c` passed source review `5033127331`, npm test 898/898, validator, exact-head CI, and controlled UI acceptance. Acceptance evidence is persisted on PR #93 and branch report tip `71bd9e7aba9dde26532097d820496866cac59b7f`; commits after the tested implementation head are acceptance/report bookkeeping only, and exact-tip CI run 460 passed. Canonical Director was restored to main `922b9e8b2f9b3222d5466f1845fdd274c92771ad` at v0.19.0; ComfyUI same PID; final queue 0/0; generation/upload/queue/GPU/project persistent mutation all zero/NO. Operator subsequently authorized merge + deploy for #92.
+#88 UI/UX Wave 1 complete end-to-end and deployed. #92 UI/UX Wave 2 `v0.19.2` complete end-to-end: PR #93 merged at `79c73c0e6f8c2a491a2903b850ff5f6142a7aa16`; authorized Director-only deployment PASS; final deployment evidence persisted via PR #94 and merged to main at `8a1c9a57a5b0bbf916dbf1730325769f1d4d6d94`. Final evidence reports npm test 898/898 PASS, validator PASS, CI PASS, Wave 2 smoke PASS, UI `/api/health` `/api/config` all `0.19.2`, Director restart exact-PID only, ComfyUI restart NO / same PID YES, queue preflight and final 0/0, generation/upload/queue/GPU/project persistent mutation all zero/NO. Issue #92 is closed completed.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness package before Wave 2: **v0.19.0**
-- Wave 2 target release: **v0.19.2**
+- Canonical deployed Harness package: **v0.19.2**
+- Next functional/UI release must advance beyond **v0.19.2**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - ComfyUI lifecycle is external to the Director
