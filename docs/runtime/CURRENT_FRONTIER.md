@@ -22,7 +22,7 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX v0.19.3 Wave 3 — final source-review correction
+UI/UX v0.19.3 Wave 3 — browser ESM boundary correction after blocked acceptance
 
 ## STATUS
 
@@ -30,29 +30,30 @@ CORRECTIONS_REQUIRED
 
 ## GATE
 
-PR #96 corrected candidate at exact head `3ae8f2e8a099e236cdf43349df07b26d11f4ca8b` resolves the original zero-compatible-model fail-safe blocker and the CSS/cascade consolidation blocker. npm test 935/935 PASS, validator PASS and exact-head CI run #479 PASS with runtime untouched. Latest orchestrator re-review marker `5034486382` found one final UI-state defect: `#batchAddToQueue` remains visually enabled while the authoritative model gate says the Batch is not actionable, even though the deeper click/submission path correctly fails safe. Controlled acceptance, merge and deploy remain unauthorized.
+Controlled UI Acceptance of PR #96 exact head `4c98d27b6acba81d1f18c30eccad473a0ff7d7bf` executed under operator authorization and returned `BLOCKED` (evidence PR comment `5430836683`). Candidate `/api/health` and `/api/config` were 0.19.3, but browser `app.js` did not boot because `/lib/h3-model-registry.mjs` imports `../public/output-naming.mjs`; in browser URL space this becomes `/public/output-naming.mjs`, which the Harness static server does not serve. Source confirmation is recorded in orchestrator review `5034892150`. Acceptance restored the stable Director to v0.19.2; ComfyUI PID remained unchanged; queue finished 0/0; generation/upload/queue/GPU/project mutations remained zero/NO.
 
 ## NEXT
 
-Correct PR #96 on the same branch: apply `currentModelBlocker()` to the primary `+ AGGIUNGI ALLA CODA` disabled/readiness state and disabled help without overriding unrelated eligibility rules; preserve `getCurrentBatchSnapshotForQueue()` as the deeper fail-safe; add regression; rerun full tests + validator + exact-head CI; update `LAST_CURSOR_REPORT`; stop for orchestrator re-review. Do not touch runtime.
+Correct the SAME PR #96/branch without runtime touch: remove the `lib -> public` dependency while preserving model-label behavior and the one-way shared-module boundary (`public -> lib` allowed; shared lib must not depend on UI-public modules). Add deterministic browser-static import-graph coverage that fails on the blocked head and proves every browser-reachable dependency resolves to a served route. Rerun full npm tests, validator, exact-head CI, update LAST_CURSOR_REPORT, then stop for source re-review. A corrected PR head requires fresh Controlled UI Acceptance authorization after source review PASS.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 with one final correction required. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden PR #96. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
+HARNESS_ENGINEERING remains ACTIVE on #95 / PR #96 in correction state after blocked Controlled UI Acceptance. Issue #97 separately tracks the permanent stable-runtime checkout/Windows launcher deployment contract and does not broaden this correction. #89 remains a separate reusable-framework follow-up. Creative production lanes remain inactive unless separately activated.
 
 ## VERIFIED THROUGH
 
-#92 UI/UX Wave 2 is complete end-to-end and deployed as `v0.19.2`. For #95 / PR #96, exact head `3ae8f2e8a099e236cdf43349df07b26d11f4ca8b` has: zero-compatible-model selection/submission fail-safe RESOLVED; CSS/cascade consolidation RESOLVED with measured deduplication evidence; SYSTEM panel decision `NOT_IMPLEMENTED_BY_DESIGN`; legacy reconciliation persisted; npm test 935/935 PASS; validator PASS; exact-head CI #479 PASS; generation/upload/queue/GPU/runtime mutations zero/NO. One final primary Add-to-CODA disabled-state correction remains before controlled acceptance.
+#92 UI/UX Wave 2 remains complete end-to-end and deployed as `v0.19.2`. For #95, source-level Wave 3 requirements had passed through exact head `4c98d27...` with npm 944/944 PASS, validator PASS and CI #488 PASS, but runtime acceptance exposed an untested browser ESM path defect before UI boot. The acceptance safely restored v0.19.2 from the dedicated stable runtime; ComfyUI remained untouched and queue 0/0. No merge/deploy is authorized.
 
 ## GLOBAL RUNTIME INVARIANTS
 
 - Canonical deployed Harness baseline before Wave 3: **v0.19.2**
-- Wave 3 target release: **v0.19.3**
+- Wave 3 target release remains **v0.19.3**; this correction does not bump again because v0.19.3 is unreleased
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
+- Controlled acceptance must restore the deployed stable-runtime Director after temporary candidate serving
 - Eventual deploy advances that stable runtime checkout to the exact authorized merged release SHA before Director restart
 - ComfyUI lifecycle is external to the Director
 - Harness detail: `docs/HARNESS_STATE.md`
