@@ -286,6 +286,12 @@ async function loadPreset(id) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (req.method === "GET" && url.pathname === "/api/health") {
+      return json(res, 200, {
+        service: packageInfo.name,
+        version: packageInfo.version
+      });
+    }
     if (req.method === "GET" && url.pathname === "/api/config") {
       const loraAvailability = await readComfyLoraAvailability();
       return json(res, 200, {
