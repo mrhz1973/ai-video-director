@@ -2,7 +2,11 @@
  * Issue #88 — explicit operator help text for visible controls.
  * Do not invent help from labels alone.
  */
-import { setControlHelp, wrapDisabledHelpForControl } from "./tooltip.mjs";
+import {
+  setControlHelp,
+  syncControlDisabledHelpState,
+  observeControlDisabledHelp
+} from "./tooltip.mjs";
 
 export const CONTROL_HELP = Object.freeze({
   projectNew: "Crea un nuovo progetto. Il progetto corrente non viene eliminato.",
@@ -100,12 +104,30 @@ export const CONTROL_HELP = Object.freeze({
 export function applyOperatorHelp(el, text, { disabledReason = "", documentRef = null } = {}) {
   if (!el) return el;
   setControlHelp(el, text, { whenDisabled: disabledReason });
-  if (el.disabled && disabledReason) {
-    const doc = documentRef
-      || (typeof document !== "undefined" ? document : null);
-    wrapDisabledHelpForControl(doc, el, disabledReason);
+  const doc = documentRef
+    || (typeof document !== "undefined" ? document : null);
+  syncControlDisabledHelpState(el, {
+    enabledHelp: text,
+    disabledReason,
+    documentRef: doc
+  });
+  if (disabledReason) {
+    observeControlDisabledHelp(el, {
+      enabledHelp: text,
+      disabledReason,
+      documentRef: doc
+    });
   }
   return el;
+}
+
+/** Explicit sync for callers that flip disabled without relying on MutationObserver. */
+export function syncOperatorHelpState(el, {
+  enabledHelp = "",
+  disabledReason = "",
+  documentRef = null
+} = {}) {
+  return syncControlDisabledHelpState(el, { enabledHelp, disabledReason, documentRef });
 }
 
 export function applyStaticControlHelp(documentRef = typeof document !== "undefined" ? document : null) {

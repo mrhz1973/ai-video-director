@@ -244,17 +244,21 @@ export function createTooltipController({
 /**
  * Idempotent disabled-help wrapper: reuse existing [data-help-wrap="1"] parent
  * instead of nesting another focusable stop.
+ * Preserves the control's normal (enabled) data-help text.
  */
 export function wrapDisabledHelpForControl(documentRef, control, helpText) {
   if (!control || !helpText) return control;
   const help = String(helpText || "").trim();
   if (!help) return control;
 
+  const rawHelp = String(control.getAttribute?.(HELP_ATTR) || "").trim();
+  const enabledHelp = rawHelp && rawHelp !== help ? rawHelp : "";
+
   const parent = control.parentNode;
   if (parent?.getAttribute?.("data-help-wrap") === "1") {
     setControlHelp(parent, help);
     if (parent.tabIndex == null || Number(parent.tabIndex) < 0) parent.tabIndex = 0;
-    setControlHelp(control, help, { whenDisabled: help });
+    setControlHelp(control, enabledHelp, { whenDisabled: help });
     return parent;
   }
 
@@ -264,22 +268,22 @@ export function wrapDisabledHelpForControl(documentRef, control, helpText) {
   if (ancestor) {
     setControlHelp(ancestor, help);
     if (ancestor.tabIndex == null || Number(ancestor.tabIndex) < 0) ancestor.tabIndex = 0;
-    setControlHelp(control, help, { whenDisabled: help });
+    setControlHelp(control, enabledHelp, { whenDisabled: help });
     return ancestor;
   }
 
   if (!parent) {
-    setControlHelp(control, help, { whenDisabled: help });
+    setControlHelp(control, enabledHelp, { whenDisabled: help });
     return control;
   }
 
   if (!documentRef?.createElement) {
-    setControlHelp(control, help, { whenDisabled: help });
+    setControlHelp(control, enabledHelp, { whenDisabled: help });
     return control;
   }
 
   if (typeof parent.insertBefore !== "function") {
-    setControlHelp(control, help, { whenDisabled: help });
+    setControlHelp(control, enabledHelp, { whenDisabled: help });
     return control;
   }
 
@@ -291,8 +295,116 @@ export function wrapDisabledHelpForControl(documentRef, control, helpText) {
   parent.insertBefore(wrap, control);
   if (typeof wrap.append === "function") wrap.append(control);
   else if (typeof wrap.appendChild === "function") wrap.appendChild(control);
-  setControlHelp(control, help, { whenDisabled: help });
+  setControlHelp(control, enabledHelp, { whenDisabled: help });
   return wrap;
+}
+
+/**
+ * Remove a disabled-help wrapper so the enabled control is the only focus stop.
+ */
+export function unwrapDisabledHelpForControl(control) {
+  if (!control) return control;
+  const parent = control.parentNode;
+  const wrap = parent?.getAttribute?.("data-help-wrap") === "1" ? parent : null;
+  if (!wrap) return control;
+  const host = wrap.parentNode;
+  if (!host) return control;
+
+  if (typeof host.insertBefore === "function") {
+    host.insertBefore(control, wrap);
+  }
+
+  if (typeof wrap.remove === "function") {
+    wrap.remove();
+  } else if (typeof host.removeChild === "function") {
+    host.removeChild(wrap);
+  } else if (Array.isArray(host.children)) {
+    const idx = host.children.indexOf(wrap);
+    if (idx >= 0) host.children.splice(idx, 1);
+    wrap.parentNode = null;
+  }
+  return control;
+}
+
+/**
+ * Synchronize disabled-help wrapping with the control's current disabled state.
+ * disabled -> one focusable wrapper with disabled reason
+ * enabled  -> unwrap (no second tabindex=0); restore normal action help
+ */
+export function syncControlDisabledHelpState(control, {
+  enabledHelp = "",
+  disabledReason = "",
+  documentRef = null
+} = {}) {
+  if (!control) return control;
+  const enabled = String(
+    enabledHelp
+    || control.getAttribute?.(HELP_ATTR)
+    || ""
+  ).trim();
+  const reason = String(
+    disabledReason
+    || control.getAttribute?.(HELP_DISABLED_ATTR)
+    || ""
+  ).trim();
+  const doc = documentRef
+    || (typeof document !== "undefined" ? document : null);
+
+  if (control.disabled) {
+    setControlHelp(control, enabled, { whenDisabled: reason });
+    if (reason) wrapDisabledHelpForControl(doc, control, reason);
+  } else {
+    unwrapDisabledHelpForControl(control);
+    setControlHelp(control, enabled, { whenDisabled: reason });
+    // Ensure any leftover wrapper is inert if unwrap could not remove it.
+    const leftover = control.parentNode?.getAttribute?.("data-help-wrap") === "1"
+      ? control.parentNode
+      : null;
+    if (leftover) {
+      leftover.tabIndex = -1;
+      leftover.removeAttribute?.(HELP_ATTR);
+      leftover.removeAttribute?.(HELP_DISABLED_ATTR);
+      leftover.setAttribute?.("aria-hidden", "true");
+    }
+  }
+  return control;
+}
+
+const observedHelpState = new WeakMap();
+const helpObservers = new WeakMap();
+
+/**
+ * Watch disabled attribute changes and keep help wrapping state-correct.
+ */
+export function observeControlDisabledHelp(control, options = {}) {
+  if (!control) return () => {};
+  const next = {
+    enabledHelp: String(options.enabledHelp || "").trim(),
+    disabledReason: String(options.disabledReason || "").trim(),
+    documentRef: options.documentRef || null
+  };
+  observedHelpState.set(control, next);
+  syncControlDisabledHelpState(control, next);
+
+  if (typeof MutationObserver !== "function") {
+    return () => {};
+  }
+  if (helpObservers.has(control)) return () => {};
+
+  const obs = new MutationObserver(() => {
+    const cfg = observedHelpState.get(control);
+    if (cfg) syncControlDisabledHelpState(control, cfg);
+  });
+  try {
+    obs.observe(control, { attributes: true, attributeFilter: ["disabled"] });
+    helpObservers.set(control, obs);
+  } catch {
+    /* fake DOM / unsupported */
+  }
+  return () => {
+    try { obs.disconnect(); } catch { /* ignore */ }
+    helpObservers.delete(control);
+  };
 }
 
 let shared = null;
