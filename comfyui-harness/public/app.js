@@ -20,6 +20,7 @@ import {
   applyScenaFirstFrameView,
   resolveEffectiveFirstFrame
 } from "./first-frame-view.mjs";
+import { getSharedAssetLightbox } from "./asset-lightbox.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
 import {
   CATEGORIES,
@@ -1430,6 +1431,28 @@ function showAssetFeedback(text) {
   el.textContent = text;
 }
 
+function assetLightbox() {
+  return getSharedAssetLightbox({
+    documentRef: document,
+    onFeedback: message => showAssetFeedback(message)
+  });
+}
+
+function bindImageAssetPreview(img, {
+  src = "",
+  alt = "",
+  label = "",
+  available = true
+} = {}) {
+  if (!img) return;
+  assetLightbox().bindTrigger(img, {
+    src: src || img.src || "",
+    alt,
+    label,
+    available
+  });
+}
+
 function renderLibrary() {
   const host = $("libraryGroups");
   host.replaceChildren();
@@ -1537,6 +1560,12 @@ function renderMemberCard(group, member, index) {
       ph.title = filename;
       img.replaceWith(ph);
     };
+    bindImageAssetPreview(img, {
+      src: img.src,
+      alt: primary,
+      label: filename,
+      available: true
+    });
     card.append(img);
   } else {
     const ph = document.createElement("div");
@@ -1680,6 +1709,12 @@ function renderRoleFields() {
           ph.textContent = "?";
           crop.replaceWith(ph);
         };
+        bindImageAssetPreview(img, {
+          src: img.src,
+          alt: field.label,
+          label: foundForRole?.member?.originalName || filename,
+          available: true
+        });
         const cap = document.createElement("span");
         cap.className = "crop-preview-label";
         cap.textContent = `Crop ${selectedAspectLabel()} · centro`;
@@ -1697,6 +1732,12 @@ function renderRoleFields() {
           ph.textContent = "?";
           img.replaceWith(ph);
         };
+        bindImageAssetPreview(img, {
+          src: img.src,
+          alt: field.label,
+          label: foundForRole?.member?.originalName || filename,
+          available: true
+        });
         preview.append(img);
       }
     }
