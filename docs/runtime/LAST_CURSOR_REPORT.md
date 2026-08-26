@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor  
 BASE_MAIN_SHA: ceb58d36f0e0abb2154ac660cb1f7dd0edb0ca5c  
 WORK_REF: feat/issue-95-uiux-wave3-v0193  
-COMMIT: 0efb650  
+COMMIT: 29b141e  
 PR: https://github.com/mrhz1973/ai-video-director/pull/96  
 VALIDATION: npm test 948/948 PASS; validate_project.py PASS  
 CI: (pending exact-head)  
