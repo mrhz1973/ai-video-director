@@ -8,11 +8,12 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor  
 BASE_MAIN_SHA: 06bbf4832dd3d93ff3d54f3b7cfa3c22dab84397  
 WORK_REF: fix/issue-97-stable-runtime-v0194  
-COMMIT: c93681c  
+COMMIT: c93681c (+ 54d07d7 CI path fix)  
 PR: https://github.com/mrhz1973/ai-video-director/pull/98  
-PR_HEAD: c93681c305ad9c9136c293addacc1323186e3dda  
+PR_HEAD: 54d07d7f50864840875bf69ad51fd8c7570a8170  
+CI: PASS  
 VALIDATION: npm test 972/972 PASS; validate_project.py PASS  
-CI: (pending exact-head)  
+CI: PASS (exact-head validate @ 54d07d7)  
 RUNTIME_TOUCHED: NO  
 
 ## SUMMARY
