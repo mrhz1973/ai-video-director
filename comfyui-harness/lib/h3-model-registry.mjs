@@ -14,6 +14,14 @@ export const MODEL_STATUS = Object.freeze({
   INVALID: "invalid"
 });
 
+export const MODEL_BLOCKER_COPY = Object.freeze({
+  noCompatibleInstalled: "Nessun checkpoint compatibile installato in ComfyUI per questo workflow.",
+  noDeclared: "Nessun checkpoint compatibile dichiarato per questo workflow.",
+  notSelected: "Seleziona un checkpoint compatibile installato.",
+  missing: label => `Checkpoint "${label}" non installato in ComfyUI.`,
+  incompatible: saved => `Modello "${saved}" non compatibile con questo workflow.`
+});
+
 /**
  * Friendly operator label derived from authoritative filename metadata only.
  * @param {string} filename
@@ -100,10 +108,91 @@ export function buildPresetModelRegistry(preset, installedNames = [], { discover
     discoveryOk: Boolean(discoveryOk),
     entries,
     duplicateFilenames: [...duplicateFilenames],
+    compatibleInstalledCount: discoveryOk
+      ? entries.filter(e => e.status === MODEL_STATUS.AVAILABLE).length
+      : null,
     selectableFilenames: entries
       .filter(e => e.status !== MODEL_STATUS.MISSING || !discoveryOk)
       .map(e => e.filename)
   };
+}
+
+/**
+ * @param {{ discoveryOk?: boolean, entries?: object[] }} registry
+ * @returns {number|null}
+ */
+export function countCompatibleInstalled(registry) {
+  if (!registry?.discoveryOk) return null;
+  return (registry.entries || []).filter(e => e.status === MODEL_STATUS.AVAILABLE).length;
+}
+
+/**
+ * Fail-safe gate for render/queue submission paths.
+ * @param {{ discoveryOk?: boolean, entries?: object[] }} registry
+ * @param {string} [selectedModel]
+ */
+export function describeModelSelectionBlocker(registry, selectedModel = "") {
+  const entries = registry?.entries || [];
+  const selected = String(selectedModel || "").trim();
+
+  if (!entries.length) {
+    return { blocked: true, reason: MODEL_BLOCKER_COPY.noDeclared, code: "model-unavailable" };
+  }
+
+  if (!registry?.discoveryOk) {
+    if (selected && !entries.some(e => e.filename === selected)) {
+      return {
+        blocked: true,
+        reason: MODEL_BLOCKER_COPY.incompatible(selected),
+        code: "model-incompatible"
+      };
+    }
+    return { blocked: false, reason: "", code: null };
+  }
+
+  if (countCompatibleInstalled(registry) === 0) {
+    return {
+      blocked: true,
+      reason: MODEL_BLOCKER_COPY.noCompatibleInstalled,
+      code: "model-unavailable"
+    };
+  }
+
+  if (!selected) {
+    return {
+      blocked: true,
+      reason: MODEL_BLOCKER_COPY.notSelected,
+      code: "model-unavailable"
+    };
+  }
+
+  const entry = entries.find(e => e.filename === selected);
+  if (!entry) {
+    return {
+      blocked: true,
+      reason: MODEL_BLOCKER_COPY.incompatible(selected),
+      code: "model-incompatible"
+    };
+  }
+  if (entry.status === MODEL_STATUS.MISSING) {
+    return {
+      blocked: true,
+      reason: MODEL_BLOCKER_COPY.missing(entry.friendlyLabel),
+      code: "model-unavailable"
+    };
+  }
+
+  return { blocked: false, reason: "", code: null };
+}
+
+/** @throws {Error & { code?: string }} */
+export function assertModelSubmissionAllowed(registry, selectedModel = "") {
+  const blocker = describeModelSelectionBlocker(registry, selectedModel);
+  if (blocker.blocked) {
+    const error = new Error(blocker.reason);
+    error.code = blocker.code;
+    throw error;
+  }
 }
 
 /**
@@ -139,12 +228,25 @@ export function resolveModelSelection(registry, { savedModel = "", presetDefault
   const saved = String(savedModel || "").trim();
   const fallback = String(presetDefault || selectable[0] || "").trim();
 
+  if (registry?.discoveryOk && countCompatibleInstalled(registry) === 0) {
+    return {
+      model: "",
+      warning: MODEL_BLOCKER_COPY.noCompatibleInstalled
+    };
+  }
+
   if (saved && selectable.includes(saved)) {
     const entry = entries.find(e => e.filename === saved);
     if (registry?.discoveryOk && entry?.status === MODEL_STATUS.MISSING) {
+      const usable = selectable.find(name => {
+        const row = entries.find(e => e.filename === name);
+        return row?.status !== MODEL_STATUS.MISSING;
+      });
       return {
-        model: fallback,
-        warning: `Il modello salvato "${friendlyModelLabel(saved)}" (${saved}) non risulta installato in ComfyUI. Ripristino: ${friendlyModelLabel(fallback)}.`
+        model: usable || "",
+        warning: usable
+          ? `Il modello salvato "${friendlyModelLabel(saved)}" (${saved}) non risulta installato in ComfyUI. Ripristino: ${friendlyModelLabel(usable)}.`
+          : MODEL_BLOCKER_COPY.noCompatibleInstalled
       };
     }
     return { model: saved, warning: "" };
@@ -153,17 +255,28 @@ export function resolveModelSelection(registry, { savedModel = "", presetDefault
   if (saved && !selectable.includes(saved)) {
     const entry = entries.find(e => e.filename === saved);
     if (entry?.status === MODEL_STATUS.MISSING) {
+      const usable = selectable[0] || "";
       return {
-        model: fallback,
-        warning: `Modello "${friendlyModelLabel(saved)}" non installato. Ripristino: ${friendlyModelLabel(fallback)}.`
+        model: usable,
+        warning: usable
+          ? `Modello "${friendlyModelLabel(saved)}" non installato. Ripristino: ${friendlyModelLabel(usable)}.`
+          : MODEL_BLOCKER_COPY.noCompatibleInstalled
       };
     }
+    const usable = selectable[0] || "";
     return {
-      model: fallback,
+      model: usable,
       warning: saved
-        ? `Modello "${saved}" non compatibile con questo workflow. Ripristino: ${friendlyModelLabel(fallback)}.`
+        ? `Modello "${saved}" non compatibile con questo workflow. Ripristino: ${usable ? friendlyModelLabel(usable) : "nessuno"}.`
         : ""
     };
+  }
+
+  if (registry?.discoveryOk && fallback) {
+    const fb = entries.find(e => e.filename === fallback);
+    if (fb?.status === MODEL_STATUS.MISSING) {
+      return { model: "", warning: MODEL_BLOCKER_COPY.noCompatibleInstalled };
+    }
   }
 
   return { model: fallback, warning: "" };

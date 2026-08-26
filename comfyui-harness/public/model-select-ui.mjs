@@ -1,7 +1,14 @@
 /**
  * Issue #95 — model select with friendly labels + truthful availability hints.
  */
-import { friendlyModelLabel, resolveModelSelection, MODEL_STATUS } from "../lib/h3-model-registry.mjs";
+import {
+  MODEL_BLOCKER_COPY,
+  MODEL_STATUS,
+  countCompatibleInstalled,
+  describeModelSelectionBlocker,
+  friendlyModelLabel,
+  resolveModelSelection
+} from "../lib/h3-model-registry.mjs";
 import { setControlHelp } from "./tooltip.mjs";
 
 function createSelectOption() {
@@ -19,19 +26,35 @@ function createSelectOption() {
   };
 }
 
+function optionList(select) {
+  return Array.from(select.options || []);
+}
+
 /**
  * @param {HTMLSelectElement|null} select
  * @param {{ entries?: object[], discoveryOk?: boolean, selectableFilenames?: string[] }} registry
  * @param {{ selected?: string }} [opts]
  */
 export function populateModelSelect(select, registry, { selected = "" } = {}) {
-  if (!select) return { selected: "", options: [] };
+  if (!select) return { selected: "", options: [], usable: false, blocked: true };
+
   const entries = Array.isArray(registry?.entries) ? registry.entries : [];
   const byFile = new Map(entries.map(e => [e.filename, e]));
   const filenames = entries.map(e => e.filename);
+  const zeroCompatible = registry?.discoveryOk && countCompatibleInstalled(registry) === 0;
 
   select.replaceChildren();
   const options = [];
+
+  if (zeroCompatible) {
+    const placeholder = createSelectOption();
+    placeholder.value = "";
+    placeholder.textContent = "Nessun checkpoint installato";
+    placeholder.disabled = true;
+    setControlHelp(placeholder, MODEL_BLOCKER_COPY.noCompatibleInstalled);
+    select.append(placeholder);
+  }
+
   for (const filename of filenames) {
     const entry = byFile.get(filename) || { filename, friendlyLabel: friendlyModelLabel(filename) };
     const opt = createSelectOption();
@@ -53,13 +76,29 @@ export function populateModelSelect(select, registry, { selected = "" } = {}) {
       || entries.find(e => e.status !== MODEL_STATUS.MISSING)?.filename
       || filenames[0]
   });
-  if (resolved.model && [...select.options].some(o => o.value === resolved.model && !o.disabled)) {
+
+  const enabled = optionList(select).find(o => o.value === resolved.model && !o.disabled);
+  if (enabled) {
     select.value = resolved.model;
-  } else if (select.options.length) {
-    const firstEnabled = [...select.options].find(o => !o.disabled);
-    select.value = firstEnabled?.value || select.options[0].value;
+  } else {
+    select.value = "";
   }
-  return { selected: select.value, options, warning: resolved.warning };
+
+  const blocker = describeModelSelectionBlocker(registry, select.value);
+  select.disabled = Boolean(zeroCompatible);
+  select.classList?.toggle?.("h3-state-unavailable", blocker.blocked);
+  if (blocker.blocked) {
+    setControlHelp(select, blocker.reason, { whenDisabled: blocker.reason });
+  }
+
+  return {
+    selected: select.value,
+    options,
+    warning: resolved.warning || (blocker.blocked ? blocker.reason : ""),
+    usable: !blocker.blocked,
+    blocked: blocker.blocked,
+    reason: blocker.reason || ""
+  };
 }
 
 /**
@@ -70,6 +109,24 @@ export function populateModelSelect(select, registry, { selected = "" } = {}) {
  */
 export function refreshModelHint(hint, registry, selectedFilename) {
   if (!hint) return;
+
+  if (registry?.discoveryOk && countCompatibleInstalled(registry) === 0) {
+    hint.textContent = MODEL_BLOCKER_COPY.noCompatibleInstalled;
+    hint.hidden = false;
+    hint.classList.toggle("h3-state-unavailable", true);
+    hint.classList.toggle("h3-state-success", false);
+    return;
+  }
+
+  const blocker = describeModelSelectionBlocker(registry, selectedFilename);
+  if (blocker.blocked && !selectedFilename) {
+    hint.textContent = blocker.reason;
+    hint.hidden = false;
+    hint.classList.toggle("h3-state-unavailable", true);
+    hint.classList.toggle("h3-state-success", false);
+    return;
+  }
+
   const entry = (registry?.entries || []).find(e => e.filename === selectedFilename);
   if (!entry) {
     hint.textContent = selectedFilename ? `File: ${selectedFilename}` : "";

@@ -8,14 +8,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   H3_UNET_LOADER_CLASS,
+  MODEL_BLOCKER_COPY,
   MODEL_STATUS,
+  assertModelSubmissionAllowed,
   buildAllPresetModelRegistries,
   buildPresetModelRegistry,
+  describeModelSelectionBlocker,
   friendlyModelLabel,
   modelQuantizationHint,
   normalizeRegistryRecord,
   resolveModelSelection
 } from "../lib/h3-model-registry.mjs";
+import { describeGenerateBlockers } from "../lib/projects.mjs";
 import {
   fetchComfyUnetNames,
   readComfyUnetAvailability
@@ -152,6 +156,89 @@ test("fetchComfyUnetNames reads unet_name enum from object_info", async () => {
   assert.deepEqual(names, ["a.gguf", "b.gguf"]);
 });
 
+test("zero compatible installed blocks selection and submission paths", () => {
+  const registry = buildPresetModelRegistry(I2V_PRESET, [], { discoveryOk: true });
+  assert.equal(registry.compatibleInstalledCount, 0);
+
+  const blocker = describeModelSelectionBlocker(registry, I2V_PRESET.options.models[0]);
+  assert.equal(blocker.blocked, true);
+  assert.match(blocker.reason, /Nessun checkpoint compatibile installato/i);
+
+  const resolved = resolveModelSelection(registry, {
+    savedModel: I2V_PRESET.options.models[0],
+    presetDefault: I2V_PRESET.options.models[0]
+  });
+  assert.equal(resolved.model, "");
+
+  const select = {
+    options: [],
+    value: "stale",
+    disabled: false,
+    classList: { toggle() {} },
+    replaceChildren() { this.options = []; },
+    append(node) { this.options.push(node); }
+  };
+  const ui = populateModelSelect(select, registry, { selected: I2V_PRESET.options.models[0] });
+  assert.equal(ui.selected, "");
+  assert.equal(ui.usable, false);
+  assert.equal(select.value, "");
+  assert.equal(select.disabled, true);
+
+  assert.throws(
+    () => assertModelSubmissionAllowed(registry, I2V_PRESET.options.models[0]),
+    /Nessun checkpoint compatibile installato/
+  );
+
+  const gate = describeGenerateBlockers({
+    prompt: "test prompt",
+    modelBlockedReason: blocker.reason
+  });
+  assert.equal(gate.blocked, true);
+  assert.equal(gate.code, "model-unavailable");
+});
+
+test("installed but incompatible checkpoint is blocked at submission", () => {
+  const registry = buildPresetModelRegistry(I2V_PRESET, [
+    "foreign-only.gguf",
+    ...I2V_PRESET.options.models
+  ], { discoveryOk: true });
+  const blocker = describeModelSelectionBlocker(registry, "foreign-only.gguf");
+  assert.equal(blocker.blocked, true);
+  assert.match(blocker.reason, /non compatibile/i);
+  assert.throws(() => assertModelSubmissionAllowed(registry, "foreign-only.gguf"), /non compatibile/i);
+});
+
+test("friendly-label collision keeps distinct filenames in registry", () => {
+  const preset = {
+    id: "collision",
+    options: {
+      models: [
+        "minimax_h3_fl2va_pruned_fp8_Q4_0.gguf",
+        "minimax-h3-ref2va-Q4_0.gguf"
+      ]
+    }
+  };
+  const registry = buildPresetModelRegistry(preset, preset.options.models, { discoveryOk: true });
+  const labels = registry.entries.map(e => e.friendlyLabel);
+  assert.equal(labels.filter(l => l.includes("Q4")).length, 2);
+  assert.notEqual(registry.entries[0].filename, registry.entries[1].filename);
+});
+
+test("single render submission gate rejects empty model when none compatible", () => {
+  const registry = buildPresetModelRegistry(I2V_PRESET, [], { discoveryOk: true });
+  assert.throws(
+    () => assertModelSubmissionAllowed(registry, ""),
+    /Seleziona un checkpoint|Nessun checkpoint compatibile installato/
+  );
+});
+
+test("batch source snapshot contract blocks when model gate fails", () => {
+  const registry = buildPresetModelRegistry(I2V_PRESET, [], { discoveryOk: true });
+  const blocker = describeModelSelectionBlocker(registry, "");
+  assert.equal(blocker.blocked, true);
+  assert.match(blocker.reason, /Nessun checkpoint compatibile installato|Seleziona un checkpoint/);
+});
+
 test("populateModelSelect disables missing options and keeps friendly labels", () => {
   const select = {
     options: [],
@@ -171,6 +258,21 @@ test("populateModelSelect disables missing options and keeps friendly labels", (
   assert.equal(result.selected, "minimax_h3_fl2va_pruned_fp8_Q4_0.gguf");
 });
 
+test("populateModelSelect never selects disabled missing checkpoint when all missing", () => {
+  const registry = buildPresetModelRegistry(I2V_PRESET, [], { discoveryOk: true });
+  const select = {
+    options: [],
+    value: I2V_PRESET.options.models[0],
+    disabled: false,
+    classList: { toggle() {} },
+    replaceChildren() { this.options = []; },
+    append(node) { this.options.push(node); }
+  };
+  const result = populateModelSelect(select, registry, { selected: I2V_PRESET.options.models[0] });
+  assert.equal(result.selected, "");
+  assert.ok(select.options.every(o => !o.value || o.disabled));
+});
+
 test("refreshModelHint surfaces filename as secondary detail", () => {
   const hint = { textContent: "", hidden: true, classList: { toggle() {} } };
   const registry = buildPresetModelRegistry(I2V_PRESET, I2V_PRESET.options.models, { discoveryOk: true });
@@ -178,6 +280,26 @@ test("refreshModelHint surfaces filename as secondary detail", () => {
   assert.match(hint.textContent, /H3 Q8CR/);
   assert.match(hint.textContent, /minimax_h3_fl2va_pruned_fp8_Q8_CR\.gguf/);
   assert.equal(hint.hidden, false);
+});
+
+test("refreshModelHint shows unavailable copy when zero compatible installed", () => {
+  const hint = { textContent: "", hidden: true, classList: { toggle() {} } };
+  const registry = buildPresetModelRegistry(I2V_PRESET, [], { discoveryOk: true });
+  refreshModelHint(hint, registry, "");
+  assert.equal(hint.textContent, MODEL_BLOCKER_COPY.noCompatibleInstalled);
+});
+
+test("batch-ui imports model gate for prepare/queue blocking", () => {
+  const batchUi = readFileSync(path.join(ROOT, "public/batch-ui.mjs"), "utf8");
+  assert.match(batchUi, /describeModelSelectionBlocker/);
+  assert.match(batchUi, /currentModelBlocker/);
+  assert.match(batchUi, /syncBatchModelGate/);
+});
+
+test("app.js wires modelBlockedReason into generate gate", () => {
+  const app = readFileSync(path.join(ROOT, "public/app.js"), "utf8");
+  assert.match(app, /modelBlockedReason:\s*h3ModelSelectionBlockedReason\(\)/);
+  assert.match(app, /assertModelSubmissionAllowed/);
 });
 
 test("server exposes h3Models on /api/config", () => {

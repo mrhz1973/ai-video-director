@@ -3,7 +3,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,7 +13,6 @@ import {
 } from "../public/control-help.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PUBLIC = path.join(ROOT, "public");
 
 function read(rel) {
   return readFileSync(path.join(ROOT, rel), "utf8");
@@ -21,15 +20,21 @@ function read(rel) {
 
 const html = read("public/index.html");
 const designSystem = read("public/design-system.css");
-const wave3 = read("public/wave3.css");
+const style = read("public/style.css");
+const batch = read("public/batch.css");
 const appJs = read("public/app.js");
 
-test("index.html links Wave 3 design-system and wave3 stylesheets", () => {
+function stylesheetLinks(source) {
+  return [...source.matchAll(/href="([^"]+\.css)"/g)].map(m => m[1]);
+}
+
+test("index.html links design-system.css and removed obsolete wave3.css layer", () => {
   assert.match(html, /href="design-system\.css"/);
-  assert.match(html, /href="wave3\.css"/);
+  assert.doesNotMatch(html, /href="wave3\.css"/);
+  assert.equal(existsSync(path.join(ROOT, "public/wave3.css")), false);
 });
 
-test("design-system.css defines shared tokens and action/state language", () => {
+test("design-system.css defines shared tokens and consolidated shared rules", () => {
   assert.match(designSystem, /--h3-accent:/);
   assert.match(designSystem, /--h3-control-height:/);
   assert.match(designSystem, /\.h3-action-destructive|button\.danger/);
@@ -37,11 +42,35 @@ test("design-system.css defines shared tokens and action/state language", () => 
   assert.match(designSystem, /button:focus-visible/);
   assert.match(designSystem, /button:disabled/);
   assert.match(designSystem, /\.gpu-power-context-compact/);
+  assert.match(designSystem, /#version/);
+  assert.match(designSystem, /\.coda-filter-btn/);
+  assert.match(designSystem, /\.batch-badge/);
+  assert.match(designSystem, /\.batch-job-chip/);
 });
 
-test("wave3.css styles version header without inline styles", () => {
-  assert.match(wave3, /#version/);
-  assert.doesNotMatch(html, /id="version"[^>]*style=/);
+test("legacy style.css no longer owns secondary/danger/save-status color duplicates", () => {
+  assert.doesNotMatch(style, /button\.secondary,button\.danger/);
+  assert.doesNotMatch(style, /button:disabled\{opacity/);
+  assert.doesNotMatch(style, /\.save-status\[data-state="saved"\]/);
+});
+
+test("legacy batch.css no longer owns chip/badge/filter duplicate groups", () => {
+  assert.doesNotMatch(batch, /\.batch-job-chip\{/);
+  assert.doesNotMatch(batch, /\.coda-filter-btn\{/);
+  assert.doesNotMatch(batch, /\.batch-feedback\[data-kind="ok"\]/);
+});
+
+test("CSS consolidation evidence documents BEFORE/AFTER layers", () => {
+  const doc = read("../docs/runtime/WAVE3_CSS_CONSOLIDATION.md");
+  assert.match(doc, /ACTIVE_STYLESHEETS_BEFORE/);
+  assert.match(doc, /ACTIVE_STYLESHEETS_AFTER/);
+  assert.match(doc, /DUPLICATED_SHARED_RULE_GROUPS_BEFORE/);
+  assert.match(doc, /DUPLICATED_SHARED_RULE_GROUPS_AFTER/);
+  assert.match(doc, /LEGACY_LAYER_RULES_MIGRATED/);
+  assert.match(doc, /LEGACY_LAYER_RULES_REMOVED/);
+  const after = stylesheetLinks(html);
+  assert.equal(after.includes("wave3.css"), false);
+  assert.ok(after.includes("design-system.css"));
 });
 
 test("model hint element exists for secondary filename detail", () => {
@@ -49,6 +78,7 @@ test("model hint element exists for secondary filename detail", () => {
   assert.match(appJs, /refreshModelHint/);
   assert.match(appJs, /populateModelSelect/);
   assert.match(appJs, /registryForPreset/);
+  assert.match(appJs, /h3ModelSelectionBlockedReason/);
 });
 
 test("model select static help is defined in Italian", () => {
@@ -63,8 +93,6 @@ test("package and version surfaces target 0.19.3", () => {
 });
 
 test("legacy critical destructive and interrupt selectors remain represented", () => {
-  const style = read("public/style.css");
-  assert.match(style, /button\.danger|\.danger/);
   assert.match(designSystem, /h3-action-destructive|button\.danger/);
   assert.match(designSystem, /h3-action-interrupt|interruptSingleRender/);
 });

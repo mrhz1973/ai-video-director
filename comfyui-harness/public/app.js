@@ -25,7 +25,7 @@ import { applyOperatorHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
 import { populateModelSelect, refreshModelHint } from "./model-select-ui.mjs";
 import { assetStatusKey, lookupAvailability, uniqueAssetDescriptors } from "/lib/asset-ref.mjs";
-import { resolveModelSelection } from "/lib/h3-model-registry.mjs";
+import { resolveModelSelection, describeModelSelectionBlocker, assertModelSubmissionAllowed } from "/lib/h3-model-registry.mjs";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -804,6 +804,7 @@ async function prepareSingleRenderPayload() {
     const labels = built.missingRequired.map(key => (preset.attachments.find(f => f.key === key)?.label || key));
     throw new Error(`Mancano o non sono disponibili: ${labels.join(", ")}`);
   }
+  assertModelSubmissionAllowed(registryForPreset(preset), $("model").value);
   return buildSingleRenderPayload({
     clientId,
     workflowId: $("workflow").value,
@@ -1274,7 +1275,8 @@ function updateGenerateButton() {
     busy: false,
     submitting: false,
     safeFitStatus: currentSafeFitStatus(),
-    loraBlockedReason: h3LoraSelectionBlockedReason()
+    loraBlockedReason: h3LoraSelectionBlockedReason(),
+    modelBlockedReason: h3ModelSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,
@@ -1803,6 +1805,11 @@ function registryForPreset(preset) {
   return config?.h3Models?.byPreset?.[presetId] || null;
 }
 
+function h3ModelSelectionBlockedReason() {
+  const blocker = describeModelSelectionBlocker(registryForPreset(currentPreset()), $("model")?.value || "");
+  return blocker.blocked ? blocker.reason : null;
+}
+
 function selectPreset({
   preserveLibrary = true,
   clearProjectSelection = false,
@@ -1818,7 +1825,11 @@ function selectPreset({
   const modelResult = populateModelSelect($("model"), registry, { selected: currentModel });
   refreshModelHint($("modelHint"), registry, $("model").value);
   if (modelResult.warning) add(modelResult.warning);
-  setControlHelp($("model"), CONTROL_HELP.modelSelect);
+  if (!modelResult.usable) {
+    setControlHelp($("model"), modelResult.reason || CONTROL_HELP.modelSelect);
+  } else {
+    setControlHelp($("model"), CONTROL_HELP.modelSelect);
+  }
   // Never destroy stored bindings when merely viewing another workflow.
   if (!preserveLibrary) draft.library = emptyLibrary();
   if (clearProjectSelection) {
@@ -2392,7 +2403,8 @@ $("send").onclick = async () => {
     busy: false,
     submitting: false,
     safeFitStatus: currentSafeFitStatus(),
-    loraBlockedReason: h3LoraSelectionBlockedReason()
+    loraBlockedReason: h3LoraSelectionBlockedReason(),
+    modelBlockedReason: h3ModelSelectionBlockedReason()
   });
   const action = resolveGenerateAction({
     blocked: gate.blocked,

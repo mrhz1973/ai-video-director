@@ -48,6 +48,7 @@ import {
   transferExecutionLaneKind
 } from "./execution-lane-client.mjs";
 import { BATCH_OPTIONAL_HEADING } from "./single-render.mjs";
+import { describeModelSelectionBlocker } from "../lib/h3-model-registry.mjs";
 import { applyOperatorHelp, applyStaticControlHelp, CONTROL_HELP } from "./control-help.mjs";
 import { setControlHelp } from "./tooltip.mjs";
 import {
@@ -438,6 +439,32 @@ function loadRuntime() {
   if (runtime?.jobs?.some(job => !isTerminalBatchState(job.state))) startPolling();
 }
 
+function currentModelRegistry() {
+  const preset = currentPreset();
+  return preset?.id ? config?.h3Models?.byPreset?.[preset.id] || null : null;
+}
+
+function currentModelBlocker() {
+  return describeModelSelectionBlocker(currentModelRegistry(), $("model")?.value || "");
+}
+
+function syncBatchModelGate() {
+  const blocker = currentModelBlocker();
+  const prepare = $("batchPrepare");
+  const queue = $("batchQueue");
+  const addQueue = $("batchAddToQueue");
+  if (prepare) {
+    prepare.disabled = blocker.blocked;
+    if (blocker.blocked) {
+      setControlHelp(prepare, blocker.reason, { whenDisabled: blocker.reason });
+    }
+  }
+  if (blocker.blocked && $("batchFeedback") && !items.length) {
+    setFeedback(blocker.reason, "error");
+  }
+  updateQueueButton();
+}
+
 function currentPreset() {
   const workflowId = $("workflow")?.value || "";
   return config?.presets?.find(item => item.id === workflowId) || null;
@@ -453,6 +480,8 @@ function roleKind(field = {}) {
 function collectSourceSnapshot() {
   const preset = currentPreset();
   if (!preset) return { error: "Workflow non disponibile." };
+  const modelBlock = currentModelBlocker();
+  if (modelBlock.blocked) return { error: modelBlock.reason };
   const attachments = preset.attachments || [];
   const rows = [...document.querySelectorAll("#roleFields .role-row")];
   const files = {};
@@ -945,6 +974,7 @@ function lastKnownQueue() {
 function updateQueueButton() {
   const button = $("batchQueue");
   if (!button) return;
+  const modelBlock = currentModelBlocker();
   const coord = getSharedCoordinator();
   const queue = lastKnownQueue();
   const action = resolveBatchQueueAction({
@@ -958,7 +988,10 @@ function updateQueueButton() {
     batchActive: Boolean(coord?.snapshot?.().batchActive),
     batchQueueArmed: isBatchQueueArmed()
   });
-  button.disabled = action.disabled;
+  button.disabled = action.disabled || modelBlock.blocked;
+  if (modelBlock.blocked) {
+    setControlHelp(button, modelBlock.reason, { whenDisabled: modelBlock.reason });
+  }
   button.textContent = action.label;
   button.dataset.action = action.action;
 }
@@ -1542,11 +1575,14 @@ async function init() {
     }
   });
   $("workflow")?.addEventListener("change", () => {
+    syncBatchModelGate();
     if (items.length) setFeedback("Workflow cambiato. Premi “Crea job dalla scena corrente” per aggiornare il batch prima dell'invio.", "warn");
   });
   $("model")?.addEventListener("change", () => {
+    syncBatchModelGate();
     if (items.length) setFeedback("Modello cambiato. Premi “Crea job dalla scena corrente” per aggiornare il batch prima dell'invio.", "warn");
   });
+  syncBatchModelGate();
 }
 
 if (document.readyState === "complete") init();

@@ -45,6 +45,19 @@
 }
 
 button.secondary,
+button.h3-action-secondary,
+button.danger,
+button.h3-action-destructive {
+  margin: 0;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: var(--h3-font-md);
+  font-weight: 600;
+  border-radius: var(--h3-radius-md);
+  cursor: pointer;
+}
+
+button.secondary,
 button.h3-action-secondary {
   background: var(--h3-bg-inset);
   color: var(--h3-text-primary);
@@ -168,4 +181,46 @@ input:disabled {
 .session-view-mode-btn.active {
   border-color: var(--h3-accent-active);
   color: var(--h3-text-primary);
+  background: #221a14;
+}
+
+.coda-filter-btn {
+  background: var(--h3-bg-inset);
+  color: var(--h3-text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--h3-radius-pill);
+  padding: 4px 10px;
+  font-size: var(--h3-font-xs);
+  width: auto;
+  margin: 0;
+}
+
+.batch-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 3px 7px;
+}
+
+#version {
+  font-size: var(--h3-font-md);
+  color: var(--h3-text-muted);
+  font-weight: 500;
+}
+
+.generation-grid label small.h3-model-hint {
+  display: block;
+}
+
+.batch-feedback[data-kind="ok"] {
+  color: var(--h3-success);
+}
+
+.batch-feedback[data-kind="warn"] {
+  color: var(--h3-warning);
+}
+
+.batch-feedback[data-kind="error"] {
+  color: var(--h3-error);
 }
