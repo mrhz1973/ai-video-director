@@ -34,17 +34,17 @@ Follow the active specialist-lane gate in Workboard #75
 
 ## NEXT
 
-Continue the active HARNESS_ENGINEERING lane (#72); creative lanes remain idle until explicitly activated
+Continue the active HARNESS_ENGINEERING lane (#73); creative lanes remain idle until explicitly activated
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-Lane ACTIVE items (#71, #72, etc.) live **inside** the Workboard. They are not separate project-level ACTIVE WORK pointers.
+Lane ACTIVE items (#71, #72, #73, etc.) live **inside** the Workboard. They are not separate project-level ACTIVE WORK pointers.
 
 ## VERIFIED THROUGH
 
-Wiki-LLM Lean 9.5 PR #76 merged; fresh VIDEO_DIRECTOR CORE BOOT PASS; agg acceptance PASS; evidence recorded on #71. No persisted main SHA.
+Harness #72 launcher health reuse implementation, controlled live acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #81; Workboard advanced to #73. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 
