@@ -22,7 +22,7 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-UI/UX audit v0.19.0
+UI/UX v0.19.0 Wave 1 — operator-first interface
 
 ## STATUS
 
@@ -30,21 +30,21 @@ IN_PROGRESS
 
 ## GATE
 
-Read-only audit report + operator review before any implementation activation. No application code/runtime/generation/upload/queue/deploy work is authorized by audit activation.
+Isolated implementation/tests + validator + CI + orchestrator review. Controlled UI acceptance is separate. Merge/deploy are separate operator gates. No generation is authorized by this activation.
 
 ## NEXT
 
-Complete #86 read-only UI/UX audit of canonical v0.19.0, reconcile older Harness UX backlog against the current app, and present prioritized P0/P1/P2/P3 findings for operator selection.
+Implement #88 Wave 1 only: collapsible Inspector, compact GPU Power, FL2VA START+END frame strip, Batch terminology/history separation, OUTPUT action hierarchy, CODA terminal clarity, and reusable accessible tooltips on all visible buttons/actions.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #86 audit only. Other specialist lanes remain independently governed by the Workboard.
+HARNESS_ENGINEERING is ACTIVE on #88. Wave 2/3 are operator-approved roadmap but are not active implementation scope yet.
 
 ## VERIFIED THROUGH
 
-Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. #86 is an audit-only activation and does not reopen runtime stabilization by itself. No persisted main SHA.
+Harness #74 asset large-preview/lightbox implementation, tests, orchestrator review, controlled UI acceptance, merge and deployment PASS; final deployment evidence persisted to main via PR #85. UI/UX audit #86 completed and operator-approved. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 
