@@ -1,5 +1,7 @@
 # Project status
 
+> **Scope:** Rambo / production-track detail only. Cross-track LIVE STATE is `docs/runtime/CURRENT_FRONTIER.md`. Do not treat this file as the project-level live-state owner.
+
 Updated: 2026-08-17
 
 ## Active shot

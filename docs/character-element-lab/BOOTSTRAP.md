@@ -1,5 +1,7 @@
 # CHARACTER ELEMENT LAB — BOOTSTRAP
 
+> **Superseded bootstrap.** New IMAGE specialist chats execute CORE BOOT from README AI-BOOT → `docs/runtime/CURRENT_FRONTIER.md` → Workboard IMAGE_ELEMENT_DIRECTOR lane (`docs/foundation/SPECIALIST_ROLES.md`). This file remains a historical Lab resume aid; manuals below stay METHOD pointers.
+
 Usa questo file quando una chat del Character Element Lab è piena o quando il lavoro viene trasferito in una nuova conversazione.
 
 ## Bootstrap operativo

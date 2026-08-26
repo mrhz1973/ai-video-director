@@ -2,27 +2,72 @@
 
 Public, text-only control plane for multiple AI-video projects. It combines a local MiniMax H3/ComfyUI director harness with provider-aware prompt skills and preserves production memory for Higgsfield projects. Personal images, video, audio and edit files are never stored here.
 
-Start with START_HERE.md. Agent-specific operating rules live in AGENTS.md.
+<!-- AI-BOOT:BEGIN -->
+## AI-BOOT (Wiki-LLM Lean 9.5)
 
-## Current legacy production checkpoint
+This block teaches HOW to find state. It contains no live state.
 
-SEQ01 / SH010 — clandestine radio hut
+### CORE BOOT
 
-- V2A: preferred body anatomy and skin baseline.
-- V3: face, framing, hut composition and eye-led turn approved; tattoo, body hair and head/body proportions rejected.
-- V4: prompt complete, corrected Element available, one generation authorized but not launched.
-- Exact active Element: @char_char_martino-completo-corpo_v3_V3
+1. Remote `main` HEAD is repository authority.
+2. Read this AI-BOOT block.
+3. Read `docs/runtime/CURRENT_FRONTIER.md` (only project LIVE STATE).
+4. Follow the ONE ACTIVE WORK pointer (Active Workboard issue).
+5. Read only your specialist lane.
+6. Read only SYNC V1 comments addressed to your role after your lane `LAST_SYNC` (`NONE` or comment URL; not ISO time).
+7. Follow only explicitly pointed evidence.
+8. STOP at the first real gate, or continue via AUTO-VIA.
 
-See HANDOFF.md for the live state.
+### AUTO-VIA
+
+Continue the deterministic pointer chain without asking the user to repeat documented context. Stop only for real authorization, missing input, or authority conflicts.
+
+### agg (refresh, not reboot)
+
+remote HEAD → CURRENT_FRONTIER → Workboard → own lane → addressed SYNC events after LAST_SYNC → pointed evidence only → resume.
+
+### CONTEXT GUARD
+
+Do not preload all issues, all history, old handoffs, full Harness internals, cinematic history, or all LoRA evidence unless the current lane explicitly requires them.
+
+### SCOPE-AWARE AUTHORITY
+
+| Scope | Owner |
+|---|---|
+| Bootstrap routing | README AI-BOOT |
+| Cross-track live state | `docs/runtime/CURRENT_FRONTIER.md` |
+| Specialist active state | Workboard lane |
+| Shot / generation / asset facts | `registry/*`, run/lineage/review, `docs/REFERENCE_ASSETS.md` |
+| Rules / safety / machine invariants | CONTRACT (`AGENTS.md`, operating rules, runtime contracts) |
+| Procedure / practice | METHOD (skills, manuals, #58 Phase 2/3 when active) |
+| Experimental results | EVIDENCE (e.g. #69) |
+| Past state | HISTORY (`CHANGELOG.md`, logs, closed PRs/issues) |
+
+On same-scope contradiction: STOP and report. Do not let one scope override another.
+
+Roles and seeds: `docs/foundation/SPECIALIST_ROLES.md`.  
+Sync contract: `docs/contracts/CROSS_CHAT_SYNC_V1.md`.  
+Repo coding agents also follow `AGENTS.md`.
+<!-- AI-BOOT:END -->
+
+## Live state pointer
+
+Cross-track live state: **`docs/runtime/CURRENT_FRONTIER.md`**.  
+Do not treat this README, START_HERE.md, or HANDOFF.md as the project LIVE STATE owner.
+
+Human onboarding still: START_HERE.md. Agent operating contract: AGENTS.md.
 
 ## Repository map
 
 - AGENTS.md — automatic operating instructions for future coding agents.
 - START_HERE.md — universal onboarding and read order.
-- HANDOFF.md — smallest complete live checkpoint.
+- HANDOFF.md — production-track handoff detail (declassified; not cross-track LIVE STATE).
 - PROJECT_BRIEF.md — stable scope, workflow and generation gate.
-- PROJECT_STATUS.md — current production state.
+- PROJECT_STATUS.md — production-track status detail (declassified).
 - CONTINUITY_BIBLE.md — character, performance and visual invariants.
+- docs/runtime/CURRENT_FRONTIER.md — only project-level LIVE STATE.
+- docs/foundation/SPECIALIST_ROLES.md — specialist role charters and seeds.
+- docs/contracts/CROSS_CHAT_SYNC_V1.md — cross-chat sync contract.
 - story/ — source master, shot placeholders and audio plan.
 - shots/ — immutable per-generation run, lineage and review records.
 - prompts/ — immutable prompt versions.
@@ -48,4 +93,3 @@ Run:
     python3 scripts/validate_project.py
 
 MiniMax H3 local setup is documented in `docs/COMFYUI_H3_SETUP.md`.
-

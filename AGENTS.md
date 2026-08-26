@@ -6,15 +6,18 @@ This repository is the public, text-only control plane for AI Video Director. It
 
 Before proposing or changing anything:
 
-1. Read START_HERE.md.
-2. Read PROJECT_BRIEF.md, PROJECT_STATUS.md and HANDOFF.md.
-3. Read docs/HARNESS_STATE.md and docs/COMFYUI_H3_SETUP.md for MiniMax H3/local harness context.
-4. Read docs/AGENT_RUNTIME_PROJECT_WORKFLOW.md for service ownership, project isolation and dedicated first-frame rules.
-5. Read CONTINUITY_BIBLE.md.
-6. Read shots/SEQ01/SH010/README.md and the latest run, review and lineage files when the task concerns that shot.
-7. Read the active prompt named in registry/shots.csv when the task concerns an active shot.
-8. Read registry/elements.yaml, registry/generations.csv and docs/REFERENCE_ASSETS.md when identity/generation history matters.
-9. Load the relevant project skill listed below.
+1. Read README AI-BOOT and docs/runtime/CURRENT_FRONTIER.md (cross-track LIVE STATE + one ACTIVE WORK pointer).
+2. Read START_HERE.md for human onboarding context when useful.
+3. Read PROJECT_BRIEF.md, PROJECT_STATUS.md and HANDOFF.md for production-track detail when the task needs them.
+4. Read docs/HARNESS_STATE.md and docs/COMFYUI_H3_SETUP.md for MiniMax H3/local harness context.
+5. Read docs/AGENT_RUNTIME_PROJECT_WORKFLOW.md for service ownership, project isolation and dedicated first-frame rules.
+6. Read CONTINUITY_BIBLE.md.
+7. Read shots/SEQ01/SH010/README.md and the latest run, review and lineage files when the task concerns that shot.
+8. Read the active prompt named in registry/shots.csv when the task concerns an active shot.
+9. Read registry/elements.yaml, registry/generations.csv and docs/REFERENCE_ASSETS.md when identity/generation history matters.
+10. Load the relevant project skill listed below.
+
+Specialist roles, seeds and sync: docs/foundation/SPECIALIST_ROLES.md and docs/contracts/CROSS_CHAT_SYNC_V1.md. Use scope-aware authority from README AI-BOOT (frontier ≠ registry ≠ contract ≠ evidence).
 
 Then give a short checkpoint appropriate to the task. Do not make a new user repeat documented context.
 
@@ -34,7 +37,8 @@ For MiniMax H3 harness work, include current harness branch/version, what is alr
 
 ## Sources of truth
 
-- Current production state: HANDOFF.md and PROJECT_STATUS.md.
+- Cross-track LIVE STATE: docs/runtime/CURRENT_FRONTIER.md (one ACTIVE WORK pointer → Workboard).
+- Production-track detail: HANDOFF.md and PROJECT_STATUS.md (scoped; not the cross-track LIVE STATE owner).
 - Current MiniMax H3 harness architecture/state: docs/HARNESS_STATE.md.
 - Harness setup/operations: docs/COMFYUI_H3_SETUP.md.
 - Agent runtime/project/first-frame policy: docs/AGENT_RUNTIME_PROJECT_WORKFLOW.md.
