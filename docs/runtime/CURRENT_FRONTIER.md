@@ -18,11 +18,11 @@ Scope: cross-track LIVE STATE only. No history. No per-shot or per-generation st
 
 ## WORKSTREAM
 
-AI Video Director operating architecture migration
+AI Video Director specialist operations
 
 ## BLOCK
 
-Wiki-LLM Lean 9.5 rollout acceptance
+Harness stabilization
 
 ## STATUS
 
@@ -30,11 +30,11 @@ IN_PROGRESS
 
 ## GATE
 
-fresh CORE BOOT + agg acceptance evidence
+Follow the active specialist-lane gate in Workboard #75
 
 ## NEXT
 
-Run the fresh VIDEO_DIRECTOR bootstrap acceptance and agg acceptance, record evidence on #71, then determine architecture-workstream completion
+Continue the active HARNESS_ENGINEERING lane (#72); creative lanes remain idle until explicitly activated
 
 ## ACTIVE WORK
 
@@ -44,7 +44,7 @@ Lane ACTIVE items (#71, #72, etc.) live **inside** the Workboard. They are not s
 
 ## VERIFIED THROUGH
 
-PR #76 implementation + deterministic validation + GPT architecture review. No persisted main SHA.
+Wiki-LLM Lean 9.5 PR #76 merged; fresh VIDEO_DIRECTOR CORE BOOT PASS; agg acceptance PASS; evidence recorded on #71. No persisted main SHA.
 
 ## GLOBAL RUNTIME INVARIANTS
 
