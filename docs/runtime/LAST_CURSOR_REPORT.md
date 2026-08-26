@@ -8,7 +8,7 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor
 BASE_MAIN_SHA: 3b8de2b3f614c21b3ef766e33f861790f698f0c6
 WORK_REF: fix/issue-72-launcher-health-reuse
-COMMIT: 89706c071dcaf0b610fcaeb00953d616bfa81b7d
+COMMIT: 710a6644a13803822068272c33207a41e62c3a46
 PR: https://github.com/mrhz1973/ai-video-director/pull/80
 VALIDATION: Controlled live acceptance PASS; queue idle before Director restart; PR /api/health identity+version PASS; launcher reused Director and ComfyUI (spawns 0/0); no unexpected-process conflict; no UV_HANDLE_CLOSING; generation 0; queue mutation NO; ComfyUI process unchanged throughout; canonical main Director restored after test
 RUNTIME_TOUCHED: YES
