@@ -1,6 +1,6 @@
 # CURRENT_FRONTIER
 
-Updated: 2026-08-26  
+Updated: 2026-08-27  
 Scope: cross-track LIVE STATE only. No history. No per-shot or per-generation state.
 
 ## AUTHORITY
@@ -22,7 +22,7 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — source-review corrections
+#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — final pre-stop race correction
 
 ## STATUS
 
@@ -30,11 +30,11 @@ CORRECTIONS_REQUIRED
 
 ## GATE
 
-Initial PR #98 candidate at exact head `fc57d433030e7cba4dcf9f809223cca81a775311` reports npm 972/972 PASS, validator PASS, exact-head CI #507 PASS and production runtime untouched. Orchestrator source review `5035496812` found deploy-safety blockers, so Controlled Acceptance, merge and deploy are not authorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
+PR #98 current exact head `de79e757c253f6175bfc955f3230d07072852f71` reports npm 987/987 PASS, validator PASS, exact-current-head CI #514 PASS and production runtime untouched. Orchestrator re-review `5035610185` confirms the previous source blockers are resolved except one stale-state race before the destructive Director stop. Controlled Acceptance, merge and deploy remain unauthorized. Production authority remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`.
 
 ## NEXT
 
-Correct PR #98 on the same branch. Required: fetch origin before verifying a newly authorized release object/version in the real deploy path; enforce unambiguous Director and ComfyUI ownership before any stop/start and make deployment incapable of spawning/restarting ComfyUI; make post-deploy verification fail closed on unchanged ComfyUI PID, final queue 0/0, Desktop stable-runtime target and UI + `/api/health` + `/api/config` version coherence, with actual shortcut reading wired into the real CLI; make installer `-RuntimeRoot` validation require a clean detached stable runtime and reject empty roots instead of resolving them to cwd. Add behavioral regressions, rerun full `npm test`, `python scripts/validate_project.py`, exact-head CI, update `docs/runtime/LAST_CURSOR_REPORT.md` to the new exact PR head, then stop for source re-review.
+Correct PR #98 on the same branch. After release fetch/verification and any detached checkout, immediately before any Director stop/start perform a fresh safety guard: Director port inspection/identity must still be unambiguous and, when preflight recorded a Director PID, it must be the same exact PID; ComfyUI must still be healthy/unambiguous on the same exact PID; queue must still be 0 running / 0 pending. If any state changed, fail closed before `stopProcessFn`. Add regressions proving Director PID change/reuse, Comfy disappearance/PID change and queue becoming busy after preflight all produce `stopProcessFn=0`, and make post-deploy verification reject ambiguous Director port inspection/no PID. Rerun full `npm test`, `python scripts/validate_project.py`, exact-head CI, update `docs/runtime/LAST_CURSOR_REPORT.md`, then stop for source re-review.
 
 ## ACTIVE WORK
 
@@ -44,7 +44,7 @@ HARNESS_ENGINEERING is ACTIVE on #97 with `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_
 
 ## VERIFIED THROUGH
 
-#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, initial PR #98 automated validation is green but source review requires the deploy-safety corrections recorded above before controlled acceptance.
+#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 now resolves fetch ordering, stable runtime authority, installer fail-closed validation, strict external-Comfy deployment and post-deploy checks; only the fresh pre-stop race guard remains before controlled acceptance.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -56,8 +56,8 @@ HARNESS_ENGINEERING is ACTIVE on #97 with `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
 - Installer/reinstaller must not infer production runtime from its own development checkout and must fail closed on invalid runtime authority
 - Release/deploy advances only the dedicated stable runtime checkout to the exact authorized merged release SHA before Director restart
-- Director restart is exact-PID only; no broad `node.exe` kill
-- ComfyUI lifecycle is external to the Director and deploy must never start/stop/restart it
+- Director restart is exact-PID only; no broad `node.exe` kill; exact PID/identity must be freshly revalidated immediately before stop
+- ComfyUI lifecycle is external to the Director and deploy must never start/stop/restart it; same PID and idle queue must be freshly revalidated before Director stop/start
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
