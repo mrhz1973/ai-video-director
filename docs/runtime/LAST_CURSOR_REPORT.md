@@ -8,15 +8,16 @@ EVIDENCE_STATE: EVIDENCE_COMPLETE
 SOURCE: Cursor  
 BASE_MAIN_SHA: 7f671c77324c87a741c23d244788a2177afb57a4  
 WORK_REF: fix/issue-97-resolvedeps-v0195  
-PR: (pending push)  
-PR_HEAD: (pending push)  
-CI: (pending push)  
+PR: https://github.com/mrhz1973/ai-video-director/pull/99  
+PR_HEAD: 974e4a1  
+CI: PASS (exact-head validate @ 974e4a1)  
 VALIDATION: npm test 999/999 PASS; validate_project.py PASS  
 RUNTIME_TOUCHED: NO  
 
 ## SUMMARY — POST-DEPLOY SOURCE CORRECTION (#97 / v0.19.5)
 
 - **Branch:** `fix/issue-97-resolvedeps-v0195` from canonical `origin/main` @ `7f671c7`
+- **PR:** #99 — head `974e4a1` — CI PASS
 - **resolveDeps correction:** `launcher-cli.mjs::resolveDeps()` now spreads `...deps` first, then applies `||` defaults so `undefined`/`null` optional injections cannot overwrite working defaults (`spawnFn` → `spawnDetached`, etc.); exported for regression testing
 - **Real-failure regression PASS:** deployment-shaped wired deps with `spawnFn: undefined` resolve to callable default spawn
 - **spawnFn undefined regression PASS:** unit test proves default `spawnDetached` retained
