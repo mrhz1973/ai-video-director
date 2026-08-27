@@ -18,6 +18,7 @@ import {
   runRuntimeDeployment,
   verifyPostDeployment
 } from "../lib/windows-runtime-deploy.mjs";
+import { resolveDeps } from "../scripts/windows/launcher-cli.mjs";
 import { buildLauncherConfigPayload, DIRECTOR_HEALTH_IDENTITY } from "../lib/windows-launcher.mjs";
 import { planInstallerShortcut } from "../lib/stable-runtime.mjs";
 
@@ -69,12 +70,13 @@ async function makeFakeComfyRoot() {
   return root;
 }
 
-async function makeTempConfig(comfyRoot) {
+async function makeTempConfig(comfyRoot, overrides = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-deploy-config-"));
   const configPath = path.join(dir, "launcher.json");
   const payload = buildLauncherConfigPayload({
     runtimeRoot: repoRoot,
-    comfyRoot
+    comfyRoot,
+    ...overrides
   });
   await writeFile(configPath, JSON.stringify(payload), "utf8");
   return { dir, configPath, payload };
@@ -809,4 +811,82 @@ test("assertComfyUnchangedForDeploy blocks when Comfy disappears", async () => {
     inspectPortFn: async () => absentPort(),
     fetchFn: async () => new Response("{}", { status: 503 })
   }), /unhealthy|cannot start|inspection/i);
+});
+
+test("deploy-runtime-cli deps with undefined spawnFn restart does not throw spawnFn is not a function", async () => {
+  const deployCliDeps = { execFileFn: async () => {} };
+  assert.equal(typeof resolveDeps({
+    fetchFn: async () => new Response("{}", { status: 404 }),
+    inspectPortFn: async () => absentPort(),
+    openBrowserFn: () => {},
+    spawnFn: deployCliDeps.spawnFn,
+    sleepFn: deployCliDeps.sleepFn,
+    log: deployCliDeps.log || (() => {})
+  }).spawnFn, "function");
+
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  let directorListening = true;
+  let directorVersion = "0.19.3";
+  let directorChecksAfterStop = 0;
+  const fetchFn = async url => {
+    if (String(url).includes("/system_stats")) return comfyStats();
+    if (String(url).includes("/api/health")) return directorHealth(directorVersion);
+    if (String(url).includes("/api/config")) return directorConfig(expectedVersion);
+    if (String(url).endsWith("/8787/") || String(url).match(/8787\/?$/)) return directorIndex();
+    if (String(url).includes("/queue")) return idleQueue();
+    return new Response("{}", { status: 404 });
+  };
+  const inspectPortFn = async port => {
+    if (port === 8188) return listeningPort(8188);
+    if (port === 8787) {
+      if (!directorListening) {
+        if (stopped.length > 0) {
+          directorChecksAfterStop += 1;
+          if (directorChecksAfterStop >= 2) {
+            directorListening = true;
+            return listeningPort(9001);
+          }
+        }
+        return absentPort();
+      }
+      return listeningPort(9001);
+    }
+    return absentPort();
+  };
+
+  let thrown = null;
+  let result = null;
+  try {
+    result = await runRuntimeDeployment({
+      runtimeRoot: repoRoot,
+      releaseSha: "release-sha",
+      expectedVersion,
+      configPath,
+      gitRunner: mockGit(restartGitState()),
+      stopProcessFn: async pid => {
+        stopped.push(pid);
+        directorListening = false;
+        directorVersion = expectedVersion;
+      },
+      fetchFn,
+      inspectPortFn,
+      readShortcutFn: shortcutReader(),
+      deps: {
+        execFileFn: deployCliDeps.execFileFn
+      }
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.deepEqual(stopped, [9001]);
+  assert.doesNotMatch(String(thrown?.message || ""), /spawnFn is not a function/i);
+  if (result) {
+    assert.equal(result.directorRestarted, true);
+    assert.doesNotMatch((result.post?.errors || []).join(" "), /spawnFn is not a function/i);
+  }
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
 });

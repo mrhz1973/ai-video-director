@@ -50,15 +50,15 @@ function logLine(prefix, message) {
   console.log(`${prefix} ${message}`);
 }
 
-function resolveDeps(deps = {}) {
+export function resolveDeps(deps = {}) {
   return {
+    ...deps,
     fetchFn: deps.fetchFn || fetch,
     spawnFn: deps.spawnFn || spawnDetached,
     openBrowserFn: deps.openBrowserFn || openSystemBrowser,
     inspectPortFn: deps.inspectPortFn || inspectPort,
     sleepFn: deps.sleepFn || (ms => new Promise(resolve => setTimeout(resolve, ms))),
-    log: deps.log || ((level, message) => logLine(level, message)),
-    ...deps
+    log: deps.log || ((level, message) => logLine(level, message))
   };
 }
 
