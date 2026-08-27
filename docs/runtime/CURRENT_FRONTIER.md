@@ -22,7 +22,7 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — permanent stable-runtime / Windows launcher deployment automation — post-deploy source correction
+#97 — permanent stable-runtime / Windows launcher deployment automation — v0.19.5 post-deploy source correction
 
 ## STATUS
 
@@ -30,11 +30,11 @@ CORRECTIONS_REQUIRED
 
 ## GATE
 
-Runtime deployment of v0.19.4 is PASS. PR #98 deployment evidence `5432521760` confirms production is healthy at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: runtime clean/detached, package/UI/API v0.19.4, Director exact-PID restart, same ComfyUI PID, queue 0/0, Desktop unchanged and prohibited side effects zero/NO. However the first real execution of the merged permanent #97 deployment path failed with `spawnFn is not a function`; a local `resolveDeps` hotfix enabled the successful second execution but that source correction is not persisted on GitHub. Current `main` still has defaults followed by `...deps` in `launcher-cli.mjs::resolveDeps()`. Classification: `DEPLOY_PASS / SOURCE_HOTFIX_NOT_PERSISTED`.
+Production deployment of v0.19.4 remains PASS and healthy at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 now persists the required `resolveDeps()` source correction for target v0.19.5 and exact current PR head `3509f9c4d54c3378a3cb2533b24ccf3feb0010b2` has npm 999/999 PASS, validator PASS and exact-head CI #531 PASS. Orchestrator source review `5036147953` nevertheless found a regression-isolation blocker: the new deployment integration test intentionally leaves `spawnFn` undefined, then executes a restart path in which the fixed resolver selects the real `spawnDetached()` implementation. Automated tests therefore can launch a real detached Director process instead of remaining fully mocked. The same test can also pass after an unrelated thrown error because it only rejects the original `spawnFn is not a function` message. Source approval is withheld until the regression is side-effect-free and assertive.
 
 ## NEXT
 
-Keep production v0.19.4 running; do not rollback. Persist the smallest source correction for `resolveDeps` so undefined dependency properties cannot overwrite working defaults, and add a deterministic regression reproducing the real deployment failure (`spawnFn: undefined`). Because v0.19.4 is already released and this is a functional launcher/deployment source change, the next source release identity is v0.19.5. Implementation/testing only in an isolated branch/PR; no live runtime, Desktop, Director, ComfyUI, queue, generation, GPU or project mutation. Stop for orchestrator source review after tests/validator/exact-head CI PASS.
+Correct PR #99 on the same branch. Preserve the `resolveDeps()` production fix. Replace/factor the deployment-shaped regression so the real `spawnFn: undefined` wiring semantics are verified without ever invoking real `spawnDetached()`, inject/capture a deterministic fake spawn at a safe boundary for integration behavior, require a successful non-null simulated deployment result with exactly one Director spawn and zero ComfyUI spawn, and reject unrelated errors. Correct stale `LAST_CURSOR_REPORT.md` PR_HEAD/CI metadata to the final exact head. Then rerun focused tests, full npm test, validator and exact-current-head CI; stop for orchestrator re-review. No live acceptance, merge or deployment is authorized.
 
 ## ACTIVE WORK
 
@@ -44,13 +44,13 @@ HARNESS_ENGINEERING is ACTIVE on #97 at `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_DI
 
 ## VERIFIED THROUGH
 
-Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` is PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. #97 is not yet complete only because the local source hotfix required to make the permanent deployment operation succeed has not been persisted to GitHub.
+Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. The `resolveDeps()` source fix in PR #99 is directionally correct, but #97 remains incomplete until the v0.19.5 regression harness is fully side-effect-free, source-reviewed, accepted, merged and eventually released under separate gates.
 
 ## GLOBAL RUNTIME INVARIANTS
 
 - Canonical deployed Harness baseline: **v0.19.4**
 - Production release SHA: `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- Next source correction target: **v0.19.5**
+- Active source correction target: **v0.19.5**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
@@ -58,6 +58,7 @@ Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9a
 - Release/deploy advances only the dedicated stable runtime checkout to the exact authorized merged release SHA before Director restart
 - Director restart is exact-PID only; no broad `node.exe` kill; exact PID/identity must be freshly revalidated immediately before stop
 - ComfyUI lifecycle is external to the Director and deploy must never start/stop/restart it; same PID and idle queue must be freshly revalidated before Director stop/start
+- Automated Harness tests must not spawn real Director/ComfyUI processes or mutate live runtime state
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
