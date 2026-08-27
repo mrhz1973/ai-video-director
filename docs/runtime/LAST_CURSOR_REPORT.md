@@ -6,26 +6,22 @@ ROLE: HARNESS_ENGINEERING
 STATUS: PASS  
 EVIDENCE_STATE: EVIDENCE_COMPLETE  
 SOURCE: Cursor  
-BASE_MAIN_SHA: 7f671c77324c87a741c23d244788a2177afb57a4  
+BASE_MAIN_SHA: 6bace43db534d77418bab35107955e0b74bfbc97  
 WORK_REF: fix/issue-97-resolvedeps-v0195  
 PR: https://github.com/mrhz1973/ai-video-director/pull/99  
-PR_HEAD: 843701d  
-CI: PASS (exact-head validate @ 843701d)  
-VALIDATION: npm test 999/999 PASS; validate_project.py PASS  
+SOURCE_HEAD: (set by functional commit before this report)  
+CI: PASS for SOURCE_HEAD (see PR #99 top-level source evidence for FINAL_PR_HEAD)  
+VALIDATION: npm test 1001/1001 PASS; validate_project.py PASS  
 RUNTIME_TOUCHED: NO  
 
-## SUMMARY — POST-DEPLOY SOURCE CORRECTION (#97 / v0.19.5)
+## SUMMARY — TEST ISOLATION CORRECTION (#97 / PR #99)
 
-- **Branch:** `fix/issue-97-resolvedeps-v0195` from canonical `origin/main` @ `7f671c7`
-- **PR:** #99 — head `974e4a1` — CI PASS
-- **resolveDeps correction:** `launcher-cli.mjs::resolveDeps()` now spreads `...deps` first, then applies `||` defaults so `undefined`/`null` optional injections cannot overwrite working defaults (`spawnFn` → `spawnDetached`, etc.); exported for regression testing
-- **Real-failure regression PASS:** deployment-shaped wired deps with `spawnFn: undefined` resolve to callable default spawn
-- **spawnFn undefined regression PASS:** unit test proves default `spawnDetached` retained
-- **Explicit dependency override regression PASS:** injected fake `spawnFn` preserved
-- **Optional undefined defaults regression PASS:** `fetchFn`, `openBrowserFn`, `inspectPortFn`, `sleepFn`, `log` cannot clobber defaults
-- **Deployment integration regression PASS:** `runRuntimeDeployment` with deploy-runtime-cli deps shape (`{ execFileFn }` only) + Director restart does not throw `spawnFn is not a function`
-- **Version 0.19.5 coherence:** `package.json`, `version-coherence.test.mjs`, `uiux-wave3.test.mjs`
-- **npm test:** 999 tests, 0 failures (+6 regressions)
+- **resolveDeps fix preserved:** spread `...deps` first, then `||` defaults; `spawnFn: undefined` → `spawnDetached` reference without test invocation
+- **buildDeployDirectorDeps:** pure helper mirrors `runRuntimeDeployment` → `runDeployDirector` dependency wiring for safe unit proof
+- **Unit proof (no spawn call):** `buildDeployDirectorDeps({ execFileFn-only deps })` + `resolveDeps(wired).spawnFn === spawnDetached`
+- **Integration proof (fake spawn only):** `runRuntimeDeployment` restart with injected `fakeSpawn`; assert `result.ok`, `directorRestarted`, one Director spawn, zero Comfy spawn, exact-PID stop
+- **Static isolation guard:** deployment regression test source must use `fakeSpawn`, must not call `spawnDetached(` or try/catch-only negative assertions
+- **npm test:** 1001 tests, 0 failures
 - **Validator:** PASS
 
 ## PRODUCTION (UNCHANGED)
@@ -43,4 +39,4 @@ RUNTIME_TOUCHED: NO
 
 ## NEXT_RELEVANCE
 
-Orchestrator source review of PR for #97 v0.19.5 correction. No live deploy/acceptance from this pass.
+Orchestrator re-review PR #99. FINAL_PR_HEAD recorded in PR #99 top-level source evidence comment (not self-referenced in this file).
