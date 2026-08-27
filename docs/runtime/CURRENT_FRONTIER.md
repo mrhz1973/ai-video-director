@@ -26,31 +26,31 @@ AI Video Director specialist operations
 
 ## STATUS
 
-CORRECTIONS_REQUIRED
+ACCEPTANCE_GATE
 
 ## GATE
 
-Production deployment of v0.19.4 remains PASS and healthy at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 now persists the required `resolveDeps()` source correction for target v0.19.5 and exact current PR head `3509f9c4d54c3378a3cb2533b24ccf3feb0010b2` has npm 999/999 PASS, validator PASS and exact-head CI #531 PASS. Orchestrator source review `5036147953` nevertheless found a regression-isolation blocker: the new deployment integration test intentionally leaves `spawnFn` undefined, then executes a restart path in which the fixed resolver selects the real `spawnDetached()` implementation. Automated tests therefore can launch a real detached Director process instead of remaining fully mocked. The same test can also pass after an unrelated thrown error because it only rejects the original `spawnFn is not a function` message. Source approval is withheld until the regression is side-effect-free and assertive.
+PR #99 exact current head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f` has orchestrator source re-review PASS `5036205584`. The functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`; final PR head is docs-only evidence metadata. Source evidence `5432752323` reports npm 1001/1001 PASS, validator PASS and production untouched; exact-final-head GitHub Actions run #534 is PASS. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
 
 ## NEXT
 
-Correct PR #99 on the same branch. Preserve the `resolveDeps()` production fix. Replace/factor the deployment-shaped regression so the real `spawnFn: undefined` wiring semantics are verified without ever invoking real `spawnDetached()`, inject/capture a deterministic fake spawn at a safe boundary for integration behavior, require a successful non-null simulated deployment result with exactly one Director spawn and zero ComfyUI spawn, and reject unrelated errors. Correct stale `LAST_CURSOR_REPORT.md` PR_HEAD/CI metadata to the final exact head. Then rerun focused tests, full npm test, validator and exact-current-head CI; stop for orchestrator re-review. No live acceptance, merge or deployment is authorized.
+Await explicit operator authorization for Controlled Acceptance v0.19.5 on exact PR #99 head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f`. Acceptance should validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions, while preserving production v0.19.4 as the stable authority. No merge/deploy follows without separate gates.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. The `resolveDeps()` source fix in PR #99 is directionally correct, but #97 remains incomplete until the v0.19.5 regression harness is fully side-effect-free, source-reviewed, accepted, merged and eventually released under separate gates.
+Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review is PASS. #97 remains incomplete until Controlled Acceptance, merge and deployment of the corrected source complete under separate gates.
 
 ## GLOBAL RUNTIME INVARIANTS
 
 - Canonical deployed Harness baseline: **v0.19.4**
 - Production release SHA: `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- Active source correction target: **v0.19.5**
+- Active correction target: **v0.19.5**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
