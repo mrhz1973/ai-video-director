@@ -30,11 +30,11 @@ ACCEPTANCE_GATE
 
 ## GATE
 
-PR #99 exact current head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f` has orchestrator source re-review PASS `5036205584`. The functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`; final PR head is docs-only evidence metadata. Source evidence `5432752323` reports npm 1001/1001 PASS, validator PASS and production untouched; exact-final-head GitHub Actions run #534 is PASS. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
+PR #99 source re-review PASS `5036205584` remains valid. The functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`. Current exact PR head is now `322064e8847712bcd448849441808c2b860a3aeb`, which is docs/evidence-only and changes only `docs/runtime/LAST_CURSOR_REPORT.md` to replace the SOURCE_HEAD placeholder with the exact functional commit; no source/test behavior changed. Exact-current-head GitHub Actions run #536 is PASS. The operator authorization naming prior head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f` is classified `AUTHORIZATION_HEAD_STALE` and was not executed; evidence is PR #99 comment `5432824972`. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
 
 ## NEXT
 
-Await explicit operator authorization for Controlled Acceptance v0.19.5 on exact PR #99 head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f`. Acceptance should validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions, while preserving production v0.19.4 as the stable authority. No merge/deploy follows without separate gates.
+Await refreshed explicit operator authorization for Controlled Acceptance v0.19.5 on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. No additional source review is required unless source/test behavior changes. Acceptance should validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions, while preserving production v0.19.4 as the stable authority. No merge/deploy follows without separate gates.
 
 ## ACTIVE WORK
 
