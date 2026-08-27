@@ -619,6 +619,17 @@ export async function verifyPostDeployment({
   };
 }
 
+export function buildDeployDirectorDeps({ deps = {}, fetchFn, inspectPortFn } = {}) {
+  return {
+    fetchFn,
+    inspectPortFn,
+    openBrowserFn: () => {},
+    spawnFn: deps.spawnFn,
+    sleepFn: deps.sleepFn,
+    log: deps.log || (() => {})
+  };
+}
+
 export async function runRuntimeDeployment({
   runtimeRoot = "",
   releaseSha = "",
@@ -706,14 +717,7 @@ export async function runRuntimeDeployment({
       configPath,
       configOverride: noBrowser ? { openBrowser: false } : {},
       requiredComfyPid: comfyPidBefore,
-      deps: {
-        fetchFn,
-        inspectPortFn,
-        openBrowserFn: () => {},
-        spawnFn: deps.spawnFn,
-        sleepFn: deps.sleepFn,
-        log: deps.log || (() => {})
-      }
+      deps: buildDeployDirectorDeps({ deps, fetchFn, inspectPortFn })
     });
     directorRestarted = Boolean(startResult?.spawns?.director) || preflight.idempotent.restartDirector;
   } else {

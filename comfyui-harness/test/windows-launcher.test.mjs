@@ -39,6 +39,7 @@ import {
   resolvePortInspectionPowerShellExecutable
 } from "../lib/windows-port-inspect.mjs";
 import { runStart, runStatus, assertServiceDecision, resolveDeps, runDeployDirector, spawnDetached } from "../scripts/windows/launcher-cli.mjs";
+import { buildDeployDirectorDeps } from "../lib/windows-runtime-deploy.mjs";
 import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import { promisify } from "node:util";
@@ -592,20 +593,10 @@ test("production launcher wires inspectPort instead of null port-owner fallback"
   assert.doesNotMatch(cliSource, /async\s*\(\)\s*=>\s*null/);
 });
 
-function wireDeployDirectorDeps(deployDeps, { fetchFn, inspectPortFn }) {
-  return {
-    fetchFn,
-    inspectPortFn,
-    openBrowserFn: () => {},
-    spawnFn: deployDeps.spawnFn,
-    sleepFn: deployDeps.sleepFn,
-    log: deployDeps.log || (() => {})
-  };
-}
-
 test("resolveDeps keeps default spawnFn when deployment passes spawnFn: undefined", () => {
   const deployCliDeps = { execFileFn: async () => {} };
-  const wired = wireDeployDirectorDeps(deployCliDeps, {
+  const wired = buildDeployDirectorDeps({
+    deps: deployCliDeps,
     fetchFn: async () => new Response("{}", { status: 404 }),
     inspectPortFn: async () => absentPort()
   });
@@ -652,14 +643,18 @@ test("runDeployDirector accepts deployment deps with undefined spawnFn", async (
     configPath,
     configOverride: { openBrowser: false },
     requiredComfyPid: 8188,
-    deps: wireDeployDirectorDeps(deployCliDeps, {
-      fetchFn: async url => {
-        if (String(url).includes("/system_stats")) return comfyStats();
-        if (String(url).includes("/api/health")) return directorHealth(version);
-        return new Response("{}", { status: 404 });
-      },
-      inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : listeningPort(9787))
-    })
+    deps: {
+      ...buildDeployDirectorDeps({
+        deps: deployCliDeps,
+        fetchFn: async url => {
+          if (String(url).includes("/system_stats")) return comfyStats();
+          if (String(url).includes("/api/health")) return directorHealth(version);
+          return new Response("{}", { status: 404 });
+        },
+        inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : listeningPort(9787))
+      }),
+      spawnFn: undefined
+    }
   });
   assert.equal(result.spawns.director, 0);
   assert.equal(result.spawns.comfy, 0);
