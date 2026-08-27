@@ -9,7 +9,7 @@ SOURCE: Cursor
 BASE_MAIN_SHA: 6bace43db534d77418bab35107955e0b74bfbc97  
 WORK_REF: fix/issue-97-resolvedeps-v0195  
 PR: https://github.com/mrhz1973/ai-video-director/pull/99  
-SOURCE_HEAD: (set by functional commit before this report)  
+SOURCE_HEAD: d4f85e203da77c653ae21f2453aa6dc30b38eca4  
 CI: PASS for SOURCE_HEAD (see PR #99 top-level source evidence for FINAL_PR_HEAD)  
 VALIDATION: npm test 1001/1001 PASS; validate_project.py PASS  
 RUNTIME_TOUCHED: NO  
