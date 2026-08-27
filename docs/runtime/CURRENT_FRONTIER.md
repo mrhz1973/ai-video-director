@@ -22,36 +22,35 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — v0.19.4 stable runtime checkout / Windows launcher deployment automation — deploy authorized
+#97 — permanent stable-runtime / Windows launcher deployment automation — post-deploy source correction
 
 ## STATUS
 
-DEPLOY_AUTHORIZED
+CORRECTIONS_REQUIRED
 
 ## GATE
 
-Deploy v0.19.4 is explicitly authorized for exact merged release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` by operator authorization persisted on PR #98 as comment `5432478022`. Accepted PR head `7df684192ebc59e8bc226b557118c8d925ba755c` had final source review PASS `5035670154`, npm 993/993 PASS, validator PASS, exact-head CI #517 PASS and Controlled Acceptance PASS `5432335099`. Production remains v0.19.3 at exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484` until this authorized deploy completes successfully. Current/later docs-only `main` HEAD is not deployment authority.
+Runtime deployment of v0.19.4 is PASS. PR #98 deployment evidence `5432521760` confirms production is healthy at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: runtime clean/detached, package/UI/API v0.19.4, Director exact-PID restart, same ComfyUI PID, queue 0/0, Desktop unchanged and prohibited side effects zero/NO. However the first real execution of the merged permanent #97 deployment path failed with `spawnFn is not a function`; a local `resolveDeps` hotfix enabled the successful second execution but that source correction is not persisted on GitHub. Current `main` still has defaults followed by `...deps` in `launcher-cli.mjs::resolveDeps()`. Classification: `DEPLOY_PASS / SOURCE_HOTFIX_NOT_PERSISTED`.
 
 ## NEXT
 
-Execute only the permanent #97 deployment path against the dedicated stable runtime, targeting exact release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` with expected version `0.19.4`. Reverify clean/detached stable runtime, Director/ComfyUI identities and exact PIDs, queue 0/0 and Desktop stable-runtime target; then fetch, verify the exact authorized release object/version, detached checkout exact release SHA, perform the fresh pre-stop safety snapshot, stop/restart Director exact-PID only, keep ComfyUI strict external/reuse-only, and verify runtime/UI/API/Desktop/queue invariants afterward. Persist top-level PR #98 deployment evidence and stop. Close #97 only after deployment PASS.
+Keep production v0.19.4 running; do not rollback. Persist the smallest source correction for `resolveDeps` so undefined dependency properties cannot overwrite working defaults, and add a deterministic regression reproducing the real deployment failure (`spawnFn: undefined`). Because v0.19.4 is already released and this is a functional launcher/deployment source change, the next source release identity is v0.19.5. Implementation/testing only in an isolated branch/PR; no live runtime, Desktop, Director, ComfyUI, queue, generation, GPU or project mutation. Stop for orchestrator source review after tests/validator/exact-head CI PASS.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `DEPLOY_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `CORRECTIONS_REQUIRED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-#95 UI/UX Wave 3 is complete end-to-end and deployed as **v0.19.3**. Deployment evidence PR #96 comment `5431509478` confirms the dedicated stable runtime advanced cleanly to exact release SHA `01a4d907655a076c2357dd9690731a2d1ce8c484`, Director restarted exact-PID to v0.19.3, Desktop remained bound to stable runtime, ComfyUI stayed on the same PID, final queue 0/0 and side effects zero. For #97, PR #98 has final source review PASS, Controlled Acceptance PASS, is merged as release `4202dca9ab3b46f52983ca342732e59bfe38066f`, and deployment is now explicitly authorized for that exact release SHA only.
+Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` is PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. #97 is not yet complete only because the local source hotfix required to make the permanent deployment operation succeed has not been persisted to GitHub.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness baseline: **v0.19.3** until authorized #97 deploy PASS
-- #97 target release: **v0.19.4**
-- Authorized merged v0.19.4 release SHA: `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- Current production release SHA remains `01a4d907655a076c2357dd9690731a2d1ce8c484` until deploy PASS
+- Canonical deployed Harness baseline: **v0.19.4**
+- Production release SHA: `4202dca9ab3b46f52983ca342732e59bfe38066f`
+- Next source correction target: **v0.19.5**
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
