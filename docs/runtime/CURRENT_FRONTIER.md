@@ -26,31 +26,27 @@ AI Video Director specialist operations
 
 ## STATUS
 
-MIGRATION_APPLY_GATE
+MIGRATION_APPLY_AUTHORIZED
 
 ## GATE
 
-PR #101 exact current head `3bb4037d32219eaea1e6945e7e4385caa343ccfa` has SOURCE_REVIEW_PASS (`5054690679`) and exact-head workflow #562 PASS. The reviewed migration path is fail-closed: raw paths validate before resolve, APPLY freshly re-plans/revalidates, drift/conflict/invalid source block before writes, target copies use atomic `COPYFILE_EXCL`, and source/target hashes are verified.
+Operator explicitly authorized the copy-only APPLY of exactly the 14 verified historical projects from the discovered `rambo-ai-film` legacy store into `%LOCALAPPDATA%\AI Video Director\projects`. Authorization is persisted as PR #101 comment `5457334362`. Tooling authority remains exact source-reviewed PR #101 head `3bb4037d32219eaea1e6945e7e4385caa343ccfa`; source review `5054690679`; exact-head workflow #562 / run `33206274222` is PASS. Real-store PLAN `5457262755` is CLEAN: 14 `COPY_REQUIRED`, 0 `IDENTICAL_ALREADY_PRESENT`, 0 `SAME_ID_DIFFERENT_CONTENT`, 0 `INVALID_SOURCE`; the persistent target was absent/empty and PLAN performed zero writes. Production remains v0.19.5 at exact stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`.
 
-The real-store PLAN (`5457262755`) is `PLAN_CLEAN`: the legacy `rambo-ai-film` source resolves to exactly 14 valid projects whose SHA-256 set matches discovery `5456981054`; the intended persistent target `%LOCALAPPDATA%\AI Video Director\projects` does not currently exist; classification is 14 `COPY_REQUIRED`, 0 `IDENTICAL_ALREADY_PRESENT`, 0 `SAME_ID_DIFFERENT_CONTENT`, 0 `INVALID_SOURCE`; PLAN made zero writes. Plan review PASS is `5457291327`.
-
-Production remains v0.19.5 at exact stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. No real project migration has occurred yet.
-
-The current gate requires explicit operator authorization before copy-only APPLY of the 14 projects.
+This authorization covers only the 14-project copy-only migration APPLY. It does not authorize production project API writes, runtime restart, Controlled Acceptance, merge, deploy, generation, GPU/queue mutation, Desktop rewrite or ComfyUI lifecycle.
 
 ## NEXT
 
-Await explicit operator authorization for copy-only APPLY of exactly the 14 verified `rambo-ai-film` projects into `%LOCALAPPDATA%\AI Video Director\projects`. After authorization, re-resolve the exact source and target, perform a fresh authoritative re-plan/revalidation, fail closed on any drift/conflict/invalid source, copy only `COPY_REQUIRED` items with atomic exclusive no-overwrite semantics, verify post-copy SHA-256 for every target, prove source files unchanged, persist migration evidence, then stop for post-migration verification/next gate. `issue-73-live-acceptance` remains excluded.
+Execute one real migration APPLY using exact reviewed v0.19.6 tooling. Immediately before any write: re-resolve the exact legacy source path; verify exactly the same 14 files/IDs/source hashes as discovery and clean PLAN; re-resolve `%LOCALAPPDATA%\AI Video Director\projects`; freshly re-plan source + target; require the same clean classification or fail closed. Copy only `COPY_REQUIRED` items using atomic exclusive `COPYFILE_EXCL` semantics, never overwrite, verify target SHA-256 for every copied project, and prove all source hashes remain unchanged. `issue-73-live-acceptance` remains excluded. Persist migration evidence and STOP for orchestrator `agg`.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #100 at `MIGRATION_APPLY_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #100.
+HARNESS_ENGINEERING is ACTIVE on #100 at `MIGRATION_APPLY_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #100.
 
 ## VERIFIED THROUGH
 
-#97 is complete. Canonical deployed Harness is **v0.19.5** at exact dedicated stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. #100 discovery proved the 14 historical operator projects are intact and not deleted. PR #101 source review and CI PASS. Real-store PLAN is clean and zero-write. No migration APPLY has occurred.
+#97 is complete. Canonical deployed Harness is **v0.19.5** at exact dedicated stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. #100 discovery proved 14 historical operator projects are intact and not deleted. PR #101 exact head `3bb4037d32219eaea1e6945e7e4385caa343ccfa` has SOURCE_REVIEW_PASS and exact-head CI PASS. Real-store migration PLAN is CLEAN; the operator has now authorized the exact 14-project copy-only APPLY, but no real migration evidence has yet been reviewed.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -64,10 +60,10 @@ HARNESS_ENGINEERING is ACTIVE on #100 at `MIGRATION_APPLY_GATE`. IMAGE_ELEMENT_D
 - Director restart is exact-PID only; no broad `node.exe` kill
 - ComfyUI lifecycle is external to Director and must not be changed by migration work
 - Project definitions are local/private data and must not be committed publicly
-- Project recovery/migration must be copy-only/fail-closed; no silent overwrite/delete/rename
-- Current state is an explicit human APPLY gate: no project-file write before operator authorization
-- `issue-73-live-acceptance` is excluded from the 14-project migration candidate
-- No generation, upload, POST `/prompt`, POST `/api/queue`, persistent queue mutation, GPU mutation, Desktop rewrite, production restart, Controlled Acceptance, merge or deploy is authorized by the current gate
+- Authorized real migration is copy-only/fail-closed for exactly the 14 verified `rambo-ai-film` projects into `%LOCALAPPDATA%\AI Video Director\projects`
+- No silent overwrite/delete/move/rename; APPLY must freshly revalidate and fail closed on drift
+- `issue-73-live-acceptance` is excluded from the migration candidate
+- No generation, upload, POST `/prompt`, POST `/api/queue`, persistent queue mutation, GPU mutation, production project API write, Desktop rewrite, production restart, Controlled Acceptance, merge or deploy is authorized by the current migration APPLY scope
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
