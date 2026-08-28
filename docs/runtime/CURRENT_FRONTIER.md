@@ -1,6 +1,6 @@
 # CURRENT_FRONTIER
 
-Updated: 2026-08-27  
+Updated: 2026-08-28  
 Scope: cross-track LIVE STATE only. No history. No per-shot or per-generation state.
 
 ## AUTHORITY
@@ -26,25 +26,25 @@ AI Video Director specialist operations
 
 ## STATUS
 
-ACCEPTANCE_GATE
+ACCEPTANCE_AUTHORIZED
 
 ## GATE
 
-PR #99 source re-review PASS `5036205584` remains valid. The functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`. Current exact PR head is now `322064e8847712bcd448849441808c2b860a3aeb`, which is docs/evidence-only and changes only `docs/runtime/LAST_CURSOR_REPORT.md` to replace the SOURCE_HEAD placeholder with the exact functional commit; no source/test behavior changed. Exact-current-head GitHub Actions run #536 is PASS. The operator authorization naming prior head `a56d66e5257d6dc1354a1e6b31dea0f004e8b68f` is classified `AUTHORIZATION_HEAD_STALE` and was not executed; evidence is PR #99 comment `5432824972`. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
+Operator explicitly authorized Controlled Acceptance v0.19.5 on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`; authorization is persisted as PR #99 comment `5454521736`. PR #99 remains open/mergeable/non-draft on that exact head. Functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`; source re-review PASS `5036205584` remains applicable because the authorized head drift is docs/evidence-only. Exact-current-head GitHub Actions run #536 is PASS. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
 
 ## NEXT
 
-Await refreshed explicit operator authorization for Controlled Acceptance v0.19.5 on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. No additional source review is required unless source/test behavior changes. Acceptance should validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions, while preserving production v0.19.4 as the stable authority. No merge/deploy follows without separate gates.
+Execute Controlled Acceptance v0.19.5 on exact authorized PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. Validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions. Any temporary candidate Director process must be exact-PID controlled; ComfyUI lifecycle must remain untouched; no generation/upload/POST prompt/POST queue/persistent queue/GPU/project/Desktop mutation is allowed. Mandatory final state before PASS: production v0.19.4 restored at stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Persist top-level PR #99 acceptance evidence and stop for orchestrator `agg`.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review is PASS. #97 remains incomplete until Controlled Acceptance, merge and deployment of the corrected source complete under separate gates.
+Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review is PASS; exact authorized head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Controlled Acceptance is authorized but not yet evidenced as executed.
 
 ## GLOBAL RUNTIME INVARIANTS
 
