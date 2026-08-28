@@ -22,43 +22,44 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#97 — permanent stable-runtime / Windows launcher deployment automation — v0.19.5 post-deploy source correction
+none
 
 ## STATUS
 
-DEPLOY_AUTHORIZED
+IDLE
 
 ## GATE
 
-Operator explicitly authorized deployment of exact merged v0.19.5 release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. Authorization is persisted on PR #99 as comment `5455004648`; Workboard authorization SYNC is `5455007214`. Fresh release verification confirms the SHA exists and `comfyui-harness/package.json` at that exact SHA is version 0.19.5. Controlled Acceptance rerun `5454841745` and orchestrator acceptance review `5454883926` are PASS. Production remains v0.19.4 at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` until deployment evidence proves otherwise.
+No Harness engineering gate is currently active. #97 is closed completed after v0.19.5 deployment PASS. #89 autonomous specialist intake remains a separate follow-up and is not auto-promoted. Creative specialist lanes remain idle until explicitly activated; generation remains separately gated by the project generation authorization phrase.
 
 ## NEXT
 
-Execute the permanent deployment entry point against only the dedicated stable runtime, targeting exact release SHA `0617a68a8152bb073ace8ea51ac3375292779c11` and expected version 0.19.5. Require clean detached runtime, exact release pin, fresh exact Director PID/identity before stop, exact-PID Director restart only, ComfyUI healthy/reuse-only with the same PID, queue 0/0 before and after, Desktop target/working directory unchanged, package/UI/API 0.19.5 coherence, and prohibited side effects zero. Persist top-level deployment PASS/BLOCKED evidence on PR #99 and stop for orchestrator `agg`. Later docs/bookkeeping commits on `main` do not replace the exact merged release SHA as deployment authority.
+Await explicit new Harness activation or explicit creative/production activation in the appropriate specialist lane. Do not infer #89 or any backlog issue as active merely because Harness is idle.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `DEPLOY_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING, IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR are currently idle. #89 autonomous specialist intake remains a separate follow-up and is not active.
 
 ## VERIFIED THROUGH
 
-Source re-review `5036205584` PASS; exact candidate CI #536 PASS; Controlled Acceptance rerun `5454841745` PASS; orchestrator acceptance review `5454883926` PASS; PR #99 merged to exact release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`, package 0.19.5; deploy authorization `5455004648` is exact-release bound. Production remains **v0.19.4** at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` until deployment completes successfully.
+#97 deployment evidence PR #99 comment `5455097024` = PASS; orchestrator deployment review `5456758018` = DEPLOYMENT_PASS; #97 final reconciliation `5456761685`; issue #97 closed completed; Workboard closure SYNC `5456766120`.
+
+Canonical deployed Harness is **v0.19.5** at exact dedicated stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness baseline before this deployment: **v0.19.4**
-- Current production release SHA before deployment: `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- Authorized deployment target: **v0.19.5** release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`
+- Canonical deployed Harness baseline: **v0.19.5**
+- Production release SHA: `0617a68a8152bb073ace8ea51ac3375292779c11`
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
 - Installer/reinstaller must not infer production runtime from its own development checkout and must fail closed on invalid runtime authority
-- Release/deploy advances only the dedicated stable runtime checkout to the exact authorized merged release SHA before Director restart
+- Release/deploy advances only the dedicated stable runtime checkout to an exact separately authorized merged release SHA before Director restart
 - Director restart is exact-PID only; no broad `node.exe` kill; exact PID/identity must be freshly revalidated immediately before stop
 - ComfyUI lifecycle is external to the Director and deploy must never start/stop/restart it; same PID and idle queue must be freshly revalidated before Director stop/start
-- No generation, upload, POST `/prompt`, POST `/api/queue`, persistent queue mutation, GPU mutation, project mutation, Desktop rewrite, or broad process kill is authorized by this deployment gate
+- Last verified v0.19.5 deployment: Director exact PID `39992` stopped and new PID `18256` started; ComfyUI PID `38792` unchanged; queue 0/0; Desktop/config unchanged; prohibited side effects zero/NO
 - Automated Harness tests must not spawn real Director/ComfyUI processes or mutate live runtime state
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
