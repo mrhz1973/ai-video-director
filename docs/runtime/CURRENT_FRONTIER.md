@@ -26,25 +26,25 @@ AI Video Director specialist operations
 
 ## STATUS
 
-ACCEPTANCE_BLOCKED_RUNTIME_OFFLINE
+ACCEPTANCE_RERUN_PENDING_VERIFICATION
 
 ## GATE
 
-Controlled Acceptance evidence PR #99 comment `5454672422` is BLOCKED at preflight. Candidate exact head `322064e8847712bcd448849441808c2b860a3aeb`, package 0.19.5 and clean candidate checkout passed preflight, but production Director on 8787 and ComfyUI on 8188 were both not listening. Therefore exact Director/ComfyUI PID verification and queue 0/0 verification were impossible, and the corrected live `spawnFn: undefined -> spawnDetached` path was not exercised. No candidate was started and no runtime/ComfyUI/Desktop/queue/generation/GPU/project mutation occurred. Production stable runtime remains clean/detached at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` / v0.19.4.
+Prior Controlled Acceptance evidence PR #99 comment `5454672422` BLOCKED safely at preflight because production Director 8787 and ComfyUI 8188 were offline. Afterward the operator performed a targeted production-availability repair using the official v0.19.4 stable-runtime installer/reinstaller: launcher config was rewritten with the canonical dedicated runtime root and the Desktop shortcut was recreated to the same stable runtime; no deploy or stable-runtime SHA advancement was performed. Operator then launched the normal stable launcher and reports browser pages opened. This is operator-reported availability only and must be freshly verified by Harness. Deployed launcher behavior at v0.19.4 intentionally opens two browser targets when `openBrowser=true`: Director 8787 and ComfyUI 8188; two tabs alone do not imply duplicate ComfyUI processes. PR #99 exact candidate head remains `322064e8847712bcd448849441808c2b860a3aeb`, so existing authorization comment `5454521736` remains exact-head applicable. PR #99 is currently mergeable=false due docs/bookkeeping drift on main; do not rebase/update before acceptance because that would change the authorized head.
 
 ## NEXT
 
-Restore normal availability of the existing production services at unchanged v0.19.4 stable runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: Director on 8787 and existing ComfyUI on 8188 with idle queue. Do not deploy or advance the stable runtime. Then rerun Controlled Acceptance against exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb` if that remains current. Merge and deploy remain separately gated.
+Fresh read-only verify production v0.19.4 at unchanged stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: Director 8787 exact PID/health, ComfyUI 8188 exact PID/health and queue 0/0. If healthy, rerun the already-authorized Controlled Acceptance against exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`, using temporary `openBrowser=false` candidate config, Comfy reuse-only, exact-PID Director control, the corrected real `spawnFn: undefined -> spawnDetached` path and mandatory restoration of production v0.19.4. Persist top-level PR #99 PASS/BLOCKED evidence and stop. Merge/deploy remain separately gated.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_BLOCKED_RUNTIME_OFFLINE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_RERUN_PENDING_VERIFICATION`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production stable runtime is **v0.19.4** at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Controlled Acceptance was attempted under authorization comment `5454521736` but stopped safely at preflight because both production services were offline. No acceptance PASS exists yet.
+Production stable runtime authority remains **v0.19.4** at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`; no deploy or stable-runtime advancement is evidenced after the prior blocker. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Existing Controlled Acceptance authorization remains bound to that exact candidate head. Workboard SYNC `5454794556` records the operator-reported launcher repair and required fresh runtime verification before rerun.
 
 ## GLOBAL RUNTIME INVARIANTS
 
