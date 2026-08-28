@@ -1,33 +1,30 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #100 / v0.19.6 source implementation
+TASK_REF: #100 / v0.19.6 migration safety correction (PR #101)
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 TARGET_VERSION: 0.19.6
 BASE_MAIN_SHA: 01da1dafb27497f9ea553228fcbf263f2e103295
+PREVIOUS_REVIEWED_HEAD: 99652b42d8eefc5178bf9f02ee1d9fa3d3b4d956
 WORK_REF: fix/issue-100-project-store-gpu-v0196
-SOURCE: Cursor Agent (#100 task delta)
-RUNTIME_TOUCHED: NO (source-only; no production restart/deploy/migration)
+SOURCE: Cursor Agent (#100 migration safety delta)
+RUNTIME_TOUCHED: NO
 
 ## SUMMARY
 
-v0.19.6 source implementation for #100: persistent project-store authority via `H3_PROJECT_DIRECTORY` / `%LOCALAPPDATA%\AI Video Director\projects`, copy-only migration plan/apply tooling with temp-fixture tests, GPU compact expand/collapse CSS fix for BATCH/CODA/OUTPUT, version coherence 0.19.6.
+Corrected fail-closed project migration safety blockers from orchestrator source review PR #101 review 5054602553. Preserved persistent project-store authority, launcher wiring, GPU fix, and 0.19.6 target.
 
-## PROJECT-STORE RESOLUTION CONTRACT
+## MIGRATION SAFETY CORRECTIONS
 
-Precedence: `H3_PROJECT_DIRECTORY` (fail-closed if set empty) → `config.projectDirectory` (dev/test) → Windows `default-persistent` → checkout `./projects` fallback. Launcher `buildDirectorCommand` injects persistent path when env unset. `/api/config.projectStore` exposes read-only `{ source, directory, persistent }`.
-
-## MIGRATION TOOL CONTRACT
-
-`lib/project-migration.mjs` + `scripts/projects-migrate-cli.mjs`: PLAN (zero writes) / APPLY (`--activate` only). Classifications: COPY_REQUIRED, IDENTICAL_ALREADY_PRESENT, SAME_ID_DIFFERENT_CONTENT, INVALID_SOURCE. Copy-only, fail-if-exists, SHA-256 verify, source untouched. No real operator store APPLY in this pass.
-
-## GPU CORRECTION
-
-`design-system.css`: compact hide rules scoped to `:not(.is-expanded)` so Espandi/Comprimi reveals ECO/BALANCED/NORMAL in BATCH/CODA/OUTPUT; SCENA unchanged; toggle remains display-only (no POST).
+1. **Raw path validation** — `assertRawMigrationDirectory` rejects null/empty/whitespace before `path.resolve`
+2. **Fresh APPLY revalidation** — always re-plans; stale plan compared via `detectPlanDrift`; drift stops before writes
+3. **All blockers before writes** — INVALID_SOURCE and SAME_ID_DIFFERENT_CONTENT block entire APPLY (copied=0); no partial migration
+4. **Atomic exclusive copy** — `COPYFILE_EXCL` via `exclusiveCopyProjectFile`; race at copy time fails without overwrite
+5. **Source integrity** — fresh source SHA-256 before copy; post-copy verify; source never mutated
 
 ## VALIDATION
 
-- npm test: 1021 pass / 0 fail
+- npm test: 1032 pass / 0 fail
 - python scripts/validate_project.py: PASS
 
 ## SIDE EFFECTS (explicit)
@@ -36,4 +33,4 @@ real project copies = 0 | moves = 0 | deletes = 0 | renames = 0 | production pro
 
 ## NEXT_RELEVANCE
 
-Orchestrator agg: PR review/merge decision; operator migration of 14 legacy projects is a separate authorized step (not executed here).
+Orchestrator agg on PR #101 corrected head; operator migration of 14 legacy projects remains separate authorized step.
