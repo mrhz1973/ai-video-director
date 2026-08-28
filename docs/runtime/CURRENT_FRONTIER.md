@@ -22,53 +22,57 @@ AI Video Director specialist operations
 
 ## BLOCK
 
-#100 — v0.19.6 restore persistent project catalog and GPU expand/collapse
+none
 
 ## STATUS
 
-DEPLOY_GATE
+HARNESS_IDLE
 
 ## GATE
 
-PR #101 exact reviewed/accepted head `3bb4037d32219eaea1e6945e7e4385caa343ccfa` was merged successfully with expected-head protection. Exact merge/release SHA is `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`; merge evidence is PR #101 comment `5457836584`. Source review, exact-head CI and Controlled Acceptance are PASS.
-
-Acceptance proved: exact candidate v0.19.6 on isolated port 8788; persistent project authority `%LOCALAPPDATA%\AI Video Director\projects`; exactly 14 recovered projects visible via API/config/selector and representative read-only loads; project hashes unchanged; GPU `Espandi` / `Comprimi` PASS in SCENA/BATCH/CODA/OUTPUT; POST `/api/gpu-power` 0 and GPU state unchanged; production v0.19.5 remained running and unchanged; ComfyUI PID unchanged; queue 0/0; Desktop unchanged; prohibited side effects zero.
-
-Production remains v0.19.5 at exact stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`.
-
-Current real gate: explicit operator authorization to deploy v0.19.6 exact release SHA `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`. Merge authorization does not authorize deployment.
+No active Harness operation gate. New Harness work requires explicit activation. Generation remains separately gated by the project generation authorization contract.
 
 ## NEXT
 
-After explicit deploy authorization, advance only the dedicated stable runtime checkout to exact release SHA `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13` using the permanent deployment contract. Preserve the persistent 14-project store, ComfyUI lifecycle/PID, queue and Desktop launcher target; verify UI/API 0.19.6 and project catalog; persist deployment PASS/BLOCKED evidence; then reconcile/close #100 if PASS. Prompt/packet preparation is automatic and is not a human gate.
+HARNESS_ENGINEERING awaits explicit new Harness activation. #89 autonomous specialist intake remains a separate follow-up and is not auto-activated. Creative/production lanes remain governed by their own Workboard state and activation gates.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #100 at `DEPLOY_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #100.
+HARNESS_ENGINEERING is idle after successful completion of #100. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated.
 
 ## VERIFIED THROUGH
 
-#97 is complete. Canonical deployed Harness is **v0.19.5** at exact release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. #100 discovery and copy-only migration are PASS; exactly 14 recovered operator projects exist in the persistent store with source/target hashes verified. PR #101 source review, exact-head CI, Controlled Acceptance, acceptance evidence review and merge all PASS. v0.19.6 is merged at exact release SHA `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13` but not yet deployed.
+#100 is complete. Canonical deployed Harness is **v0.19.6** at exact dedicated stable-runtime release SHA `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`.
+
+Deployment verification PASS:
+- package, `/api/health`, `/api/config` and UI version surface = **0.19.6**;
+- dedicated stable runtime clean + detached at the exact authorized release;
+- persistent project authority is `%LOCALAPPDATA%\AI Video Director\projects` via `H3_PROJECT_DIRECTORY`;
+- exactly 14 recovered operator projects are exposed by `/api/projects` and `/api/config.projects`, representative read-only loads PASS, and all 14 project SHA-256 values are unchanged;
+- `issue-73-live-acceptance` remains excluded from the recovered catalog;
+- Director runs on `127.0.0.1:8787`; ComfyUI PID/lifecycle remained unchanged through deployment;
+- queue remained `0/0`, Desktop launcher target/WorkingDirectory remained unchanged, GPU mode/limit remained unchanged;
+- generation/upload/POST `/prompt`/POST `/api/queue`/queue mutation/GPU mutation/project mutation/migration APPLY/Desktop rewrite/ComfyUI lifecycle/broad process kill side effects were zero.
+
+Canonical deployment evidence: PR #101 comment `5458010931`. Orchestrator closure review: #100 comment `5458032685`.
 
 ## GLOBAL RUNTIME INVARIANTS
 
-- Canonical deployed Harness baseline: **v0.19.5**
-- Production release SHA: `0617a68a8152bb073ace8ea51ac3375292779c11`
-- Merged target: **v0.19.6** @ `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`
+- Canonical deployed Harness baseline: **v0.19.6**
+- Production release SHA: `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
 - Release/deploy advances only the dedicated stable runtime checkout to an exact separately authorized merged release SHA
 - Director restart is exact-PID only; no broad `node.exe` kill
 - ComfyUI lifecycle is external to Director and must not be changed by deployment except read-only identity/health verification
-- Persistent project definitions exist in `%LOCALAPPDATA%\AI Video Director\projects`; exactly 14 recovered operator projects are verified there and must survive deployment unchanged
+- Persistent project definitions exist in `%LOCALAPPDATA%\AI Video Director\projects`; exactly 14 recovered operator projects are verified there and must survive future releases unchanged unless separately authorized
 - Legacy source project files remain preserved and unchanged
 - `issue-73-live-acceptance` is excluded from the recovered catalog
 - Prompt preparation/presentation is never a human gate; GPT Web prepares the next Cursor packet automatically under AUTO-VIA
-- Deploy requires explicit operator authorization for exact release SHA `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`
-- No generation, upload, POST `/prompt`, POST `/api/queue`, queue mutation, GPU power mutation, project mutation, Desktop rewrite or ComfyUI lifecycle is authorized by the current gate
+- No generation authorization is implied by Harness deployment or idle state
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
