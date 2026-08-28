@@ -3,7 +3,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -12,12 +12,16 @@ import {
   advanceRuntimeCheckout,
   assertComfyUnchangedForDeploy,
   assertFreshPreStopSafety,
+  buildDeployDirectorDeps,
   fetchAndVerifyReleaseAuthority,
   planDeploymentPreflight,
   planLocalDeploymentPreflight,
   runRuntimeDeployment,
   verifyPostDeployment
 } from "../lib/windows-runtime-deploy.mjs";
+import { resolveDeps, spawnDetached } from "../scripts/windows/launcher-cli.mjs";
+
+const deployRegressionTestPath = fileURLToPath(import.meta.url);
 import { buildLauncherConfigPayload, DIRECTOR_HEALTH_IDENTITY } from "../lib/windows-launcher.mjs";
 import { planInstallerShortcut } from "../lib/stable-runtime.mjs";
 
@@ -69,12 +73,13 @@ async function makeFakeComfyRoot() {
   return root;
 }
 
-async function makeTempConfig(comfyRoot) {
+async function makeTempConfig(comfyRoot, overrides = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "h3-deploy-config-"));
   const configPath = path.join(dir, "launcher.json");
   const payload = buildLauncherConfigPayload({
     runtimeRoot: repoRoot,
-    comfyRoot
+    comfyRoot,
+    ...overrides
   });
   await writeFile(configPath, JSON.stringify(payload), "utf8");
   return { dir, configPath, payload };
@@ -809,4 +814,94 @@ test("assertComfyUnchangedForDeploy blocks when Comfy disappears", async () => {
     inspectPortFn: async () => absentPort(),
     fetchFn: async () => new Response("{}", { status: 503 })
   }), /unhealthy|cannot start|inspection/i);
+});
+
+test("buildDeployDirectorDeps selects spawnDetached when deploy deps omit spawnFn", () => {
+  const deployCliDeps = { execFileFn: async () => {} };
+  const wired = buildDeployDirectorDeps({
+    deps: deployCliDeps,
+    fetchFn: async () => new Response("{}", { status: 404 }),
+    inspectPortFn: async () => absentPort()
+  });
+  assert.equal(wired.spawnFn, undefined);
+  assert.equal(resolveDeps(wired).spawnFn, spawnDetached);
+});
+
+test("deploy-runtime-cli restart uses fake spawn and succeeds without real spawnDetached", async () => {
+  const deployCliDeps = { execFileFn: async () => {} };
+  const wired = buildDeployDirectorDeps({
+    deps: deployCliDeps,
+    fetchFn: async () => new Response("{}", { status: 404 }),
+    inspectPortFn: async () => absentPort()
+  });
+  assert.equal(resolveDeps(wired).spawnFn, spawnDetached);
+
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const stopped = [];
+  const spawns = [];
+  let directorListening = true;
+  let directorVersion = "0.19.3";
+  const fetchFn = async url => {
+    if (String(url).includes("/system_stats")) return comfyStats();
+    if (String(url).includes("/api/health")) return directorHealth(directorVersion);
+    if (String(url).includes("/api/config")) return directorConfig(expectedVersion);
+    if (String(url).endsWith("/8787/") || String(url).match(/8787\/?$/)) return directorIndex();
+    if (String(url).includes("/queue")) return idleQueue();
+    return new Response("{}", { status: 404 });
+  };
+  const inspectPortFn = async port => {
+    if (port === 8787 && !directorListening) return absentPort();
+    if (port === 8188) return listeningPort(8188);
+    return listeningPort(9001);
+  };
+  const fakeSpawn = cmd => {
+    spawns.push(cmd);
+    directorListening = true;
+  };
+
+  const result = await runRuntimeDeployment({
+    runtimeRoot: repoRoot,
+    releaseSha: "release-sha",
+    expectedVersion,
+    configPath,
+    gitRunner: mockGit(restartGitState()),
+    stopProcessFn: async pid => {
+      stopped.push(pid);
+      directorListening = false;
+      directorVersion = expectedVersion;
+    },
+    fetchFn,
+    inspectPortFn,
+    readShortcutFn: shortcutReader(),
+    deps: {
+      execFileFn: deployCliDeps.execFileFn,
+      spawnFn: fakeSpawn
+    }
+  });
+
+  assert.ok(result);
+  assert.equal(result.ok, true);
+  assert.equal(result.directorRestarted, true);
+  assert.deepEqual(stopped, [9001]);
+  assert.equal(spawns.length, 1);
+  assert.match(spawns[0].arguments[0], /server\.mjs$/);
+  assert.equal(result.startResult.spawns.comfy, 0);
+  assert.equal(result.startResult.spawns.director, 1);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
+});
+
+test("deployment spawn isolation regression never calls real spawnDetached", async () => {
+  const source = await readFile(deployRegressionTestPath, "utf8");
+  const deployTestStart = source.indexOf('test("deploy-runtime-cli restart uses fake spawn');
+  const deployTestEnd = source.indexOf('test("deployment spawn isolation regression never calls real spawnDetached"');
+  assert.ok(deployTestStart >= 0);
+  assert.ok(deployTestEnd > deployTestStart);
+  const deployTestBlock = source.slice(deployTestStart, deployTestEnd);
+  assert.match(deployTestBlock, /const fakeSpawn = cmd =>/);
+  assert.match(deployTestBlock, /spawnFn:\s*fakeSpawn/);
+  assert.doesNotMatch(deployTestBlock, /spawnDetached\s*\(/);
+  assert.doesNotMatch(deployTestBlock, /let thrown = null/);
+  assert.doesNotMatch(deployTestBlock, /catch \(error\)/);
 });

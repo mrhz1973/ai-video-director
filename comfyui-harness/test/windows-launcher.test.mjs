@@ -38,7 +38,8 @@ import {
   queryPortStateWindows,
   resolvePortInspectionPowerShellExecutable
 } from "../lib/windows-port-inspect.mjs";
-import { runStart, runStatus, assertServiceDecision } from "../scripts/windows/launcher-cli.mjs";
+import { runStart, runStatus, assertServiceDecision, resolveDeps, runDeployDirector, spawnDetached } from "../scripts/windows/launcher-cli.mjs";
+import { buildDeployDirectorDeps } from "../lib/windows-runtime-deploy.mjs";
 import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import { promisify } from "node:util";
@@ -586,8 +587,79 @@ test("readDirectorPackageVersion reads local package.json", async () => {
 test("production launcher wires inspectPort instead of null port-owner fallback", async () => {
   const cliSource = await readFile(path.join(scriptsDir, "launcher-cli.mjs"), "utf8");
   assert.match(cliSource, /inspectPortFn:\s*deps\.inspectPortFn\s*\|\|\s*inspectPort/);
+  assert.match(cliSource, /\.\.\.deps,/);
+  assert.doesNotMatch(cliSource, /\.\.\.deps\s*\n\s*\};\s*\n\s*\nasync function loadConfig/s);
   assert.doesNotMatch(cliSource, /getPortOwner/);
   assert.doesNotMatch(cliSource, /async\s*\(\)\s*=>\s*null/);
+});
+
+test("resolveDeps keeps default spawnFn when deployment passes spawnFn: undefined", () => {
+  const deployCliDeps = { execFileFn: async () => {} };
+  const wired = buildDeployDirectorDeps({
+    deps: deployCliDeps,
+    fetchFn: async () => new Response("{}", { status: 404 }),
+    inspectPortFn: async () => absentPort()
+  });
+  const resolved = resolveDeps(wired);
+  assert.equal(typeof resolved.spawnFn, "function");
+  assert.equal(resolved.spawnFn, spawnDetached);
+});
+
+test("resolveDeps retains unrelated extra dependency keys", () => {
+  const execFileFn = async () => {};
+  const resolved = resolveDeps({ execFileFn, spawnFn: undefined });
+  assert.equal(resolved.execFileFn, execFileFn);
+  assert.equal(resolved.spawnFn, spawnDetached);
+});
+
+test("resolveDeps keeps explicit injected spawnFn", () => {
+  const fakeSpawn = () => {};
+  const resolved = resolveDeps({ spawnFn: fakeSpawn });
+  assert.equal(resolved.spawnFn, fakeSpawn);
+});
+
+test("resolveDeps undefined optional dependencies do not clobber defaults", () => {
+  const resolved = resolveDeps({
+    fetchFn: undefined,
+    openBrowserFn: undefined,
+    inspectPortFn: undefined,
+    sleepFn: undefined,
+    log: undefined
+  });
+  assert.equal(typeof resolved.fetchFn, "function");
+  assert.equal(typeof resolved.openBrowserFn, "function");
+  assert.equal(typeof resolved.inspectPortFn, "function");
+  assert.equal(typeof resolved.sleepFn, "function");
+  assert.equal(typeof resolved.log, "function");
+});
+
+test("runDeployDirector accepts deployment deps with undefined spawnFn", async () => {
+  const comfyRoot = await makeFakeComfyRoot();
+  const { configPath, dir } = await makeTempConfig(comfyRoot);
+  const deployCliDeps = { execFileFn: async () => {} };
+  const version = await readDirectorPackageVersion(harnessRoot);
+  const result = await runDeployDirector({
+    harnessRoot,
+    configPath,
+    configOverride: { openBrowser: false },
+    requiredComfyPid: 8188,
+    deps: {
+      ...buildDeployDirectorDeps({
+        deps: deployCliDeps,
+        fetchFn: async url => {
+          if (String(url).includes("/system_stats")) return comfyStats();
+          if (String(url).includes("/api/health")) return directorHealth(version);
+          return new Response("{}", { status: 404 });
+        },
+        inspectPortFn: async port => (port === 8188 ? listeningPort(8188) : listeningPort(9787))
+      }),
+      spawnFn: undefined
+    }
+  });
+  assert.equal(result.spawns.director, 0);
+  assert.equal(result.spawns.comfy, 0);
+  await rm(dir, { recursive: true, force: true });
+  await rm(comfyRoot, { recursive: true, force: true });
 });
 
 test("parsePortQueryRows distinguishes absent, listening, and inspection failure", () => {

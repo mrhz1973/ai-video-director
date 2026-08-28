@@ -8,13 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const EXPECTED = "0.19.4";
+const EXPECTED = "0.19.5";
 
 function read(rel) {
   return readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("package.json version is 0.19.4", () => {
+test("package.json version is 0.19.5", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.version, EXPECTED);
 });
