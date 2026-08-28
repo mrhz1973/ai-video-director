@@ -26,25 +26,25 @@ AI Video Director specialist operations
 
 ## STATUS
 
-ACCEPTANCE_RERUN_PENDING_VERIFICATION
+MERGE_GATE
 
 ## GATE
 
-Prior Controlled Acceptance evidence PR #99 comment `5454672422` BLOCKED safely at preflight because production Director 8787 and ComfyUI 8188 were offline. Afterward the operator performed a targeted production-availability repair using the official v0.19.4 stable-runtime installer/reinstaller: launcher config was rewritten with the canonical dedicated runtime root and the Desktop shortcut was recreated to the same stable runtime; no deploy or stable-runtime SHA advancement was performed. Operator then launched the normal stable launcher and reports browser pages opened. This is operator-reported availability only and must be freshly verified by Harness. Deployed launcher behavior at v0.19.4 intentionally opens two browser targets when `openBrowser=true`: Director 8787 and ComfyUI 8188; two tabs alone do not imply duplicate ComfyUI processes. PR #99 exact candidate head remains `322064e8847712bcd448849441808c2b860a3aeb`, so existing authorization comment `5454521736` remains exact-head applicable. PR #99 is currently mergeable=false due docs/bookkeeping drift on main; do not rebase/update before acceptance because that would change the authorized head.
+Controlled Acceptance v0.19.5 rerun on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb` is PASS (`5454841745`) and orchestrator acceptance review `5454883926` is ACCEPTANCE_PASS. Live proof exercised deployment-shaped `spawnFn` omitted/undefined, resolved the real default `spawnDetached`, successfully started candidate Director v0.19.5, and did not reproduce `spawnFn is not a function`. Production was then fully restored to v0.19.4 at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`; ComfyUI PID remained invariant, queue remained 0/0, Desktop unchanged and prohibited side effects were zero/NO. PR #99 remains on the exact accepted head and GitHub currently reports mergeable/rebaseable with mergeable_state clean. Merge and deploy remain separately gated.
 
 ## NEXT
 
-Fresh read-only verify production v0.19.4 at unchanged stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: Director 8787 exact PID/health, ComfyUI 8188 exact PID/health and queue 0/0. If healthy, rerun the already-authorized Controlled Acceptance against exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`, using temporary `openBrowser=false` candidate config, Comfy reuse-only, exact-PID Director control, the corrected real `spawnFn: undefined -> spawnDetached` path and mandatory restoration of production v0.19.4. Persist top-level PR #99 PASS/BLOCKED evidence and stop. Merge/deploy remain separately gated.
+Await explicit operator merge authorization bound to exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. On authorization, freshly reverify the exact PR head and mergeability before merging. After merge, determine and persist the exact merged v0.19.5 release SHA, then stop at a separate explicit deployment gate. Production v0.19.4 remains the stable authority until separately authorized deployment completes.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_RERUN_PENDING_VERIFICATION`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `MERGE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production stable runtime authority remains **v0.19.4** at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`; no deploy or stable-runtime advancement is evidenced after the prior blocker. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Existing Controlled Acceptance authorization remains bound to that exact candidate head. Workboard SYNC `5454794556` records the operator-reported launcher repair and required fresh runtime verification before rerun.
+Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS; Controlled Acceptance rerun `5454841745` is PASS; orchestrator acceptance review `5454883926` is PASS. #97 remains incomplete until explicit merge and separate deployment complete.
 
 ## GLOBAL RUNTIME INVARIANTS
 
