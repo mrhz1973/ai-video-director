@@ -25,6 +25,10 @@ import {
 } from "./lib/http-response.mjs";
 import { resolveConfigPath } from "./lib/config-path.mjs";
 import {
+  publicProjectStoreAuthorityView,
+  resolveProjectDirectory
+} from "./lib/project-directory.mjs";
+import {
   GpuPowerError,
   gpuPowerPublicPayload,
   readGpuPowerStatus
@@ -91,7 +95,15 @@ const config = JSON.parse(await readFile(configPath, "utf8"));
 const packageInfo = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const comfy = config.comfyUrl.replace(/\/$/, "");
 const workflowDir = path.resolve(root, config.workflowDirectory || "./workflows");
-const projectDir = path.resolve(root, config.projectDirectory || "./projects");
+const { directory: projectDir, source: projectDirSource } = resolveProjectDirectory({
+  root,
+  config,
+  env: process.env
+});
+const projectStoreAuthority = publicProjectStoreAuthorityView({
+  directory: projectDir,
+  source: projectDirSource
+});
 /**
  * Output root precedence:
  * 1) explicit harness config.comfyOutputDirectory
@@ -323,7 +335,8 @@ const server = http.createServer(async (req, res) => {
           profiles: publicH3LoraCatalog(),
           availability: loraAvailability.availability
         },
-        h3Models
+        h3Models,
+        projectStore: projectStoreAuthority
       });
     }
     if (req.method === "GET" && url.pathname === "/api/archive/config") {

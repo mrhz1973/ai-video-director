@@ -517,6 +517,30 @@ test("buildDirectorCommand derives Comfy output from comfyRoot", () => {
   assert.equal(cmd.env.H3_COMFY_OUTPUT_DIRECTORY, derived);
 });
 
+test("buildDirectorCommand sets persistent H3_PROJECT_DIRECTORY on Windows", () => {
+  const cmd = buildDirectorCommand(harnessRoot, "node", {
+    env: {
+      LOCALAPPDATA: "C:\\Users\\op\\AppData\\Local",
+      NODE_ENV: "test"
+    }
+  });
+  assert.match(
+    String(cmd.env.H3_PROJECT_DIRECTORY).replace(/\\/g, "/"),
+    /AI Video Director\/projects$/
+  );
+});
+
+test("buildDirectorCommand does not override explicit H3_PROJECT_DIRECTORY", () => {
+  const explicit = "D:/CustomProjects";
+  const cmd = buildDirectorCommand(harnessRoot, "node", {
+    env: {
+      LOCALAPPDATA: "C:\\Users\\op\\AppData\\Local",
+      H3_PROJECT_DIRECTORY: explicit
+    }
+  });
+  assert.equal(cmd.env.H3_PROJECT_DIRECTORY, explicit);
+});
+
 test("probe helpers recognize healthy ComfyUI and Director responses", async () => {
   const comfy = await probeComfyHealth("http://127.0.0.1:8188", {
     fetchFn: async () => comfyStats()

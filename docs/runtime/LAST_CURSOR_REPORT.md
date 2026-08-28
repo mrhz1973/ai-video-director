@@ -1,42 +1,36 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #97  
-TARGET_VERSION: 0.19.5  
-ROLE: HARNESS_ENGINEERING  
-STATUS: PASS  
-EVIDENCE_STATE: EVIDENCE_COMPLETE  
-SOURCE: Cursor  
-BASE_MAIN_SHA: 6bace43db534d77418bab35107955e0b74bfbc97  
-WORK_REF: fix/issue-97-resolvedeps-v0195  
-PR: https://github.com/mrhz1973/ai-video-director/pull/99  
-SOURCE_HEAD: d4f85e203da77c653ae21f2453aa6dc30b38eca4  
-CI: PASS for SOURCE_HEAD (see PR #99 top-level source evidence for FINAL_PR_HEAD)  
-VALIDATION: npm test 1001/1001 PASS; validate_project.py PASS  
-RUNTIME_TOUCHED: NO  
+TASK_REF: #100 / v0.19.6 migration safety correction (PR #101)
+STATUS: PASS
+EVIDENCE_STATE: EVIDENCE_COMPLETE
+TARGET_VERSION: 0.19.6
+BASE_MAIN_SHA: 01da1dafb27497f9ea553228fcbf263f2e103295
+PREVIOUS_REVIEWED_HEAD: 99652b42d8eefc5178bf9f02ee1d9fa3d3b4d956
+WORK_REF: fix/issue-100-project-store-gpu-v0196
+SOURCE: Cursor Agent (#100 migration safety delta)
+RUNTIME_TOUCHED: NO
 
-## SUMMARY — TEST ISOLATION CORRECTION (#97 / PR #99)
+## SUMMARY
 
-- **resolveDeps fix preserved:** spread `...deps` first, then `||` defaults; `spawnFn: undefined` → `spawnDetached` reference without test invocation
-- **buildDeployDirectorDeps:** pure helper mirrors `runRuntimeDeployment` → `runDeployDirector` dependency wiring for safe unit proof
-- **Unit proof (no spawn call):** `buildDeployDirectorDeps({ execFileFn-only deps })` + `resolveDeps(wired).spawnFn === spawnDetached`
-- **Integration proof (fake spawn only):** `runRuntimeDeployment` restart with injected `fakeSpawn`; assert `result.ok`, `directorRestarted`, one Director spawn, zero Comfy spawn, exact-PID stop
-- **Static isolation guard:** deployment regression test source must use `fakeSpawn`, must not call `spawnDetached(` or try/catch-only negative assertions
-- **npm test:** 1001 tests, 0 failures
-- **Validator:** PASS
+Corrected fail-closed project migration safety blockers from orchestrator source review PR #101 review 5054602553. Preserved persistent project-store authority, launcher wiring, GPU fix, and 0.19.6 target.
 
-## PRODUCTION (UNCHANGED)
+## MIGRATION SAFETY CORRECTIONS
 
-- **Version:** v0.19.4
-- **Release SHA:** `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- **Director restart:** NO
-- **ComfyUI restart:** NO
-- **Desktop rewrite:** NO
-- **Generation:** 0
-- **Upload:** 0
-- **Queue mutation:** NO
-- **GPU mutation:** NO
-- **Project mutation:** NO
+1. **Raw path validation** — `assertRawMigrationDirectory` rejects null/empty/whitespace before `path.resolve`
+2. **Fresh APPLY revalidation** — always re-plans; stale plan compared via `detectPlanDrift`; drift stops before writes
+3. **All blockers before writes** — INVALID_SOURCE and SAME_ID_DIFFERENT_CONTENT block entire APPLY (copied=0); no partial migration
+4. **Atomic exclusive copy** — `COPYFILE_EXCL` via `exclusiveCopyProjectFile`; race at copy time fails without overwrite
+5. **Source integrity** — fresh source SHA-256 before copy; post-copy verify; source never mutated
+
+## VALIDATION
+
+- npm test: 1032 pass / 0 fail
+- python scripts/validate_project.py: PASS
+
+## SIDE EFFECTS (explicit)
+
+real project copies = 0 | moves = 0 | deletes = 0 | renames = 0 | production project writes = 0 | production restart = 0 | ComfyUI lifecycle = 0 | GPU writes = 0 | generation = 0 | upload = 0 | queue mutation = 0 | Desktop rewrite = 0 | real migration APPLY = 0
 
 ## NEXT_RELEVANCE
 
-Orchestrator re-review PR #99. FINAL_PR_HEAD recorded in PR #99 top-level source evidence comment (not self-referenced in this file).
+Orchestrator agg on PR #101 corrected head; operator migration of 14 legacy projects remains separate authorized step.

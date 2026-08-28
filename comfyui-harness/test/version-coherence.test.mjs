@@ -8,22 +8,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const EXPECTED = "0.19.5";
+const EXPECTED = "0.19.6";
 
 function read(rel) {
   return readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("package.json version is 0.19.5", () => {
+test("package.json version is 0.19.6", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.version, EXPECTED);
 });
 
-test("server health and config use packageInfo.version", () => {
+test("server health and config use packageInfo.version and expose projectStore authority", () => {
   const server = read("server.mjs");
   assert.match(server, /const packageInfo = JSON\.parse/);
   assert.match(server, /service:\s*packageInfo\.name/);
   assert.match(server, /version:\s*packageInfo\.version/);
+  assert.match(server, /projectStore:\s*projectStoreAuthority/);
+  assert.match(server, /resolveProjectDirectory/);
   // Both /api/health and /api/config must derive version from packageInfo
   const healthIdx = server.indexOf('url.pathname === "/api/health"');
   const configIdx = server.indexOf('url.pathname === "/api/config"');
