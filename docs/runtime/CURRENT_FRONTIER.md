@@ -26,31 +26,31 @@ AI Video Director specialist operations
 
 ## STATUS
 
-MERGE_GATE
+DEPLOY_GATE
 
 ## GATE
 
-Controlled Acceptance v0.19.5 rerun on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb` is PASS (`5454841745`) and orchestrator acceptance review `5454883926` is ACCEPTANCE_PASS. Live proof exercised deployment-shaped `spawnFn` omitted/undefined, resolved the real default `spawnDetached`, successfully started candidate Director v0.19.5, and did not reproduce `spawnFn is not a function`. Production was then fully restored to v0.19.4 at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`; ComfyUI PID remained invariant, queue remained 0/0, Desktop unchanged and prohibited side effects were zero/NO. PR #99 remains on the exact accepted head and GitHub currently reports mergeable/rebaseable with mergeable_state clean. Merge and deploy remain separately gated.
+PR #99 merged successfully under explicit operator merge authorization from exact accepted head `322064e8847712bcd448849441808c2b860a3aeb`. Exact merged v0.19.5 release authority is `0617a68a8152bb073ace8ea51ac3375292779c11`; `comfyui-harness/package.json` at that SHA is version 0.19.5. Merge evidence is PR #99 comment `5454956303`. Controlled Acceptance rerun `5454841745` and orchestrator acceptance review `5454883926` are PASS. Production remains v0.19.4 at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment has not occurred and is separately gated.
 
 ## NEXT
 
-Await explicit operator merge authorization bound to exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. On authorization, freshly reverify the exact PR head and mergeability before merging. After merge, determine and persist the exact merged v0.19.5 release SHA, then stop at a separate explicit deployment gate. Production v0.19.4 remains the stable authority until separately authorized deployment completes.
+Await explicit operator deployment authorization bound to exact release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. On authorization, use the permanent deployment entry point against only the dedicated stable runtime. Require clean detached runtime, exact release pin, package/UI/API 0.19.5 coherence, fresh exact Director PID/identity before stop, exact-PID Director restart only, ComfyUI healthy/reuse-only with same PID, queue 0/0 before and after, Desktop target/working directory unchanged, and prohibited side effects zero. Persist top-level deployment evidence and stop for orchestrator `agg`. Later docs/bookkeeping commits on `main` do not replace the exact merged release SHA as deployment authority.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `MERGE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `DEPLOY_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS; Controlled Acceptance rerun `5454841745` is PASS; orchestrator acceptance review `5454883926` is PASS. #97 remains incomplete until explicit merge and separate deployment complete.
+Source re-review `5036205584` PASS; exact candidate CI #536 PASS; Controlled Acceptance rerun `5454841745` PASS; orchestrator acceptance review `5454883926` PASS; PR #99 merged to exact release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`, package 0.19.5. Production remains **v0.19.4** at exact stable-runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` until a separately authorized deployment completes.
 
 ## GLOBAL RUNTIME INVARIANTS
 
 - Canonical deployed Harness baseline: **v0.19.4**
 - Production release SHA: `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- Active correction target: **v0.19.5**
+- Authorized deployment candidate after separate gate: **v0.19.5** release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`
 - Director: `http://127.0.0.1:8787`
 - ComfyUI: `http://127.0.0.1:8188`
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
