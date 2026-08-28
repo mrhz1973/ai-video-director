@@ -26,27 +26,29 @@ AI Video Director specialist operations
 
 ## STATUS
 
-MIGRATION_APPLY_AUTHORIZED
+CONTROLLED_ACCEPTANCE_GATE
 
 ## GATE
 
-Operator explicitly authorized the copy-only APPLY of exactly the 14 verified historical projects from the discovered `rambo-ai-film` legacy store into `%LOCALAPPDATA%\AI Video Director\projects`. Authorization is persisted as PR #101 comment `5457334362`. Tooling authority remains exact source-reviewed PR #101 head `3bb4037d32219eaea1e6945e7e4385caa343ccfa`; source review `5054690679`; exact-head workflow #562 / run `33206274222` is PASS. Real-store PLAN `5457262755` is CLEAN: 14 `COPY_REQUIRED`, 0 `IDENTICAL_ALREADY_PRESENT`, 0 `SAME_ID_DIFFERENT_CONTENT`, 0 `INVALID_SOURCE`; the persistent target was absent/empty and PLAN performed zero writes. Production remains v0.19.5 at exact stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`.
+The real project recovery migration is complete and reviewed PASS. PR #101 migration evidence `5457492613` records exactly 14 authorized copy-only project copies into `%LOCALAPPDATA%\AI Video Director\projects`, target count 14, all target SHA-256 values equal the corresponding source values, source count/hashes unchanged, and zero overwrite/delete/move/rename/manual-copy. Orchestrator migration review `5457511731` is PASS. Tooling/source authority remains exact PR #101 head `3bb4037d32219eaea1e6945e7e4385caa343ccfa`, with SOURCE_REVIEW_PASS `5054690679` and exact-head workflow #562 PASS.
 
-This authorization covers only the 14-project copy-only migration APPLY. It does not authorize production project API writes, runtime restart, Controlled Acceptance, merge, deploy, generation, GPU/queue mutation, Desktop rewrite or ComfyUI lifecycle.
+Production remains v0.19.5 at exact stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`; it has not been restarted, merged or deployed and does not yet consume the v0.19.6 persistent-store implementation.
+
+The current gate requires separate explicit operator authorization for Controlled Acceptance of exact PR #101 head `3bb4037d32219eaea1e6945e7e4385caa343ccfa`.
 
 ## NEXT
 
-Execute one real migration APPLY using exact reviewed v0.19.6 tooling. Immediately before any write: re-resolve the exact legacy source path; verify exactly the same 14 files/IDs/source hashes as discovery and clean PLAN; re-resolve `%LOCALAPPDATA%\AI Video Director\projects`; freshly re-plan source + target; require the same clean classification or fail closed. Copy only `COPY_REQUIRED` items using atomic exclusive `COPYFILE_EXCL` semantics, never overwrite, verify target SHA-256 for every copied project, and prove all source hashes remain unchanged. `issue-73-live-acceptance` remains excluded. Persist migration evidence and STOP for orchestrator `agg`.
+After explicit Controlled Acceptance authorization, run a controlled v0.19.6 candidate against the existing persistent 14-project store without deploying. Prove the candidate resolves `%LOCALAPPDATA%\AI Video Director\projects`, reports exactly the 14 recovered projects, and can read/load representative recovered projects without modifying them. Verify GPU `Espandi` / `Comprimi` visibly reveals/hides ECO/BALANCED/NORMAL in SCENA, BATCH, CODA and OUTPUT while the toggle itself performs zero GPU POST/write. Preserve ComfyUI lifecycle and queue, do not generate/upload, and restore production v0.19.5 exactly after acceptance. Persist Controlled Acceptance PASS/BLOCKED evidence and stop for orchestrator `agg`. Merge and deploy remain later separate gates.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #100 at `MIGRATION_APPLY_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #100.
+HARNESS_ENGINEERING is ACTIVE on #100 at `CONTROLLED_ACCEPTANCE_GATE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #100.
 
 ## VERIFIED THROUGH
 
-#97 is complete. Canonical deployed Harness is **v0.19.5** at exact dedicated stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. #100 discovery proved 14 historical operator projects are intact and not deleted. PR #101 exact head `3bb4037d32219eaea1e6945e7e4385caa343ccfa` has SOURCE_REVIEW_PASS and exact-head CI PASS. Real-store migration PLAN is CLEAN; the operator has now authorized the exact 14-project copy-only APPLY, but no real migration evidence has yet been reviewed.
+#97 is complete. Canonical deployed Harness is **v0.19.5** at exact dedicated stable-runtime release SHA `0617a68a8152bb073ace8ea51ac3375292779c11`. #100 discovery recovered the historical catalog; migration PLAN was clean; operator authorized APPLY; real APPLY copied exactly 14 projects copy-only; all target hashes verified and all source hashes remained unchanged. PR #101 source review and exact-head CI PASS. No Controlled Acceptance, merge or deploy has occurred for v0.19.6.
 
 ## GLOBAL RUNTIME INVARIANTS
 
@@ -58,12 +60,12 @@ HARNESS_ENGINEERING is ACTIVE on #100 at `MIGRATION_APPLY_AUTHORIZED`. IMAGE_ELE
 - Desktop launcher production target: dedicated stable runtime checkout pinned to the exact deployed release SHA; never a development checkout/worktree
 - Release/deploy advances only the dedicated stable runtime checkout to an exact separately authorized merged release SHA
 - Director restart is exact-PID only; no broad `node.exe` kill
-- ComfyUI lifecycle is external to Director and must not be changed by migration work
-- Project definitions are local/private data and must not be committed publicly
-- Authorized real migration is copy-only/fail-closed for exactly the 14 verified `rambo-ai-film` projects into `%LOCALAPPDATA%\AI Video Director\projects`
-- No silent overwrite/delete/move/rename; APPLY must freshly revalidate and fail closed on drift
-- `issue-73-live-acceptance` is excluded from the migration candidate
-- No generation, upload, POST `/prompt`, POST `/api/queue`, persistent queue mutation, GPU mutation, production project API write, Desktop rewrite, production restart, Controlled Acceptance, merge or deploy is authorized by the current migration APPLY scope
+- ComfyUI lifecycle is external to Director and must not be changed by migration/acceptance work except read-only identity/health verification
+- Persistent project definitions now exist in `%LOCALAPPDATA%\AI Video Director\projects`; exactly 14 recovered operator projects are verified there
+- Legacy source project files remain preserved and unchanged
+- `issue-73-live-acceptance` is excluded from the recovered catalog
+- Controlled Acceptance requires separate explicit operator authorization
+- No generation, upload, POST `/prompt`, POST `/api/queue`, persistent queue mutation, GPU power mutation, Desktop rewrite, merge or deploy is authorized by the current gate
 - Harness detail: `docs/HARNESS_STATE.md`
 - Generation authorization phrase (contract): `AUTORIZZO LA GENERAZIONE`
 - Public repository: text, hashes and non-secret technical metadata only
