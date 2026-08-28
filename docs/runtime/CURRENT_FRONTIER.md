@@ -26,25 +26,25 @@ AI Video Director specialist operations
 
 ## STATUS
 
-ACCEPTANCE_AUTHORIZED
+ACCEPTANCE_BLOCKED_RUNTIME_OFFLINE
 
 ## GATE
 
-Operator explicitly authorized Controlled Acceptance v0.19.5 on exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`; authorization is persisted as PR #99 comment `5454521736`. PR #99 remains open/mergeable/non-draft on that exact head. Functional/test source head is `d4f85e203da77c653ae21f2453aa6dc30b38eca4`; source re-review PASS `5036205584` remains applicable because the authorized head drift is docs/evidence-only. Exact-current-head GitHub Actions run #536 is PASS. Production remains healthy at v0.19.4 on exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Merge and deploy are not authorized.
+Controlled Acceptance evidence PR #99 comment `5454672422` is BLOCKED at preflight. Candidate exact head `322064e8847712bcd448849441808c2b860a3aeb`, package 0.19.5 and clean candidate checkout passed preflight, but production Director on 8787 and ComfyUI on 8188 were both not listening. Therefore exact Director/ComfyUI PID verification and queue 0/0 verification were impossible, and the corrected live `spawnFn: undefined -> spawnDetached` path was not exercised. No candidate was started and no runtime/ComfyUI/Desktop/queue/generation/GPU/project mutation occurred. Production stable runtime remains clean/detached at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f` / v0.19.4.
 
 ## NEXT
 
-Execute Controlled Acceptance v0.19.5 on exact authorized PR #99 head `322064e8847712bcd448849441808c2b860a3aeb`. Validate the corrected permanent deployment dependency-resolution path and package/UI/API v0.19.5 coherence under controlled reversible conditions. Any temporary candidate Director process must be exact-PID controlled; ComfyUI lifecycle must remain untouched; no generation/upload/POST prompt/POST queue/persistent queue/GPU/project/Desktop mutation is allowed. Mandatory final state before PASS: production v0.19.4 restored at stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Persist top-level PR #99 acceptance evidence and stop for orchestrator `agg`.
+Restore normal availability of the existing production services at unchanged v0.19.4 stable runtime SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`: Director on 8787 and existing ComfyUI on 8188 with idle queue. Do not deploy or advance the stable runtime. Then rerun Controlled Acceptance against exact PR #99 head `322064e8847712bcd448849441808c2b860a3aeb` if that remains current. Merge and deploy remain separately gated.
 
 ## ACTIVE WORK
 
 Exactly one pointer: [ACTIVE WORKBOARD — AI Video Director specialist lanes](https://github.com/mrhz1973/ai-video-director/issues/75) (#75)
 
-HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_AUTHORIZED`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
+HARNESS_ENGINEERING is ACTIVE on #97 at `ACCEPTANCE_BLOCKED_RUNTIME_OFFLINE`. IMAGE_ELEMENT_DIRECTOR, VIDEO_DIRECTOR and MASTER_FILM_DIRECTOR remain idle unless separately activated. #89 autonomous specialist intake remains a separate follow-up and is not part of #97.
 
 ## VERIFIED THROUGH
 
-Production Harness is **v0.19.4** at exact stable-runtime release SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. Deployment evidence PR #98 comment `5432521760` remains PASS for runtime/UI/API/Desktop/queue/ComfyUI invariants. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review is PASS; exact authorized head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Controlled Acceptance is authorized but not yet evidenced as executed.
+Production stable runtime is **v0.19.4** at exact SHA `4202dca9ab3b46f52983ca342732e59bfe38066f`. PR #99 persists the v0.19.5 `resolveDeps()` correction and side-effect-free regressions; source re-review `5036205584` is PASS; exact candidate head `322064e8847712bcd448849441808c2b860a3aeb` has CI #536 PASS. Controlled Acceptance was attempted under authorization comment `5454521736` but stopped safely at preflight because both production services were offline. No acceptance PASS exists yet.
 
 ## GLOBAL RUNTIME INVARIANTS
 
