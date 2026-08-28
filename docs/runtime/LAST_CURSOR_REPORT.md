@@ -1,36 +1,60 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #100 / v0.19.6 migration safety correction (PR #101)
+TASK_REF: #100 / v0.19.6 production deployment
 STATUS: PASS
 EVIDENCE_STATE: EVIDENCE_COMPLETE
 TARGET_VERSION: 0.19.6
-BASE_MAIN_SHA: 01da1dafb27497f9ea553228fcbf263f2e103295
-PREVIOUS_REVIEWED_HEAD: 99652b42d8eefc5178bf9f02ee1d9fa3d3b4d956
-WORK_REF: fix/issue-100-project-store-gpu-v0196
-SOURCE: Cursor Agent (#100 migration safety delta)
-RUNTIME_TOUCHED: NO
+RELEASE_SHA: bd8cdd026fd1b2015b09135f6d18bfd595bbdf13
+PRIOR_PRODUCTION_SHA: 0617a68a8152bb073ace8ea51ac3375292779c11
+DEPLOY_AUTHORIZATION: 5457940683
+WORKBOARD_SYNC: 5457944867
+SOURCE: Cursor Agent (#100 deploy)
+RUNTIME_TOUCHED: YES (dedicated stable-runtime Director-only deploy)
 
 ## SUMMARY
 
-Corrected fail-closed project migration safety blockers from orchestrator source review PR #101 review 5054602553. Preserved persistent project-store authority, launcher wiring, GPU fix, and 0.19.6 target.
+DEPLOYMENT_PASS. Permanent #97 path advanced dedicated stable runtime to exact release `bd8cdd` / v0.19.6. Persistent 14-project store preserved. ComfyUI PID unchanged. First attempt failed because session `H3_CONFIG_PATH` still pointed at Controlled Acceptance temp config (port 8788); exact wrong-port PID stopped; env cleared; permanent deploy re-run completed PASS.
 
-## MIGRATION SAFETY CORRECTIONS
+## AUTHORITY
 
-1. **Raw path validation** — `assertRawMigrationDirectory` rejects null/empty/whitespace before `path.resolve`
-2. **Fresh APPLY revalidation** — always re-plans; stale plan compared via `detectPlanDrift`; drift stops before writes
-3. **All blockers before writes** — INVALID_SOURCE and SAME_ID_DIFFERENT_CONTENT block entire APPLY (copied=0); no partial migration
-4. **Atomic exclusive copy** — `COPYFILE_EXCL` via `exclusiveCopyProjectFile`; race at copy time fails without overwrite
-5. **Source integrity** — fresh source SHA-256 before copy; post-copy verify; source never mutated
+- Deploy authorization: #100 comment 5457940683
+- Exact release SHA: `bd8cdd026fd1b2015b09135f6d18bfd595bbdf13`
+- Expected version: 0.19.6
+- Tooling: Deploy-AIVideoDirectorRuntime.ps1 + deploy-runtime-cli.mjs
 
-## VALIDATION
+## PREFLIGHT
 
-- npm test: 1032 pass / 0 fail
-- python scripts/validate_project.py: PASS
+- Stable: `0617a68` clean detached 0.19.5
+- Director PID: 24764 / 0.19.5
+- Comfy PID: 17940 healthy
+- Queue: 0/0
+- Desktop: stable-runtime Start-AIVideoDirector.ps1 + WorkingDirectory stable harness
+- Projects: 14; hashes snapshotted; issue-73 absent
+- PLAN: PASS (checkout_and_restart)
 
-## SIDE EFFECTS (explicit)
+## DEPLOY
 
-real project copies = 0 | moves = 0 | deletes = 0 | renames = 0 | production project writes = 0 | production restart = 0 | ComfyUI lifecycle = 0 | GPU writes = 0 | generation = 0 | upload = 0 | queue mutation = 0 | Desktop rewrite = 0 | real migration APPLY = 0
+- Old stable SHA: `0617a68`
+- New stable SHA: `bd8cdd` (clean detached, package 0.19.6)
+- Director old PID: 24764 (stopped exact-PID)
+- First spawn anomaly: PID 44632 listened on 8788 due to polluted `H3_CONFIG_PATH`; stopped exact PID; cleared env
+- Director new PID: 42596 on 8787
+- Comfy before/after: 17940 / 17940
+
+## FINAL
+
+- /api/health 0.19.6; /api/config 0.19.6; UI version surface 0.19.6
+- projectStore: H3_PROJECT_DIRECTORY, persistent true
+- /api/projects = 14; /api/config.projects = 14
+- Representative loads OK: martino-capanna-radio-escape-sequence, rambo, portovenere-test
+- Project hashes unchanged YES
+- Queue 0/0; GPU mode normal / 170 W unchanged; POST /api/gpu-power = 0
+- Desktop unchanged; Comfy lifecycle = 0
+
+## SIDE EFFECTS
+
+generation=0 upload=0 POST /prompt=0 POST /api/queue=0 queue mutation=0 GPU mutation=0 project mutation=0 migration APPLY=0 Desktop rewrite=0 ComfyUI lifecycle=0 broad kill=0
 
 ## NEXT_RELEVANCE
 
-Orchestrator agg on PR #101 corrected head; operator migration of 14 legacy projects remains separate authorized step.
+Orchestrator agg may close #100 / update frontier after reading this report and PR #101 deployment evidence.
