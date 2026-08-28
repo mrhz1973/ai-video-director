@@ -86,9 +86,9 @@ test("model select static help is defined in Italian", () => {
   assert.match(CONTROL_HELP.modelSelect, /ComfyUI/);
 });
 
-test("package and version surfaces target 0.19.5", () => {
+test("package and version surfaces target 0.19.6", () => {
   const pkg = JSON.parse(read("package.json"));
-  assert.equal(pkg.version, "0.19.5");
+  assert.equal(pkg.version, "0.19.6");
   assert.match(appJs, /\$\("version"\)\.textContent\s*=\s*`v\$\{config\.version\}`/);
 });
 

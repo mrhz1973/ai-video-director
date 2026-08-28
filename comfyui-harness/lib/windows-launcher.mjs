@@ -100,6 +100,8 @@ export function buildComfyCommand(comfyRoot = "") {
   };
 }
 
+import { defaultPersistentProjectDirectory } from "./project-directory.mjs";
+
 export function deriveComfyOutputDirectoryFromComfyRoot(comfyRoot = "") {
   const root = String(comfyRoot || "").trim();
   if (!root) return null;
@@ -121,6 +123,10 @@ export function buildDirectorCommand(harnessRoot = "", nodeExecutable = "node", 
   // Launcher-derived output root; explicit H3_COMFY_OUTPUT_DIRECTORY / harness config win later in server.
   if (derived && !String(nextEnv.H3_COMFY_OUTPUT_DIRECTORY || "").trim()) {
     nextEnv.H3_COMFY_OUTPUT_DIRECTORY = derived;
+  }
+  const projectDir = defaultPersistentProjectDirectory(env);
+  if (projectDir && !Object.prototype.hasOwnProperty.call(nextEnv, "H3_PROJECT_DIRECTORY")) {
+    nextEnv.H3_PROJECT_DIRECTORY = projectDir;
   }
   return {
     cwd: root,

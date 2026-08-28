@@ -165,9 +165,9 @@ input:disabled {
   line-height: 1.35;
 }
 
-.gpu-power-section.gpu-power-context-compact .gpu-power-controls,
-.gpu-power-section.gpu-power-context-compact #gpuPowerHelperInstructions,
-.gpu-power-section.gpu-power-context-compact #gpuPowerHelperHelp {
+.gpu-power-section.gpu-power-context-compact:not(.is-expanded) .gpu-power-controls,
+.gpu-power-section.gpu-power-context-compact:not(.is-expanded) #gpuPowerHelperInstructions,
+.gpu-power-section.gpu-power-context-compact:not(.is-expanded) #gpuPowerHelperHelp {
   display: none;
 }
 

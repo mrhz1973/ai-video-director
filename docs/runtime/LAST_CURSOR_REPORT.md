@@ -1,42 +1,39 @@
 # LAST_CURSOR_REPORT
 
-TASK_REF: #97  
-TARGET_VERSION: 0.19.5  
-ROLE: HARNESS_ENGINEERING  
-STATUS: PASS  
-EVIDENCE_STATE: EVIDENCE_COMPLETE  
-SOURCE: Cursor  
-BASE_MAIN_SHA: 6bace43db534d77418bab35107955e0b74bfbc97  
-WORK_REF: fix/issue-97-resolvedeps-v0195  
-PR: https://github.com/mrhz1973/ai-video-director/pull/99  
-SOURCE_HEAD: d4f85e203da77c653ae21f2453aa6dc30b38eca4  
-CI: PASS for SOURCE_HEAD (see PR #99 top-level source evidence for FINAL_PR_HEAD)  
-VALIDATION: npm test 1001/1001 PASS; validate_project.py PASS  
-RUNTIME_TOUCHED: NO  
+TASK_REF: #100 / v0.19.6 source implementation
+STATUS: PASS
+EVIDENCE_STATE: EVIDENCE_COMPLETE
+TARGET_VERSION: 0.19.6
+BASE_MAIN_SHA: 01da1dafb27497f9ea553228fcbf263f2e103295
+WORK_REF: fix/issue-100-project-store-gpu-v0196
+SOURCE: Cursor Agent (#100 task delta)
+RUNTIME_TOUCHED: NO (source-only; no production restart/deploy/migration)
 
-## SUMMARY — TEST ISOLATION CORRECTION (#97 / PR #99)
+## SUMMARY
 
-- **resolveDeps fix preserved:** spread `...deps` first, then `||` defaults; `spawnFn: undefined` → `spawnDetached` reference without test invocation
-- **buildDeployDirectorDeps:** pure helper mirrors `runRuntimeDeployment` → `runDeployDirector` dependency wiring for safe unit proof
-- **Unit proof (no spawn call):** `buildDeployDirectorDeps({ execFileFn-only deps })` + `resolveDeps(wired).spawnFn === spawnDetached`
-- **Integration proof (fake spawn only):** `runRuntimeDeployment` restart with injected `fakeSpawn`; assert `result.ok`, `directorRestarted`, one Director spawn, zero Comfy spawn, exact-PID stop
-- **Static isolation guard:** deployment regression test source must use `fakeSpawn`, must not call `spawnDetached(` or try/catch-only negative assertions
-- **npm test:** 1001 tests, 0 failures
-- **Validator:** PASS
+v0.19.6 source implementation for #100: persistent project-store authority via `H3_PROJECT_DIRECTORY` / `%LOCALAPPDATA%\AI Video Director\projects`, copy-only migration plan/apply tooling with temp-fixture tests, GPU compact expand/collapse CSS fix for BATCH/CODA/OUTPUT, version coherence 0.19.6.
 
-## PRODUCTION (UNCHANGED)
+## PROJECT-STORE RESOLUTION CONTRACT
 
-- **Version:** v0.19.4
-- **Release SHA:** `4202dca9ab3b46f52983ca342732e59bfe38066f`
-- **Director restart:** NO
-- **ComfyUI restart:** NO
-- **Desktop rewrite:** NO
-- **Generation:** 0
-- **Upload:** 0
-- **Queue mutation:** NO
-- **GPU mutation:** NO
-- **Project mutation:** NO
+Precedence: `H3_PROJECT_DIRECTORY` (fail-closed if set empty) → `config.projectDirectory` (dev/test) → Windows `default-persistent` → checkout `./projects` fallback. Launcher `buildDirectorCommand` injects persistent path when env unset. `/api/config.projectStore` exposes read-only `{ source, directory, persistent }`.
+
+## MIGRATION TOOL CONTRACT
+
+`lib/project-migration.mjs` + `scripts/projects-migrate-cli.mjs`: PLAN (zero writes) / APPLY (`--activate` only). Classifications: COPY_REQUIRED, IDENTICAL_ALREADY_PRESENT, SAME_ID_DIFFERENT_CONTENT, INVALID_SOURCE. Copy-only, fail-if-exists, SHA-256 verify, source untouched. No real operator store APPLY in this pass.
+
+## GPU CORRECTION
+
+`design-system.css`: compact hide rules scoped to `:not(.is-expanded)` so Espandi/Comprimi reveals ECO/BALANCED/NORMAL in BATCH/CODA/OUTPUT; SCENA unchanged; toggle remains display-only (no POST).
+
+## VALIDATION
+
+- npm test: 1021 pass / 0 fail
+- python scripts/validate_project.py: PASS
+
+## SIDE EFFECTS (explicit)
+
+real project copies = 0 | moves = 0 | deletes = 0 | renames = 0 | production project writes = 0 | production restart = 0 | ComfyUI lifecycle = 0 | GPU writes = 0 | generation = 0 | upload = 0 | queue mutation = 0 | Desktop rewrite = 0 | real migration APPLY = 0
 
 ## NEXT_RELEVANCE
 
-Orchestrator re-review PR #99. FINAL_PR_HEAD recorded in PR #99 top-level source evidence comment (not self-referenced in this file).
+Orchestrator agg: PR review/merge decision; operator migration of 14 legacy projects is a separate authorized step (not executed here).
